@@ -103,6 +103,7 @@ def _append_only(conn: Connection, role: str) -> None:
             msg = f'table {name}: comment {comment!r} is not "append-only" or "append-only: retain N days by <column>"'
             raise MigrateError(msg)
         table = quote(name)
+        conn.execute(text(f"REVOKE UPDATE, DELETE, TRUNCATE ON {table} FROM {role}"))
         days, column = match.groups()
         if days is not None:
             target = sa.table(name, sa.column(column))

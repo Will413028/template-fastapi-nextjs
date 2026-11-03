@@ -11,7 +11,7 @@
 - 跨模組的 FK 用字串（`ForeignKey("users.id")`），不建 ORM relationship（AGENTS.md「Backend layers」）。
 - 所有表都在 `public` schema，DDL 不寫 schema 前綴。
 - 查詢只寫在 `internal/modules/<m>/queries/*.sql`，由該模組的 `sqlc.yaml` 生成到 `internal/modules/<m>/internal/store`（`make -C backend sqlc`）。生成碼不手改；`make -C backend sqlc-diff` 擋下過期的生成碼。
-- **NEVER** 在 Go 裡組 SQL 字串或用 ORM；每個查詢都經 sqlc 生成（ADR go-backend D2）。
+- ~~**NEVER** 在 Go 裡組 SQL 字串或用 ORM；每個查詢都經 sqlc 生成（ADR go-backend D2）。~~（Go 版規則，已失效：FastAPI 版用 SQLAlchemy，D3；步驟 3 改寫）
 - sqlc 的 uuid 一律 override 成 `github.com/google/uuid.UUID`，`timestamptz` 成 `time.Time`，nullable 欄位生成指標（`emit_pointers_for_null_types: true`）。
 
 ## 命名規範
@@ -126,8 +126,8 @@ Alembic（ADR go-backend D2 在 FastAPI 版改選 Alembic，見 `docs/plans/2026
 
 ### 不可修改
 
-- 已合併進 `main` 的 revision 只能新增，**NEVER** 修改、刪除或改名；要改就新增一支。`make -C backend migrations-immutable`（`make check` 的一部分）以 `main`（`BASE`，預設 `origin/main`）的 merge-base 為基準逐檔比對（`scripts/check_migrations_immutable.py`）。
-- 還沒合併進 `main` 的 revision 可以刪掉重新產生。
+- 已推上 `dev` 或合併進 `main` 的 revision 只能新增，**NEVER** 修改、刪除或改名；要改就新增一支。`make -C backend migrations-immutable`（`make check` 的一部分）以 `BASE`（本機預設 `origin/main`）的 merge-base 為基準逐檔比對（`scripts/check_migrations_immutable.py`）；CI 對 push 用該分支上一次的 tip、對 PR 用 base 分支，所以推上 `dev` 的 revision 也不能再改。
+- 還沒推上去的 revision 可以刪掉重新產生。
 
 ### 與上一版相容（expand／contract）
 
@@ -135,7 +135,7 @@ Alembic（ADR go-backend D2 在 FastAPI 版改選 Alembic，見 `docs/plans/2026
 - 舊程式還在用的結構不能在同一版刪除或改形：刪或改名欄位與表、換主鍵或 `ON CONFLICT` 依賴的唯一約束、把欄位改成舊程式寫不進去的型別或約束。做法是拆成兩版（Martin Fowler「Parallel Change」、GitLab「Avoiding downtime in migrations」）：
   - **expand**：新增新結構，新程式只用它，舊結構原封不動（例：Go 版以 `sign_in_throttles` 取代 `login_throttles`，舊表在下一個 PR 才刪除）。
   - **contract**：新程式上線之後的下一版，才刪掉舊結構。範本的「一版」就是合併進 `main` 的一個 PR。
-- Go 版用 squawk 自動擋這類變更與長時間鎖表；FastAPI 版沒有移植（squawk 檢查 SQL 檔，Alembic 的 revision 是 Python），由審查 revision 的人照這一節與下一節檢查。
+- Go 版用 squawk 自動擋這類變更與長時間鎖表；FastAPI 版目前沒有移植，由審查 revision 的人照這一節與下一節檢查。移植的做法是 CI 用 Alembic 的 offline 模式（`alembic upgrade --sql`）把 revision 輸出成 SQL 再交給 squawk；要不要做待 Will 決定（計畫步驟 2a）。
 
 ### 鎖與安全
 
@@ -152,6 +152,7 @@ Alembic（ADR go-backend D2 在 FastAPI 版改選 Alembic，見 `docs/plans/2026
 - migrate 用 owner 角色（`DB_OWNER_USER`，例如 `template_fastapi_nextjs_owner`）：擁有 database 與 `public` schema，不是 superuser，經 `MIGRATE_DATABASE_URL` 連線。
 - `serve` 與 `seed-admin` 用 app 角色（`DB_APP_USER`，例如 `template_fastapi_nextjs_app`），只有 DML，經 `DATABASE_URL` 連線。
 - 角色由 `deploy/postgres/initdb/10-roles.sh` 建立；授權（含 `ALTER DEFAULT PRIVILEGES`）由 `app migrate` 每次套用後冪等執行，所以新表自動給 app 角色 DML。
+- Alembic 的 `alembic_version` 放在 owner 擁有的 `alembic` schema，app 角色沒有那個 schema 的 `USAGE`，改不了套用過哪些 revision（`tests/test_migrate_db.py`）。
 - 密碼不放在 URL 或環境變數：用 `*_FILE`（compose secrets 掛檔）傳入，URL 只寫使用者名稱。
 - db 測試（testcontainers，與 compose 同一個 PostgreSQL image，`backend/tests/dbtest.py`）使用同一套角色，只在 CI 跑。
 
@@ -165,6 +166,7 @@ Alembic（ADR go-backend D2 在 FastAPI 版改選 Alembic，見 `docs/plans/2026
 | `statement_timeout` | `DB_STATEMENT_TIMEOUT` | 5s |
 | `lock_timeout` | 常數 | 3s |
 | `idle_in_transaction_session_timeout` | 常數 | 30s |
+| `pool_pre_ping`、`pool_recycle` | 常數 | 開、1h（取出前確認連線還活著，與 pgxpool 的預設對齊） |
 | `TimeZone` | 常數 | UTC |
 
 - 這些以 asyncpg 的 `server_settings` 設在每條連線上，讓失控的查詢、排隊等鎖或忘了結束的 transaction 佔不住連線。
@@ -205,7 +207,7 @@ err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 ## 禁止事項
 
 - **NEVER** 手寫 DDL revision（不鎖表的改寫與 backfill 例外），或修改、刪除、改名已合併進 `main` 的 revision
-- **NEVER** 繞過 sqlc：在 Go 裡組 SQL 字串、用 ORM、手改生成碼
+- ~~**NEVER** 繞過 sqlc：在 Go 裡組 SQL 字串、用 ORM、手改生成碼~~（Go 版規則，已失效：FastAPI 版用 SQLAlchemy，D3；查詢規則在步驟 3 改寫）
 - **NEVER** 在模組的查詢讀其他模組的表；**NEVER** 新增指向 `users` 以外的跨模組 FK
 - **NEVER** 用 `serial` 或 `int` 自增當主鍵；主鍵一律 `uuid DEFAULT uuidv7()`
 - **NEVER** 用 `varchar(n)`；有長度限制用 `text` + CHECK，數值與契約一致

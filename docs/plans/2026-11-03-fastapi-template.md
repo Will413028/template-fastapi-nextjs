@@ -85,6 +85,15 @@
     - CI stack job：migrate 只拿到 `db_owner_password`；migrate 的 exit code 是 0；backend ready。
   - 驗收：schema 比對測試：一個資料庫依序執行 Go 版 `560106d` 的 6 個 migration SQL（複製到測試 fixture），另一個用 Alembic 套本 repo 的 revision，比對兩邊 catalog 的表、欄位（型別、nullable、default）、約束（`pg_get_constraintdef`）、索引（`pg_get_indexdef`）與表註解，結果要一致。改成直接執行 SQL、不跑 Atlas，因為這 6 個檔沒有 Atlas 指令（`rg 'atlas:'` 沒有輸出，2026-11-03），兩種跑法結果相同，CI 也不必下載 Atlas。mutation：在 revision 拿掉一個 CHECK，比對要失敗。`alembic check` 的 mutation：改模型但不加 revision，它要失敗。migrate 測試：app 角色可以對一般表做 DML，對 `audit_events` 不能 UPDATE 或 DELETE；超過保留期的列被刪掉；重跑結果相同；mutation：拿掉 append-only 的 REVOKE，測試要失敗。設定測試涵蓋每一種錯誤。`/health/ready` 在 DB 可用時回 200、不可用時回 503 problem。`check_migrations_immutable.py` 有單元測試，mutation：改一個已在 base 的 revision，它要失敗。CI stack job 的 app 角色 `CREATE TABLE intruder` 要失敗；mutation：把 app 角色改成 owner，那個檢查要轉紅。
   - 停止條件：baseline revision 和 Go 版 schema 對不上，而且差異來自 Alembic 或 SQLAlchemy 表達不了的東西時，停下回報。
+  - 執行中的決定與偏離（2026-11-03）：
+    - `make migration MSG=` 不在 migrate 容器裡跑，改在主機上用 db 測試的 testcontainers PostgreSQL 產生（`backend/tests/generate_migration.py`），不依賴 stack 在跑。本機不起容器，所以在這台機器上 revision 是手寫的，由 CI 的 catalog 比對與 `alembic check` 驗證；CI 另跑一次 `make migration` 確認產生工具能用、而且模型與 revision 一致時產生的是空 revision。
+    - 模型與 revision 的一致性有兩道互相重疊的檢查：catalog 比對涵蓋 autogenerate 看不到的 CHECK 與 default；`alembic check` 留著，因為它的錯誤訊息用 autogenerate 的語彙列出差異。
+    - `alembic_version` 放在 owner 擁有的 `alembic` schema，不在 `public`，app 角色碰不到（Go 版 `TestBaselineAppliesWithCommunity` 對 Atlas 版本表的同一個要求；design review 2026-11-03）。
+    - 不可修改檢查的基準照 Go 版：PR 用 base 分支，push 用 `github.event.before`，所以推上 `dev` 的 revision 也不能再改；本機 `make check` 預設 `origin/main`。
+    - 連線池加 `pool_pre_ping` 與 `pool_recycle` 1h，與 pgxpool 的預設（取出閒置連線前 ping、`MaxConnLifetime` 1h）對齊。
+    - `app migrate` 刻意不設整體上限：Go 版 30 分鐘的 `applyTimeout` 限制的是 Atlas 子程序，Python 版沒有子程序；等鎖由 `lock_timeout` 5s 限制。觸發條件：出現長時間的 backfill revision 時，再決定要不要用 `asyncio.timeout` 包住。
+    - squawk 不移植的理由原本寫「squawk 檢查 SQL 檔，revision 是 Python」，這不成立：`alembic upgrade --sql` 可以把 revision 輸出成 SQL 交給 squawk。**待 Will 決定**：CI 加 `alembic upgrade head --sql | squawk`（多一道 SQL 輸出步驟，換回 Go 版的自動鎖表與 expand/contract 檢查），或維持人工審查。
+    - `app.modules.auth`、`app.modules.items` 先有只放 docstring 的 `router.py`、`service.py`：`.importlinter` 的 `module-layers` 把這兩層列為必要層，不為暫時狀態放寬合約。
 - [ ] **2b. HTTP 共用層**（被擋於：2a）
   - 範圍：problem+json exception handler（`type`、`title`、`code` 與 Go 版 `problem.go` 相同，含 `request_id`）；request id 一律由 backend 產生、不信任傳入值；安全 header，含 `Cache-Control: no-store`（Go 版 `securityHeaders`，`middleware.go:99`）；用 openapi-core 依 `backend/api/openapi.yaml` 驗證 request（自寫 adapter，見上面的依賴說明；正式環境只驗 request，response 驗證放在測試裡，`spike.md` (b)），錯誤轉成 `/problems/validation`；cursor 分頁工具。
   - 驗收：Go 版 `problem_test.go`、`problem_contract_test.go`、`validate_test.go` 的同名案例；mutation：讓驗證失敗時回 openapi-core 原本的 `{"errors": [...]}`，契約測試要失敗；mutation：信任傳入的 `X-Request-ID`，request id 測試要失敗。
@@ -99,16 +108,16 @@
   - 範圍：inventory 標步驟 3 的 10 個操作（註冊、登入登出、session 列表與撤銷、`users/me`）、`seed-admin`、CSRF 防護、依帳號節流。CSRF 照 Go 版先看 `Sec-Fetch-Site`；後備的 Origin 比對改成比對設定的公開網址（`APP_ORIGIN`），因為 backend 收到的 `Host` 不是瀏覽器看到的網域（D6）。
   - 消費端：`rg -n 'sessions|users/me' frontend/src`。
   - 不能動：cookie 名稱與屬性、session 期限、錯誤 code。
-  - 驗收：每個操作有成功與至少一個失敗案例的測試，案例對照 Go 版 `auth_test.go`、`auth_resources_test.go`；CI stack job 在 compose network 上用一個 curl 容器直接連 `backend:8000`，每個請求帶 `.secrets/origin_secret` 的值，跑一次「註冊 → 登入 → `GET /api/users/me` 回 200 → 登出 → 再讀回 401」；Go 版「client 自帶的 request id 會被覆寫」檢查改用同一個 curl 容器對 backend 驗；前端伺服器端呼叫帶密鑰的測試（加在 `server.test.ts`）；CI frontend job 用 `ORIGIN_SECRET=<哨兵值> NEXT_PUBLIC_ORIGIN_SECRET=<同一個哨兵值> pnpm build` 建置後跑 `! rg -F <哨兵值> .next/static`，mutation：把 `env.ts` 改讀 `NEXT_PUBLIC_ORIGIN_SECRET`，這個檢查要失敗；mutation：拿掉 cookie 的 `HttpOnly`，測試要失敗。
+  - 驗收：每個操作有成功與至少一個失敗案例的測試，案例對照 Go 版 `auth_test.go`、`auth_resources_test.go`；CI stack job 在 compose network 上用一個 curl 容器直接連 `backend:8000`，每個請求帶 `.secrets/origin_secret` 的值，跑一次「註冊 → 登入 → `GET /api/users/me` 回 200 → 登出 → 再讀回 401」；Go 版「client 自帶的 request id 會被覆寫」檢查改用同一個 curl 容器對 backend 驗；前端伺服器端呼叫帶密鑰的測試（加在 `server.test.ts`）；CI frontend job 用 `ORIGIN_SECRET=<哨兵值> NEXT_PUBLIC_ORIGIN_SECRET=<同一個哨兵值> pnpm build` 建置後跑 `! rg -F <哨兵值> .next/static`，mutation：把 `env.ts` 改讀 `NEXT_PUBLIC_ORIGIN_SECRET`，這個檢查要失敗；mutation：拿掉 cookie 的 `HttpOnly`，測試要失敗。；`backend/src/app/modules/auth/router.py`、`service.py` 不再只有 docstring。
 - [ ] **4. items**（被擋於：步驟 3）
   - 範圍：inventory 標步驟 4 的 5 個操作，含 owner 權限與分頁。
   - 消費端：`rg -n 'items' frontend/src`。
-  - 驗收：對照 Go 版 `items_test.go`、`authz_test.go`；mutation：拿掉 owner 檢查，跨使用者讀取的測試要失敗。
+  - 驗收：對照 Go 版 `items_test.go`、`authz_test.go`；mutation：拿掉 owner 檢查，跨使用者讀取的測試要失敗；`backend/src/app/modules/items/router.py`、`service.py` 不再只有 docstring。
 - [ ] **5. 帳號濫用與管理**（被擋於：步驟 3）
   - 範圍：inventory 標步驟 5 的 6 個 admin 操作、`recover-admin`、trusted devices、登入鎖定、稽核紀錄、HIBP 密碼檢查（ADR account-abuse-and-lifecycle）。
   - 驗收：對照 Go 版 `backend/internal/httpapi/throttle_test.go`、`users.go` 對應的 `authz_test.go` 案例、`backend/internal/modules/auth/service_test.go` 的 devices 與鎖定案例；mutation：把鎖定門檻加大，鎖定測試要失敗。
 - [ ] **6. rename 腳本與 smoke test**（被擋於：步驟 1）
-  - 範圍：恢復步驟 1 拿掉的根目錄 `make rename` target 與 CI rename job（步驟 1 時 rename 腳本還是 Go 版，先移除）；`scripts/rename.py` 改成 Python 版（套件名、DB 與角色名、image、品牌字，沒有 module path）；CI rename job。
+  - 範圍：恢復步驟 1 拿掉的根目錄 `make rename` target 與 CI rename job（步驟 1 時 rename 腳本還是 Go 版，先移除）；`scripts/rename.py` 改成 Python 版（套件名、DB 與角色名、image、品牌字，沒有 module path）；CI rename job。（2a 起 `backend/tests/dbtest.py` 寫著角色與資料庫的佔位名稱，要納入替換或改成從設定讀取。）
   - 驗收：CI 跑 `make rename NAME=ci-probe` 後 `rg` 找不到佔位名稱、pytest 通過；mutation：刪掉一個替換規則，smoke job 要失敗。
 - [ ] **7. 與 Go 版的漂移檢查與文件**（被擋於：D4、步驟 3）
   - 範圍：依 D4 做共用檔清單與比對腳本；`docs/` 的 Go 專屬段改寫；刪除 `go-backend` ADR，D1–D3、D6 寫成本 repo 的 ADR；D6 的 ADR 取代 Go 版 ADR `api-and-auth-baseline` 的 D1（拓樸）、D6（IP 來源）、D8（proxy 部分），以及它的約束段、Expected Outcome、Revocation Triggers 中提到 Caddy 的部分，照 ADR 修訂流程在原 ADR 標註；D6 的 ADR 寫明 dev 與正式不再是同一套 proxy 這個代價；`docs/deploy-vps.md` 改寫成「Vercel + VM + Cloudflare Tunnel」部署指南（含 Vercel Function 區域、前端 DNS 不開代理、密鑰輪換步驟）；`docs/security/threat-model-auth.md` 的信任邊界改寫（瀏覽器 → Vercel → Cloudflare → backend）；`docs/privacy/data-inventory.md` 把 Caddy log 換成 Vercel 與 Cloudflare（兩者都終止 TLS，是新的資料處理者）；`docs/frontend-known-issues.md` 的同源說明；`frontend/AGENTS.md`、`frontend/README.md`；`.github/dependabot.yml` 的 caddy 註解換成 cloudflared，cloudflared image 釘 digest。

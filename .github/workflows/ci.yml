@@ -127,6 +127,12 @@ jobs:
           test "$(docker compose ps -a migrate --format '{{.ExitCode}}')" = 0
           docker compose logs migrate | grep -q 'at revision baseline'
           docker compose exec -T backend app healthcheck
+      # From another container on the compose network, as cloudflared reaches the backend, with the origin secret read
+      # from the backend's own compose secret: the auth flow end to end, and a client's X-Request-ID replaced
+      - name: Sign up, sign in, read the user, sign out and read again
+        run: >-
+          docker compose run --rm --no-deps -T -v "$PWD/scripts/stack_auth_smoke.py:/smoke.py:ro" --entrypoint python
+          backend /smoke.py
       - name: The app role cannot change the schema
         run: |
           out="$(docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U template_fastapi_nextjs_app -d template_fastapi_nextjs -c 'CREATE TABLE public.intruder (id int)' 2>&1)" && exit 1

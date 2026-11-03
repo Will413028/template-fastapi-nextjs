@@ -131,7 +131,8 @@
     - `APP_ORIGIN` 只加進 compose 與 `.env-example`，設定讀取在步驟 3（CSRF）。`backend/.env-example` 不存在，根目錄的 `.env-example` 在 2b 前就沒有 `TRUSTED_PROXIES`、`SITE_ADDRESS`。
     - 依 AGENTS.md「在同一個改動裡更新」，`docs/security/threat-model-auth.md` 的信任邊界、偽造位址、request id、access log 列，與 `docs/privacy/data-inventory.md` 的 client IP、user agent、日誌段先改成 D6 的樣子；兩份文件其餘的 Go 段落仍由步驟 7 改寫。
     - 審查（`/code-review high`、diff 視角各一輪）後的修正見 commit `f992a96`；不改：密鑰相符卻缺 `X-Real-IP` 時靜默退回連線位址（Vercel 轉送一定會帶；改列步驟 7 的檢查清單）、`_limit_key` 也處理 IPv4-mapped 位址（`IPLimiter` 對外接受任意位址）。
-- [ ] **3. auth**（被擋於：步驟 2c）
+- [ ] **3. auth**（被擋於：D8 的產生工具核准——`datamodel-code-generator`，2026-11-03 提交 Will）
+  - D8 的實作（2026-11-03 加入）：`make -C backend gen` 從契約產生 Pydantic 模型到 `backend/src/app/web/contract_models.py`（或依模組拆檔，開工時定），`gen-check` 重新產生後 `git diff --exit-code`，接進 `make check`、CI backend job 與 pre-push；產生檔在 `.gitattributes` 標 `linguist-generated`；`docs/rules/api-design.md` 第 7、102、204 行的 `make -C backend gen` 與 `gen-check` 改指向這組指令。驗收加：mutation 改契約一個欄位不重新產生，`gen-check` 要失敗。
   - 範圍：inventory 標步驟 3 的 10 個操作（註冊、登入登出、session 列表與撤銷、`users/me`）、`seed-admin`、CSRF 防護、依帳號節流。CSRF 照 Go 版先看 `Sec-Fetch-Site`；後備的 Origin 比對改成比對設定的公開網址（`APP_ORIGIN`），因為 backend 收到的 `Host` 不是瀏覽器看到的網域（D6）。
     - 從 2b 審查移入（2026-11-03）：(a) 契約 security 的檢查改看認證 middleware 放進 context 的 principal，不看 cookie 存不存在（openapi-core `Config.security_provider_factory`），同時涵蓋 `COOKIE_SECURE=false` 時 cookie 叫 `session` 而不是 `__Host-session`（2b 的存在性檢查只認後者，dev 下每個要登入的 operation 都會 401）；(b) 啟動時或測試檢查契約的 `(method, path)` 集合等於 FastAPI `/api` 路由的集合、路徑參數名稱相同（Go 版由 codegen 在編譯期保證，這裡沒有），和 D7 的存取權限表放同一處；(c) `seed-admin` 也要讀契約時，一起決定契約路徑留在相對工作目錄（2b 的 `api/openapi.yaml`）或改成設定。
   - 消費端：`rg -n 'sessions|users/me' frontend/src`。
@@ -198,7 +199,14 @@
   - C：六角形架構（Cosmic Python）——業務規則複雜時最穩，對這個以 CRUD 為主的規模是多出來的樣板。
   - 結論：A，實作時把 `platform.web` 拆成獨立的 `app.web` 層（`main > modules > web > platform`），這樣 `forbidden` 可以整包禁止 `app.platform` 用 web 框架，不必逐檔列出（2026-11-03，步驟 1 實測後調整）。機械檢查用 import-linter 2.15：`layers`（頂層與 `app.modules.*` 都用 `containers` 加 `exhaustive = true`，不屬於任何一層的檔案會失敗）、`independence`、`acyclic_siblings`、`forbidden`（`service`、`repository`、`models` 與整個 `app.platform` 不得 import fastapi、starlette；router、schemas、dependencies 不得 import sqlalchemy；檢查間接 import），每條合約設 `broken_contract_guidance`，`ignore_imports` 為 0 並計數。跨模組的需求經 `platform`（`Principal` 由 `main` 裝上的 auth middleware 設定），外鍵用字串 `"users.id"`、不用 ORM relationship。交易邊界由 service 負責，不強制 repository 層。升級觸發條件：某模組要同步呼叫另一模組時，加 `<m>/api.py` 與 `protected` 合約；某模組的業務規則超出 CRUD 時，只對它改成 ports and adapters。ADR：步驟 7 併入本 repo ADR。
 
-拍板順序：D1–D7 全部已決（2026-11-03）。
+- **D8 Pydantic 模型的來源**（狀態：已決 2026-11-03，Will；擋住步驟：3 的第一個 router）
+  - A：從 `backend/api/openapi.yaml` 產生，`make -C backend gen` 寫出、`gen-check` 在 CI 與 `make check` 比對過期——等同 Go 版 oapi-codegen 加 `gen-check`，契約與程式不會分岔（建議）。
+  - B：手寫——不多一個工具；代價是契約改了模型可能沒跟上，只能靠 response 驗證的測試發現。
+  - 結論：A，2026-11-03 Will。產生工具是新依賴，套件與版本另交核准（見步驟 3 的「被擋於」）；ADR：步驟 7 併入本 repo ADR
+- **D9 `jsonschema` 列為直接依賴**（狀態：已決 2026-11-03，Will；擋住步驟：無）
+  - 結論：列入 `backend/pyproject.toml` 的 `dependencies`，`jsonschema==4.26.0`（`app.web.validation` 直接用它的 `ValidationError`；lock 裡已是這個版本，不多裝套件）。
+
+拍板順序：D1–D9 全部已決（2026-11-03）。
 
 ## 進度
 

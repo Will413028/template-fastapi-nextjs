@@ -69,6 +69,20 @@ def test_every_command_resolves() -> None:
         assert callable(importlib.import_module(module).run)
 
 
+class ServerStartedError(AssertionError):
+    """`app serve` got as far as starting the server."""
+
+
+@pytest.fixture(autouse=True)
+def no_server(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A serve test checks that startup is refused. Should a regression let it through, the real server would block the
+    # test run forever (it did while ORIGIN_SECRET was not yet required); this makes it a failure instead.
+    def run(*_: object, **__: object) -> None:
+        raise ServerStartedError
+
+    monkeypatch.setattr("uvicorn.run", run)
+
+
 SERVE_ENV = {
     "MODE": "prod",
     "HTTP_ADDR": "127.0.0.1:18742",

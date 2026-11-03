@@ -4,7 +4,7 @@
 
 ## 契約是唯一來源
 
-- 新增或修改 API 一律先改 `backend/api/openapi.yaml`，再重新生成：後端 `make -C backend gen`（`internal/httpapi/gen`），前端 `pnpm gen:api`（`frontend/src/lib/api/schema.d.ts`）。CI 以 `make -C backend gen-check` 與 `pnpm gen:api:check` 擋下沒有重新生成的變更（ADR api-and-auth D2）。
+- 新增或修改 API 一律先改 `backend/api/openapi.yaml`，再重新生成：後端 `make -C backend gen`（`backend/src/app/web/contract_models.py` 的 Pydantic 模型，產生選項在 `backend/pyproject.toml` 的 `[tool.datamodel-codegen]`；**NEVER** 手改），前端 `pnpm gen:api`（`frontend/src/lib/api/schema.d.ts`）。CI 以 `make -C backend gen-check` 與 `pnpm gen:api:check` 擋下沒有重新生成的變更（ADR api-and-auth D2）。
 - 長度、格式、pattern、enum 只寫在契約裡。後端由 validator（`backend/src/app/web/validation.py` 的 `ContractValidation`，openapi-core 依契約檢查每個 `/api/` request）執行，前端取用生成的型別。正式環境只驗 request；response 由測試對照契約（`backend/tests/apitest.py` 的 `checked_client`）。**NEVER** 在 handler、service 或 zod schema 再寫一次相同的限制（ADR api-and-auth D6）。
 - 契約表達不了的規則（例如密碼在常見密碼清單內、帳號已被使用）才由 service 檢查，以 `AppError` 回報。
 - request body 的 schema 加 `additionalProperties: false`，多送的欄位回 422 `additional_property`。

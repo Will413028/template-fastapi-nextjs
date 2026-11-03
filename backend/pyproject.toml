@@ -20,6 +20,8 @@ app = "app.main.cli:main"
 
 [dependency-groups]
 dev = [
+    # make gen writes src/app/web/contract_models.py from api/openapi.yaml; make gen-check fails when it is stale
+    "datamodel-code-generator==0.86.0",
     "httpx2==2.16.0",
     "import-linter==2.15",
     "pyright==1.1.414",
@@ -28,6 +30,30 @@ dev = [
     "testcontainers==4.15.0",
     "vulture==2.16",
 ]
+
+# `make gen` reads these: the Pydantic models of the contract's schemas (D8), written to src/app/web/contract_models.py
+# after ruff fixes and formats them, so the generator's own formatting is switched off.
+[tool.datamodel-codegen]
+input = "api/openapi.yaml"
+input-file-type = "openapi"
+output-model-type = "pydantic_v2.BaseModel"
+target-python-version = "3.14"
+use-annotated = true
+field-constraints = true
+# nullable: true is what allows null; a field left out of `required` only gets a default
+strict-nullable = true
+enum-field-as-literal = "all"
+# ItemTitle's constraints go inline into the fields that use it, instead of a RootModel to unwrap
+collapse-root-models = true
+output-datetime-class = "AwareDatetime"
+use-schema-description = true
+use-field-description = true
+use-double-quotes = true
+disable-timestamp = true
+formatters = ["builtin"]
+custom-file-header = """\
+# Generated from api/openapi.yaml by `make gen` (options: pyproject.toml [tool.datamodel-codegen]); do not edit.
+# `make gen-check` fails when this file no longer matches the contract."""
 
 [build-system]
 requires = ["uv_build>=0.12,<0.13"]

@@ -7,7 +7,7 @@ Status: shared platform in progress. The backend serves only `GET /health` and `
 ## Verification
 
 - Branch model: daily work goes to `dev`; `main` changes only through a `dev`→`main` PR merged with a merge commit (no squash, no rebase); never push to `main` directly.
-- Backend tests use `pytest`, frontend tests use `vitest`; a task is complete only when `make -C backend check` (backend) and `pnpm test` (frontend) pass, and CI's backend job passes when the change touches the database. `make -C backend check` runs what CI's backend job runs except the database tests: `uv lock --check`, `ruff format --check`, `ruff check`, the import-linter contracts (`lint-imports`), `pyright` in strict mode, `vulture`, `pytest -m "not db"`, squawk on every revision's SQL (needs Node; `backend/tools/package.json`) and the revision immutability check.
+- Backend tests use `pytest`, frontend tests use `vitest`; a task is complete only when `make -C backend check` (backend) and `pnpm test` (frontend) pass, and CI's backend job passes when the change touches the database. `make -C backend check` runs what CI's backend job runs except the database tests: `uv lock --check`, `gen-check` (the Pydantic models in `backend/src/app/web/contract_models.py` match `backend/api/openapi.yaml`), `ruff format --check`, `ruff check`, the import-linter contracts (`lint-imports`), `pyright` in strict mode, `vulture`, `pytest -m "not db"`, squawk on every revision's SQL (needs Node; `backend/tools/package.json`) and the revision immutability check.
 - Tests that need PostgreSQL carry `@pytest.mark.db` (a test using the `postgres` fixture without it fails collection) and start a container with testcontainers (`backend/tests/dbtest.py`). They run only in CI (`make -C backend test-db`); do not run them, or `make migration`, on a shared development machine.
 - pytest turns every warning into an error (`backend/pytest.ini`): fix a deprecation when an upgrade brings it, do not filter it.
 - `make lint-docker` (hadolint, pinned in the root `Makefile`) checks both Dockerfiles; every finding fails, infos included.
@@ -79,6 +79,7 @@ make run              # Start the API server with MODE=dev
 make test             # pytest without the db tests
 make test-db          # The db tests (needs Docker; CI runs them)
 make check            # CI's backend job, minus the db tests
+make gen              # Regenerate src/app/web/contract_models.py from api/openapi.yaml (gen-check fails when stale)
 make migration MSG=x  # Generate an Alembic revision from the models (needs Docker)
 make squawk           # Lock and compatibility checks on every revision's SQL (needs Node)
 make fmt              # ruff format and safe fixes
@@ -109,4 +110,4 @@ pnpm gen:api          # Regenerate API types from backend/api/openapi.yaml
 ## Conventions
 
 - Backend is Python 3.14 managed with `uv` (`backend/pyproject.toml`, `backend/uv.lock`); frontend uses `pnpm`.
-- The HTTP contract is the hand-written `backend/api/openapi.yaml`; FastAPI's generated schema is off, and the frontend generates its types from the contract.
+- The HTTP contract is the hand-written `backend/api/openapi.yaml`; FastAPI's generated schema is off; the backend generates its Pydantic models (`make -C backend gen`) and the frontend its types (`pnpm gen:api`) from the contract.

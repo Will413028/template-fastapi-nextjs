@@ -1,5 +1,6 @@
 # Generated files: GitHub collapses them in diffs, and scripts/check_commit_policy.py leaves them out of a commit's
-# size. Their sources (pyproject.toml, package.json) are counted instead.
+# size. Their sources (pyproject.toml, package.json, api/openapi.yaml) are counted instead.
 frontend/src/lib/api/schema.d.ts linguist-generated=true
 frontend/pnpm-lock.yaml linguist-generated=true
 backend/uv.lock linguist-generated=true
+backend/src/app/web/contract_models.py linguist-generated=true

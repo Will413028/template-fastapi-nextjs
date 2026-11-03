@@ -19,6 +19,8 @@ ignore = [
 "tests/**" = ["S101", "PLR2004"]
 # the one module allowed to read the environment
 "src/app/platform/config.py" = ["TID251"]
+# written by make gen: its docstrings are the contract's descriptions, which stay as the Go version wraps them
+"src/app/web/contract_models.py" = ["E501"]
 
 [lint.flake8-tidy-imports]
 ban-relative-imports = "all"
@@ -38,5 +40,6 @@ max-returns = 6
 max-statements = 50
 
 [lint.flake8-type-checking]
-# SQLAlchemy reads Mapped[...] annotations at runtime, so the types a model names must be imported for real.
-runtime-evaluated-base-classes = ["app.platform.db.Base"]
+# SQLAlchemy reads Mapped[...] annotations and Pydantic reads field annotations at runtime, so the types a model names
+# must be imported for real.
+runtime-evaluated-base-classes = ["app.platform.db.Base", "pydantic.BaseModel"]

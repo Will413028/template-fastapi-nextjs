@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Runs once, when the postgres image initializes an empty volume (docker-entrypoint-initdb.d), and in the Go test
-# harness (internal/platform/dbtest). Creates the two login roles (docs/adr/2026-10-18-go-backend.md D5):
+# Runs once, when the postgres image initializes an empty volume (docker-entrypoint-initdb.d), and in the backend's
+# db tests (backend/tests/dbtest.py). Creates the two login roles (docs/adr/2026-10-18-go-backend.md D5):
 # - DB_OWNER_USER owns the database and the public schema; only `app migrate` uses it. No superuser, no CREATEROLE.
 # - DB_APP_USER is what serve connects as: CONNECT here, DML granted by `app migrate` on every run.
 # The superuser (POSTGRES_USER) is for initialization and maintenance from inside the container only.

@@ -2,12 +2,13 @@
 
 Fullstack monorepo template with a FastAPI backend and a Next.js frontend. The frontend deploys to Vercel, which rewrites `/api/*` to the backend on one origin; the backend and PostgreSQL run with Docker Compose on a VM and are reached through a Cloudflare Tunnel.
 
-Status: walking skeleton. The backend serves only `GET /health` and the `serve` and `healthcheck` commands; the database layer, migrations and the API operations in `backend/api/openapi.yaml` are being added module by module.
+Status: shared platform in progress. The backend serves only `GET /health` and `GET /health/ready`, with the `serve`, `migrate` and `healthcheck` commands; the tables and the Alembic baseline exist, and the API operations in `backend/api/openapi.yaml` are being added module by module.
 
 ## Verification
 
 - Branch model: daily work goes to `dev`; `main` changes only through a `dev`→`main` PR merged with a merge commit (no squash, no rebase); never push to `main` directly.
-- Backend tests use `pytest`, frontend tests use `vitest`; a task is complete only when `make -C backend check` (backend) and `pnpm test` (frontend) pass. `make -C backend check` runs everything CI's backend job runs: `uv lock --check`, `ruff format --check`, `ruff check`, the import-linter contracts (`lint-imports`), `pyright` in strict mode, `vulture` and `pytest`.
+- Backend tests use `pytest`, frontend tests use `vitest`; a task is complete only when `make -C backend check` (backend) and `pnpm test` (frontend) pass, and CI's backend job passes when the change touches the database. `make -C backend check` runs what CI's backend job runs except the database tests: `uv lock --check`, `ruff format --check`, `ruff check`, the import-linter contracts (`lint-imports`), `pyright` in strict mode, `vulture`, `pytest -m "not db"` and the revision immutability check.
+- Tests that need PostgreSQL carry `@pytest.mark.db` (a test using the `postgres` fixture without it fails collection) and start a container with testcontainers (`backend/tests/dbtest.py`). They run only in CI (`make -C backend test-db`); do not run them, or `make migration`, on a shared development machine.
 - pytest turns every warning into an error (`backend/pytest.ini`): fix a deprecation when an upgrade brings it, do not filter it.
 - `make lint-docker` (hadolint, pinned in the root `Makefile`) checks both Dockerfiles; every finding fails, infos included.
 - `git push` runs CI's checks first through the lefthook pre-push hook (all but the compose stack job, except its `make lint-docker`); it needs `uv`, `actionlint`, `zizmor`, `gitleaks` and `osv-scanner` installed. Do not skip it with `--no-verify`.
@@ -64,6 +65,8 @@ make up                             # Start the VM stack without the tunnel (det
 make up-prod                        # Start the VM stack with the Cloudflare Tunnel (MODE=prod; needs .secrets/tunnel_token)
 make down                           # Stop stack
 make down-v                         # Stop stack and remove volumes
+make migration                      # Apply the revisions to the stack's database (app migrate)
+make generate-migration MSG=x       # Generate a revision from the models (needs Docker)
 make build                          # Build Docker images
 make status                         # Show running containers
 make logs                           # Tail all logs
@@ -73,8 +76,10 @@ make lint-docker                    # hadolint over both Dockerfiles
 # Backend development (from backend/)
 make sync             # Install the locked dependencies into .venv
 make run              # Start the API server with MODE=dev
-make test             # pytest
-make check            # Everything CI's backend job runs
+make test             # pytest without the db tests
+make test-db          # The db tests (needs Docker; CI runs them)
+make check            # CI's backend job, minus the db tests
+make migration MSG=x  # Generate an Alembic revision from the models (needs Docker)
 make fmt              # ruff format and safe fixes
 
 # Frontend development (from frontend/)

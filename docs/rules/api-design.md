@@ -140,8 +140,8 @@ raise HTTPException(status_code=409)
 ## 授權
 
 - role 只有 `admin` 和 `user`（`app.modules.auth.service` 的 `ROLE_ADMIN`、`ROLE_USER`），註冊預設 `user`，admin 只能用 `seed-admin` 建立（ADR api-and-auth D7）。
-- 使用者擁有的資源，**每個查詢**都帶 owner 條件（`WHERE id = @id AND owner_id = @owner_id`）；別人的資源回 404，不回 403，不透露它存在（`TestGetOtherUsersItem`）。
-- UPDATE 與 DELETE 用 `:one` 或 `:execrows` 回報影響的列，0 列回 404，不可靜默成功。
+- 使用者擁有的資源，**每個查詢**都帶 owner 條件（`.where(Item.id == item_id, Item.owner_id == caller.id)`）；別人的資源回 404，不回 403，不透露它存在（Go 版 `TestGetOtherUsersItem`，步驟 4 移植）。
+- UPDATE 與 DELETE 回報影響的列（`.returning(...)` 加 `one_or_none()`，或結果的 `rowcount`），0 列回 404，不可靜默成功。
 - 每個 route 都要剛好帶一個 `app.web.access` 的存取標記，寫明誰能呼叫：`dependencies=[PUBLIC]`，或用 `SIGNED_IN`／`SignedIn` 參數（步驟 5 加 admin 的標記）；缺標記、多標記、或「公開」與契約的 `security: []` 不一致時 server 不會啟動（`app/main/routes.py`、`test_routes.py`）。admin 的 operation 在 route 執行前回 403 `insufficient_role`（Go 版 `requireRole`，步驟 5 移植）。
 - 授權分三處，依「判斷需要什麼」選一處：只看是否登入的寫在契約的 `security`；只看 role 的寫在 route 的存取標記（步驟 5）；要看呼叫者與資源的關係的（例如 `GET /api/users/{id}` 的「本人或 admin」）寫在 service 或查詢條件，非授權者回 404（`AuthService.user`、`test_another_users_account_is_not_found_like_a_missing_one`）。
 - **NEVER** 先查出資源再在 handler 比對 owner：條件必須在 SQL 裡。

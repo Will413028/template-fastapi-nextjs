@@ -55,13 +55,20 @@ class Clock:
 
 
 class CountingHasher(PasswordHasher):
-    """Counts password verifications and can make each one slower."""
+    """Counts hashes and verifications, and can make each verification slower."""
 
     def __init__(self) -> None:
         super().__init__(CHEAP)
         self._lock = threading.Lock()
+        self.hashes = 0
         self.verifies = 0
         self.delay = 0.0
+
+    @override
+    async def hash(self, password: str) -> str:
+        with self._lock:
+            self.hashes += 1
+        return await super().hash(password)
 
     @override
     async def verify(self, password: str, encoded: str) -> bool:

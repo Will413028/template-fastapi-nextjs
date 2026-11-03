@@ -9,6 +9,8 @@ import contextvars
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from app.platform.errors import AppError, Kind
+
 if TYPE_CHECKING:
     import uuid
 
@@ -18,6 +20,16 @@ class Principal:
     id: uuid.UUID
     # read from the database on every request, so a role change takes effect on the next one
     role: str
+
+
+# The code clients translate when a request has no valid session; changing it is a breaking change.
+CODE_SESSION_INVALID = "session_invalid"
+
+
+def session_invalid() -> AppError:
+    """A missing, unknown, expired or revoked session, or a disabled user. The reason is not told apart: the client's
+    remedy is always to sign in."""
+    return AppError(Kind.UNAUTHENTICATED, CODE_SESSION_INVALID, "no valid session")
 
 
 _principal: contextvars.ContextVar[Principal | None] = contextvars.ContextVar("principal", default=None)

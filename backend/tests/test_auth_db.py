@@ -136,9 +136,10 @@ def test_create_session_wrong_password(api: AuthAPI) -> None:
 def test_an_unknown_account_costs_a_hash_and_answers_like_a_wrong_password(api: AuthAPI) -> None:
     api.must_sign_up("alice")
     wrong = api.sign_in("alice", WRONG)
-    api.hasher.verifies = 0
+    api.hasher.verifies = api.hasher.hashes = 0
     unknown = api.sign_in("bob", WRONG)
-    assert api.hasher.verifies == 1
+    # one verification, against the dummy hash made at startup: the first unknown account costs no extra hash
+    assert (api.hasher.verifies, api.hasher.hashes) == (1, 0)
     assert without_request_id(unknown) == without_request_id(wrong)
 
 
@@ -280,6 +281,17 @@ def test_another_users_account_is_not_found_like_a_missing_one(api: AuthAPI) -> 
     assert_problem(other, 404, "/problems/not-found")
     assert without_request_id(other) == without_request_id(missing)
     assert_problem(api.do("GET", f"/api/users/{alice['id']}"), 401, "/problems/unauthenticated")
+
+
+def test_get_current_session(api: AuthAPI) -> None:
+    created, token = api.must_sign_up("alice")
+    response = api.do("GET", "/api/sessions/current", token)
+    assert response.status_code == 200, response.text
+    current = response.json()
+    assert current["user"] == created
+    assert current["current"] is True
+    assert api.do("GET", f"/api/sessions/{current['id']}", token).json() == current
+    assert_problem(api.do("GET", "/api/sessions/current"), 401, "/problems/unauthenticated")
 
 
 def test_get_session(api: AuthAPI) -> None:

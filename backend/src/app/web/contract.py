@@ -52,19 +52,36 @@ def strict_json(value: bytes, **_parameters: str) -> object:
     return json.loads(value.decode(), parse_constant=_reject_constant)
 
 
+# ECMA-262's \\s: WhiteSpace and LineTerminator (U+0009-000D, space, U+00A0, U+1680, U+2000-200A, U+2028, U+2029,
+# U+202F, U+205F, U+3000, U+FEFF); re.ASCII would leave only the ASCII ones
+_ECMA_SPACE = "\t\n\v\f\r \u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff"
+# ECMA's `.` matches anything but a line terminator; re's only excludes \\n
+_ECMA_DOT = "[^\n\r\u2028\u2029]"
+
+
+class UnsupportedPatternError(ValueError):
+    """A contract pattern uses ECMA-262 syntax this translation does not carry over."""
+
+
 @functools.cache
 def ecma_regex(pattern: str) -> re.Pattern[str]:
-    """pattern compiled with ECMA-262's meaning, which OpenAPI's `pattern` uses, for what differs in Python's re:
-    `$` outside a character class matches only at the end of the string (re also matches before a final newline,
-    so "abc\\n" would pass ^[a-z]+$), and \\d, \\w and \\b are ASCII (re.ASCII). The Go version's RE2 agrees with
-    ECMA on both."""
+    """pattern compiled with the meaning ECMA-262 gives it, which OpenAPI's `pattern` uses, where Python's re differs:
+
+    - `$` outside a character class matches only at the end (re also matches before a final newline, so "abc\\n"
+      would pass ^[a-z]+$);
+    - \\d, \\w and \\b are ASCII (re.ASCII), while \\s and \\S keep ECMA's Unicode whitespace;
+    - `.` does not match a line terminator.
+
+    Anything re cannot compile (ECMA's named groups `(?<name>`, `\\k<name>`, a \\S inside a class) raises
+    UnsupportedPatternError; Contract.load compiles every pattern, so that happens at startup, not on a request. The Go
+    version's RE2 agrees with ECMA on what the contract uses."""
     out: list[str] = []
     in_class = False
     i = 0
     while i < len(pattern):
         char = pattern[i]
         if char == "\\":
-            out.append(pattern[i : i + 2])
+            out.append(_escape(pattern, pattern[i : i + 2], in_class=in_class))
             i += 2
             continue
         if in_class:
@@ -73,9 +90,39 @@ def ecma_regex(pattern: str) -> re.Pattern[str]:
             in_class = True
         elif char == "$":
             char = r"\Z"
+        elif char == ".":
+            char = _ECMA_DOT
         out.append(char)
         i += 1
-    return re.compile("".join(out), re.ASCII)
+    try:
+        return re.compile("".join(out), re.ASCII)
+    except re.error as err:
+        msg = f"pattern {pattern!r} is not supported: {err}"
+        raise UnsupportedPatternError(msg) from err
+
+
+def _escape(pattern: str, escape: str, *, in_class: bool) -> str:
+    if escape == "\\s":
+        return _ECMA_SPACE if in_class else f"[{_ECMA_SPACE}]"
+    if escape == "\\S":
+        if in_class:
+            msg = f"pattern {pattern!r}: \\S inside a character class is not supported"
+            raise UnsupportedPatternError(msg)
+        return f"[^{_ECMA_SPACE}]"
+    return escape
+
+
+def _patterns(node: object) -> Iterator[str]:
+    """Every `pattern` string in the contract document (schemas inline or under components)."""
+    if isinstance(node, dict):
+        for key, value in cast("dict[object, object]", node).items():
+            if key == "pattern" and isinstance(value, str):
+                yield value
+            else:
+                yield from _patterns(value)
+    elif isinstance(node, list):
+        for item in cast("list[object]", node):
+            yield from _patterns(item)
 
 
 def _ecma_pattern(_: Validator, pattern: str, instance: object, _schema: object) -> Iterator[ValidationError]:
@@ -137,8 +184,12 @@ class Contract:
             security_provider_factory=_SessionSecurity(),
         )
         try:
-            return cls(OpenAPI.from_file_path(str(path), config=config), path.read_bytes())
-        except Exception as err:  # a missing file, YAML or OpenAPI errors: each library raises its own type
+            openapi = OpenAPI.from_file_path(str(path), config=config)
+            document: object = openapi.spec.read_value()
+            for pattern in _patterns(document):
+                ecma_regex(pattern)
+            return cls(openapi, path.read_bytes())
+        except Exception as err:  # a missing file, YAML or OpenAPI errors, a pattern: each raises its own type
             msg = f"load the contract {path}: {err}"
             raise ContractError(msg) from err
 

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 import pytest
 
 from app.main import cli
+from app.main.routes import RouteContractError
 
 if TYPE_CHECKING:
     import pathlib
@@ -92,6 +93,18 @@ SERVE_ENV = {
     "ORIGIN_SECRET": "s" * 43,
     "APP_ORIGIN": "https://app.example",
 }
+
+
+def test_serve_with_routes_that_disagree_with_the_contract_does_not_start(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def disagree(*_: object, **__: object) -> None:
+        msg = "GET /api/users/me has no route"
+        raise RouteContractError(msg)
+
+    monkeypatch.setattr("app.main.factory.check_routes", disagree)
+    assert cli.main(["serve"], environ=SERVE_ENV) == 1
+    assert "serve: routes and contract disagree: GET /api/users/me has no route" in capsys.readouterr().err
 
 
 def test_serve_in_prod_without_the_origin_secret_does_not_start(capsys: pytest.CaptureFixture[str]) -> None:

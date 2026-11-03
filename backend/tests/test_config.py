@@ -38,7 +38,7 @@ def test_serve_defaults_are_production() -> None:
 )
 def test_cookie_name_follows_secure(secure: str, name: str) -> None:
     # the __Host- prefix requires Secure, so local development over http drops it
-    assert Settings.from_env(SERVE | {"COOKIE_SECURE": secure}).session_cookie_name == name
+    assert Settings.from_env(SERVE | {"MODE": "dev", "COOKIE_SECURE": secure}).session_cookie_name == name
 
 
 def test_session_idle_may_equal_absolute() -> None:
@@ -146,12 +146,15 @@ def test_migrate_connects_as_the_owner_without_a_statement_timeout() -> None:
         ({"SESSION_IDLE": "0s"}, "SESSION_IDLE and SESSION_ABSOLUTE must be positive"),
         ({"SESSION_ABSOLUTE": "7d"}, "SESSION_ABSOLUTE is malformed"),
         ({"COOKIE_SECURE": "yes"}, "COOKIE_SECURE is malformed"),
+        ({"COOKIE_SECURE": "false"}, "COOKIE_SECURE must be true when MODE=prod"),
         ({"APP_ORIGIN": ""}, "missing required environment variable APP_ORIGIN"),
         ({"APP_ORIGIN": "app.example"}, "APP_ORIGIN must be an origin such as https://app.example"),
         ({"APP_ORIGIN": "ftp://app.example"}, "APP_ORIGIN must be an origin such as https://app.example"),
         ({"APP_ORIGIN": "https://app.example/"}, "APP_ORIGIN must be an origin such as https://app.example"),
         ({"APP_ORIGIN": "https://app.example/app"}, "APP_ORIGIN must be an origin such as https://app.example"),
         ({"APP_ORIGIN": "https://user@app.example"}, "APP_ORIGIN must be an origin such as https://app.example"),
+        ({"APP_ORIGIN": "https://app.example:"}, "APP_ORIGIN must be an origin such as https://app.example"),
+        ({"APP_ORIGIN": "https://\u4f8b\u3048.jp"}, "APP_ORIGIN must be an origin such as https://app.example"),
         ({"APP_ORIGIN": "https://app.example:443"}, "APP_ORIGIN must leave out the default port"),
         ({"APP_ORIGIN": "http://app.example:80"}, "APP_ORIGIN must leave out the default port"),
     ],

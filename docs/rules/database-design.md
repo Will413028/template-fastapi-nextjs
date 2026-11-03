@@ -9,7 +9,7 @@
 - 跨模組的 FK 用字串（`ForeignKey("users.id")`），不建 ORM relationship（AGENTS.md「Backend layers」）。
 - 所有表都在 `public` schema，DDL 不寫 schema 前綴。
 - 查詢是 SQLAlchemy Core 的運算式，欄位取自 `models.py` 的類別（`select(User.id, ...)`、`insert(Session).values(...).returning(...)`、`sqlalchemy.dialects.postgresql.insert(...).on_conflict_do_update(...)`），在 `AsyncConnection` 上執行；值一律是 bound parameter。不用 ORM `Session` 的 unit of work 與 identity map：每個呼叫就是一句明確的 SQL，async 下也沒有 lazy load（`docs/plans/2026-11-03-fastapi-template/auth-carryover.md`「資料存取與組裝」）。
-- 模組的查詢寫在 `service`（簡單的）或 `repository.py`（複雜的，例如 upsert 與 join），repository 的函式接受呼叫端給的連線、只跑一句，transaction 由 service 決定（範例：`app/modules/auth/repository.py`）。
+- 有 `repository.py` 的模組把查詢都放在那裡（auth 的做法：欄位清單在同一個檔裡共用），函式接受呼叫端給的連線、只跑一句，transaction 由 service 決定（範例：`app/modules/auth/repository.py`）；只有幾個簡單查詢的模組可以不建 `repository.py`，寫在 service 裡。
 - **NEVER** 用字串拼 SQL（f-string、`%`、`+`）：ruff 的 S608 會擋；固定的 SQL 片段用 `literal_column`（例：`interval '1 minute'`），值一律經 bound parameter。
 
 ## 命名規範

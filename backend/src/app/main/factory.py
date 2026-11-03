@@ -74,6 +74,8 @@ def create_app(deps: Deps) -> FastAPI:
 
     @contextlib.asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
+        if deps.auth is not None:
+            await deps.auth.service.start()
         try:
             yield
         finally:
@@ -104,7 +106,6 @@ def create_app(deps: Deps) -> FastAPI:
 
     docs_paths = _add_docs(app, contract) if deps.docs else frozenset[str]()
     if deps.auth is not None:
-        app.state.auth_service = deps.auth.service
         app.include_router(auth_router)
         check_routes(app, contract, docs_paths=docs_paths)
     install_exception_handlers(app)

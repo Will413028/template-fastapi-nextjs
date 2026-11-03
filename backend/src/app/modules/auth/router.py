@@ -12,14 +12,18 @@ from typing import TYPE_CHECKING
 from fastapi import APIRouter, Response, status
 
 from app.modules.auth.dependencies import Current, CurrentSession, Service
+from app.platform.errors import AppError, Kind
+from app.platform.principal import session_invalid
 from app.web import contract_models as api
-from app.web.access import PUBLIC, SIGNED_IN, SignedIn
+from app.web.access import PUBLIC, SignedIn
 from app.web.origin import current_client
 from app.web.ratelimit import RATE_LIMITED, limit_key
 
 if TYPE_CHECKING:
     from app.modules.auth.service import SessionInfo, User
 
+# Routes match in the order they are declared: a literal path (/users/me, /sessions/current) comes before the
+# template that would also match it (/users/{id}, /sessions/{id}), or that template's handler gets it.
 router = APIRouter(prefix="/api")
 
 
@@ -80,9 +84,22 @@ async def delete_current_session(service: Service, session: CurrentSession) -> R
     return Response(status_code=status.HTTP_204_NO_CONTENT, headers={"Set-Cookie": session.cookie.clear()})
 
 
-@router.get("/users/me", dependencies=[SIGNED_IN])
+@router.get("/users/me")
 async def get_current_user(current: Current) -> api.User:
     return _user(current.user)
+
+
+@router.get("/sessions/current")
+async def get_current_session(service: Service, current: Current) -> api.Session:
+    """getSession for the session the request carries, as /users/me is for the user."""
+    try:
+        session = await service.session(current.principal, current.session_id)
+    except AppError as err:
+        if err.kind is not Kind.NOT_FOUND:
+            raise
+        # revoked or expired since the middleware read it: the request no longer has a session
+        raise session_invalid() from err
+    return _session(session, current.user, current.session_id)
 
 
 @router.get("/users/{id}")
@@ -91,5 +108,5 @@ async def get_user(id: uuid.UUID, service: Service, principal: SignedIn) -> api.
 
 
 @router.get("/sessions/{id}")
-async def get_session(id: uuid.UUID, service: Service, principal: SignedIn, current: Current) -> api.Session:
-    return _session(await service.session(principal, id), current.user, current.session_id)
+async def get_session(id: uuid.UUID, service: Service, current: Current) -> api.Session:
+    return _session(await service.session(current.principal, id), current.user, current.session_id)

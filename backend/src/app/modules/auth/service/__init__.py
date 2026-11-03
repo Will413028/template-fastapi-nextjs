@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Literal
 from app.modules.auth import repository
 from app.modules.auth.service.passwords import PasswordHasher, is_common_password, normalize_password
 from app.platform.errors import AppError, Kind
+from app.platform.principal import Principal, session_invalid
 
 if TYPE_CHECKING:
     import uuid
@@ -27,7 +28,6 @@ if TYPE_CHECKING:
     from sqlalchemy import Row
     from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine
 
-    from app.platform.principal import Principal
 
 type Role = Literal["admin", "user"]
 ROLE_ADMIN: Role = "admin"
@@ -38,7 +38,6 @@ CODE_ACCOUNT_TAKEN = "account_taken"
 CODE_TOO_COMMON = "password_too_common"
 CODE_INVALID_CREDENTIALS = "invalid_credentials"
 CODE_LOGIN_THROTTLED = "login_throttled"
-CODE_SESSION_INVALID = "session_invalid"
 
 # How often a session's last_used_at is written: once a minute is enough for a 1-day idle limit and keeps reads from
 # writing on every request.
@@ -85,11 +84,9 @@ class Authenticated:
     user: User
     session_id: uuid.UUID
 
-
-def session_invalid() -> AppError:
-    """A missing, unknown, expired or revoked session, or a disabled user. The reason is not told apart: the client's
-    remedy is always to sign in."""
-    return AppError(Kind.UNAUTHENTICATED, CODE_SESSION_INVALID, "no valid session")
+    @property
+    def principal(self) -> Principal:
+        return Principal(id=self.user.id, role=self.user.role)
 
 
 def _invalid_credentials() -> AppError:
@@ -162,6 +159,11 @@ class AuthService:
         # verified against when the account does not exist, so an unknown account costs the same hash as a wrong
         # password and the response time does not reveal which it was; made on first use
         self._dummy_hash: str | None = None
+
+    async def start(self) -> None:
+        """Makes the dummy hash before the first request, so the first sign-in for an unknown account costs one hash
+        like every other (the Go version makes it in New); the app's lifespan calls this."""
+        await self._dummy()
 
     def close(self) -> None:
         self._hasher.close()

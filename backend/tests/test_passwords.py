@@ -68,6 +68,8 @@ class SlowArgon2:
         self.release = threading.Event()
         self.release.set()
         self.two_started = threading.Event()
+        # every hash waits, up to a second, until two run at once: the peak then shows the bound, not the timing
+        self.overlap = threading.Event()
 
     def hash(self, password: str) -> str:
         with self.lock:
@@ -76,8 +78,11 @@ class SlowArgon2:
             self.peak = max(self.peak, self.running)
             if self.calls == 2:
                 self.two_started.set()
-        self.release.wait()
-        time.sleep(0.02)
+            if self.running >= 2:  # two at once is what the bound allows
+                self.overlap.set()
+        self.overlap.wait(1)
+        self.release.wait(5)
+        time.sleep(0.005)
         with self.lock:
             self.running -= 1
         return "$argon2id$" + password

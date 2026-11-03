@@ -159,6 +159,10 @@ class Settings:
         elif idle > absolute:
             env.fail(f"SESSION_IDLE ({idle}) must not exceed SESSION_ABSOLUTE ({absolute})")
         cookie_secure = env.parse("COOKIE_SECURE", default=True, parse=_parse_bool)
+        if mode == "prod" and not cookie_secure:
+            # production is always behind HTTPS (Vercel); a cookie without Secure or the __Host- prefix there is a
+            # misconfiguration (.env-example and docs/deploy-vps.md: COOKIE_SECURE MUST be true in production)
+            env.fail("COOKIE_SECURE must be true when MODE=prod")
         env.raise_problems()
         return cls(
             mode=mode,
@@ -278,9 +282,11 @@ class _Env:
         except ValueError:
             port = -1
         if (
-            parts.scheme not in _DEFAULT_PORTS
+            not raw.isascii()  # browsers send a non-ASCII name in Origin as punycode (xn--)
+            or parts.scheme not in _DEFAULT_PORTS
             or not parts.hostname
             or parts.username is not None
+            or parts.netloc.endswith(":")  # a colon with no port: browsers never send one
             or f"{parts.scheme}://{parts.netloc}" != raw.lower()
             or port == -1
         ):

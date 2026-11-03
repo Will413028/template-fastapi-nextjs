@@ -14,9 +14,10 @@ from typing import TYPE_CHECKING, Annotated
 from fastapi import Depends, Request
 from starlette.requests import cookie_parser
 
-from app.modules.auth.service import Authenticated, AuthService, session_invalid
+from app.modules.auth.service import Authenticated, AuthService
 from app.platform.errors import AppError, Kind
-from app.platform.principal import Principal, reset_principal, set_principal
+from app.platform.principal import Principal, reset_principal, session_invalid, set_principal
+from app.web.access import SIGNED_IN
 
 if TYPE_CHECKING:
     from datetime import timedelta
@@ -63,12 +64,13 @@ class Auth:
 
 @dataclass(frozen=True, slots=True)
 class RequestSession:
-    """The session cookie the request carried (valid or not, for sign-in and sign-out), what it authenticated, and
-    the cookie's settings."""
+    """The session cookie the request carried (valid or not, for sign-in and sign-out), what it authenticated, the
+    cookie's settings, and the service the routes call."""
 
     token: str | None
     authenticated: Authenticated | None
     cookie: SessionCookie
+    service: AuthService
 
 
 class AuthenticateMiddleware:
@@ -94,10 +96,10 @@ class AuthenticateMiddleware:
                 if err.kind is not Kind.UNAUTHENTICATED:
                     raise
                 send = self._clearing_cookie(send)
-        scope[_SCOPE_KEY] = RequestSession(token=token, authenticated=authenticated, cookie=self.cookie)
-        user = authenticated.user if authenticated else None
-        principal = Principal(id=user.id, role=user.role) if user else None
-        reset_token = set_principal(principal)
+        scope[_SCOPE_KEY] = RequestSession(
+            token=token, authenticated=authenticated, cookie=self.cookie, service=self.service
+        )
+        reset_token = set_principal(authenticated.principal if authenticated else None)
         try:
             await self.app(scope, receive, send)
         finally:
@@ -135,23 +137,22 @@ def request_session(request: Request) -> RequestSession:
     return found
 
 
-def auth_service(request: Request) -> AuthService:
-    service = request.app.state.auth_service
-    if not isinstance(service, AuthService):
-        msg = "app.main.factory puts the AuthService in app.state.auth_service"
-        raise TypeError(msg)
-    return service
-
-
 CurrentSession = Annotated[RequestSession, Depends(request_session)]
+# SIGNED_IN, the access marker, from inside Current: a route that takes the current user needs a session
+_SignedIn = Annotated[Principal, SIGNED_IN]
 
 
-async def current(session: CurrentSession) -> Authenticated:
-    """The signed-in user with its session. The route still declares SIGNED_IN (app.web.access): this gives it the
-    user, not the access decision."""
-    if session.authenticated is None:
+def auth_service(session: CurrentSession) -> AuthService:
+    return session.service
+
+
+async def current(principal: _SignedIn, session: CurrentSession) -> Authenticated:
+    """The signed-in user with its session; it carries the SIGNED_IN marker, so a route that takes it needs no
+    other."""
+    authenticated = session.authenticated
+    if authenticated is None or authenticated.user.id != principal.id:
         raise session_invalid()
-    return session.authenticated
+    return authenticated
 
 
 Service = Annotated[AuthService, Depends(auth_service)]

@@ -5,8 +5,8 @@ exactly the operations the contract gives `security: []` (app.main.routes): a ne
 not a default. The contract's security already refuses an anonymous call before validation (app.web.contract); the
 marker is the route's own statement of it, and SIGNED_IN gives the route the principal.
 
-    @router.get("/items/{item_id}")
-    async def get_item(item_id: uuid.UUID, principal: SignedIn) -> Item: ...
+    @router.get("/items/{id}")
+    async def get_item(id: uuid.UUID, principal: SignedIn) -> Item: ...
 
     @router.post("/sessions", dependencies=[PUBLIC, RATE_LIMITED])
     async def create_session(...) -> Session: ...
@@ -16,10 +16,7 @@ from typing import Annotated
 
 from fastapi import Depends
 
-from app.platform.errors import AppError, Kind
-from app.platform.principal import Principal, current_principal
-
-CODE_SESSION_INVALID = "session_invalid"
+from app.platform.principal import Principal, current_principal, session_invalid
 
 
 async def public() -> None:
@@ -31,7 +28,7 @@ async def signed_in() -> Principal:
     anonymous request before it gets here, so a missing principal means the route and the contract disagree."""
     principal = current_principal()
     if principal is None:
-        raise AppError(Kind.UNAUTHENTICATED, CODE_SESSION_INVALID, "no valid session")
+        raise session_invalid()
     return principal
 
 

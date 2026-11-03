@@ -9,6 +9,7 @@ import uvicorn
 
 from app.main.factory import Deps, create_app
 from app.main.logs import configure_logging
+from app.main.routes import RouteContractError
 from app.modules.auth.dependencies import Auth, SessionCookie
 from app.modules.auth.service import AuthService
 from app.platform.config import ConfigError, Settings
@@ -40,17 +41,22 @@ def run(environ: Mapping[str, str] | None) -> int:
     configure_logging(settings.mode)
     database = Database.open(settings.database)
     auth = AuthService(database.engine, session_absolute=settings.session_absolute, session_idle=settings.session_idle)
-    app = create_app(
-        Deps(
-            database=database,
-            contract=contract,
-            origin=OriginPolicy(secrets=settings.origin_secrets, required=settings.mode == "prod"),
-            app_origin=settings.app_origin,
-            docs=settings.mode == "dev",
-            limiter=IPLimiter(settings.auth_rate_limit_per_min, time.monotonic),
-            auth=Auth(auth, SessionCookie(name=settings.session_cookie_name, secure=settings.cookie_secure)),
+    try:
+        app = create_app(
+            Deps(
+                database=database,
+                contract=contract,
+                origin=OriginPolicy(secrets=settings.origin_secrets, required=settings.mode == "prod"),
+                app_origin=settings.app_origin,
+                docs=settings.mode == "dev",
+                limiter=IPLimiter(settings.auth_rate_limit_per_min, time.monotonic),
+                auth=Auth(auth, SessionCookie(name=settings.session_cookie_name, secure=settings.cookie_secure)),
+            )
         )
-    )
+    except RouteContractError as err:
+        # nothing has connected or started a thread yet: the engine connects and the hash pool starts on first use
+        sys.stderr.write(f"serve: routes and contract disagree: {err}\n")
+        return 1
     uvicorn.run(
         app,
         host=settings.http.host,

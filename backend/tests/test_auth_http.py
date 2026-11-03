@@ -14,7 +14,7 @@ from apitest import PEER, assert_problem, checked_client, contract
 from app.main.routes import contract_operations
 from app.modules.auth.dependencies import SessionCookie
 from app.web.origin import OriginPolicy
-from authfake import ALICE, SECURE, TOKEN, FakeAuthService, fake_app
+from authfake import ALICE, SECURE, SESSION_ID, TOKEN, FakeAuthService, fake_app
 
 SECRET = "s" * 43
 SAME_ORIGIN = {"Sec-Fetch-Site": "same-origin"}
@@ -128,3 +128,22 @@ def test_session_cookie_attributes() -> None:
     )
     assert SECURE.clear() == "__Host-session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax"
     assert SessionCookie(name="session", secure=False).clear() == "session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax"
+
+
+def test_the_current_session_is_not_taken_for_a_session_id() -> None:
+    # /sessions/current is declared before /sessions/{id}: the other order would route it there and answer 422
+    service = FakeAuthService()
+    with checked_client(fake_app(service), against=contract()) as client:
+        response = client.get("/api/sessions/current", headers={"Cookie": f"__Host-session={TOKEN}"})
+        assert response.status_code == 200, response.text
+        assert (response.json()["id"], response.json()["current"]) == (str(SESSION_ID), True)
+        assert_problem(client.get("/api/sessions/current"), 401, "/problems/unauthenticated")
+
+
+def test_sign_out_from_another_site_is_refused() -> None:
+    service = FakeAuthService()
+    with checked_client(fake_app(service), against=contract()) as client:
+        headers = {"Cookie": f"__Host-session={TOKEN}", "Sec-Fetch-Site": "cross-site"}
+        response = client.delete("/api/sessions/current", headers=headers)
+    assert assert_problem(response, 403, "/problems/forbidden")["code"] == "cross_origin_request"
+    assert service.signed_out == []

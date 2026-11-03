@@ -2,7 +2,7 @@
 
 Fullstack monorepo template with a FastAPI backend and a Next.js frontend. The frontend deploys to Vercel, which rewrites `/api/*` to the backend on one origin; the backend and PostgreSQL run with Docker Compose on a VM and are reached through a Cloudflare Tunnel.
 
-Status: modules in progress. The backend serves `GET /health`, `GET /health/ready` and six of the contract's operations (sign-up, sign-in, sign-out, the current user, reading a user and a session), with the `serve`, `migrate` and `healthcheck` commands; the operations not routed yet are listed in `backend/src/app/main/routes.py` `UNIMPLEMENTED`, and each module adds its own.
+Status: modules in progress. The backend serves `GET /health`, `GET /health/ready` and seven of the contract's operations (sign-up, sign-in, sign-out, the current user and session, reading a user and a session), with the `serve`, `migrate` and `healthcheck` commands; the operations not routed yet are listed in `backend/src/app/main/routes.py` `UNIMPLEMENTED`, and each module adds its own.
 
 ## Verification
 

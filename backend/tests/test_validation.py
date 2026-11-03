@@ -13,6 +13,7 @@ from apitest import (
     CONTRACT_PATH,
     LOOPBACK,
     PEER,
+    TEST_CONTRACT_PATH,
     assert_problem,
     bare_app,
     call_asgi,
@@ -22,9 +23,12 @@ from apitest import (
     stub_app,
 )
 from app.main.factory import create_app
+from app.web.contract import Contract, ContractError, ecma_regex
 from app.web.validation import MAX_BODY_BYTES
 
 if TYPE_CHECKING:
+    import pathlib
+
     from starlette.types import Message
 
 WIDGET_ID = "019a0f3e-7c4b-7d2a-9b1e-3f5a6c7d8e9f"
@@ -284,3 +288,38 @@ def test_binding_failure_on_a_missing_value_is_required() -> None:
         response = client.get("/api/widgets")
     errors = assert_problem(response, 422, "/problems/validation")["errors"]
     assert errors == [{"pointer": "/limit", "code": "required", "detail": "value is required"}]
+
+
+@pytest.mark.parametrize(
+    ("pattern", "value", "matches"),
+    [
+        (r"^\S+$", "a\u3000b", False),  # ECMA's \s includes Unicode spaces such as U+3000
+        (r"^\S+$", "ab", True),
+        (r"^[\s]$", "\u00a0", True),
+        (r"^.$", "\r", False),  # ECMA's . excludes line terminators
+        (r"^[.]$", ".", True),
+        (r"^\d+$", "\u0663", False),  # \d is ASCII in ECMA (U+0663 is an Arabic-Indic digit)
+    ],
+)
+def test_patterns_have_their_ecma_meaning(pattern: str, value: str, *, matches: bool) -> None:
+    assert bool(ecma_regex(pattern).search(value)) is matches
+
+
+@pytest.mark.parametrize(
+    ("pattern", "message"),
+    [
+        # Python's re cannot compile ECMA's named groups: the OpenAPI validator refuses the contract
+        (r"(?<name>a)", "properties"),
+        # re can, but the translation cannot give it ECMA's meaning
+        (r"[\S]", r"\\S inside a character class is not supported"),
+    ],
+)
+def test_a_pattern_without_its_ecma_meaning_fails_at_load(tmp_path: pathlib.Path, pattern: str, message: str) -> None:
+    # at startup, not on the first request that reaches the pattern
+    text = TEST_CONTRACT_PATH.read_text(encoding="utf-8").replace(
+        'pattern: "^[a-z]+$"', f"pattern: {json.dumps(pattern)}"
+    )
+    changed = tmp_path / "openapi.yaml"
+    changed.write_text(text, encoding="utf-8")
+    with pytest.raises(ContractError, match=message):
+        Contract.load(changed)

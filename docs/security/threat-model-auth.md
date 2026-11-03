@@ -46,20 +46,20 @@
 | 從同一位址對多個帳號噴灑密碼 | `createUser`、`createSession` 的 route 掛 `RATE_LIMITED`（`auth/router.py`）：每 IP token bucket，預設每分鐘 5 次，IPv6 以 /64 為鍵（`web/ratelimit.py`）。測試：`test_sign_up_and_sign_in_are_limited_per_address`（`test_auth_db.py`）、`test_ratelimit.py` | 單一副本內已緩解；見「已接受的風險」 |
 | 弱密碼或外洩過的密碼 | 15 到 128 字元（契約）、NFKC 正規化、內建常見密碼清單（`auth/service/passwords.py`、`auth/service/__init__.py`）。測試：`test_create_user_password_too_short`、`test_create_user_common_password`、`test_passwords_are_compared_after_nfkc`（`test_auth_db.py`）、`test_common_password_list`（`test_passwords.py`）。可選的 HIBP 檢查仍是 Go 版（`TestCreateUserBreachedPassword`），步驟 5 移植 | 已緩解（HIBP 除外）。HIBP 預設關閉，查詢失敗時放行：接受，外部服務故障不該擋住註冊 |
 | 猜 session token | `secrets.token_urlsafe(32)` 產生的 256-bit token（`auth/service/__init__.py`）。測試：`test_create_user_sets_the_session_cookie` | 已緩解 |
-| Session fixation | 每次登入都發新 token，並刪掉請求帶來的舊 token。測試：`TestCreateSessionIssuesNewToken` | 已緩解 |
-| 登出、停用或過期後重用 token | 每個請求都重讀 session 與使用者；idle 預設 1 天、絕對期限 7 天；停用會刪掉該使用者所有 session。測試：`TestSessionIdleExpiry`、`TestSessionAbsoluteExpiry`、`TestDeleteCurrentSessionRevokes`、`TestDeleteAllSessions`、`TestAdminDisablesUserRevokesSessions`、`TestMeDisabledAccount`、`TestMeAfterUserDeleted` | 已緩解 |
+| Session fixation | 每次登入都發新 token，並刪掉請求帶來的舊 token。測試：`test_sign_in_issues_a_new_token_and_ends_the_one_the_request_carried` | 已緩解 |
+| 登出、停用或過期後重用 token | 每個請求都重讀 session 與使用者；idle 預設 1 天、絕對期限 7 天；停用會刪掉該使用者所有 session。測試：`test_session_idle_expiry`、`test_session_absolute_expiry`、`test_sign_out_ends_only_that_session`、`test_me_for_a_disabled_or_deleted_account`（`test_auth_db.py`）；全部登出與停用帳號仍是 Go 版（`TestDeleteAllSessions`、`TestAdminDisablesUserRevokesSessions`），步驟 3c、5 移植 | 已緩解（全部登出與停用在 3c、5 之前沒有 route） |
 | 用 header 代替 cookie 送 token | 只讀 cookie（`auth/dependencies.py` `AuthenticateMiddleware`）；契約 security 的檢查看這個 middleware 驗過的 principal，不看 cookie 存不存在（`web/contract.py`）。測試：`test_only_the_cookie_authenticates`、`test_an_invalid_cookie_with_an_invalid_body_is_unauthenticated_not_invalid`（`test_auth_http.py`） | 已緩解 |
 | Client 偽造位址規避每 IP 限流 | 只在請求帶相符的 `X-Origin-Secret` 時採信 `X-Real-IP`，其他一律用連線來源位址；`X-Forwarded-For` 從不採信（`backend/src/app/web/origin.py`）。測試：`test_rate_limit_ignores_x_real_ip_without_the_secret`、`test_rate_limit_per_ip_behind_a_verified_origin` | 來源密鑰沒外洩時已緩解；正式路徑上 `X-Real-IP` 是否真是使用者位址列在部署文件的第一次部署檢查清單 |
-| 被停用的帳號登入 | 回應與密碼錯誤相同的 `invalid_credentials`。測試：`TestCreateSessionDisabledAccount` | 已緩解 |
+| 被停用的帳號登入 | 回應與密碼錯誤相同的 `invalid_credentials`。測試：`test_a_disabled_account_signs_in_like_a_wrong_password` | 已緩解 |
 
 ## Tampering（竄改）
 
 | 威脅 | 程式碼裡的緩解 | 狀態 |
 |---|---|---|
 | 跨站請求偽造（CSRF） | `web/cross_origin.py` 包住整個 app：`Sec-Fetch-Site` 不是 `same-origin`／`none` 就 403；沒有它時 `Origin` 必須等於 `APP_ORIGIN`（D6：backend 收到的 `Host` 不是瀏覽器看到的網域）；cookie 是 `SameSite=Lax`（`auth/dependencies.py` `SessionCookie`）。測試：`test_cross_origin_post_rejected`、`test_same_origin_or_non_browser_post_allowed`（`test_cross_origin.py`） | 已緩解。`Sec-Fetch-Site` 與 `Origin` 都沒帶的請求會放行；瀏覽器在會改變狀態的請求上都會帶。兩個 header 經 Vercel 與 Cloudflare 能否原樣到達 backend 未驗證，列在部署文件的第一次部署檢查清單（計畫前提段） |
-| 註冊時自己指定角色 | 請求 schema 拒絕未定義的欄位；service 一律寫入 `user`。測試：`TestValidationCodes`（`additional_property`）、`TestCreateUserSetsSessionCookie`（角色是 `user`） | 已緩解 |
-| 同一帳號名稱同時註冊 | 由唯一索引決定，恰好一個成功，其餘 409。測試：`TestCreateUserConcurrentSameAccount` | 已緩解 |
-| Token 走明文 http | 除非 `COOKIE_SECURE=false`，cookie 帶 `Secure` 與 `__Host-` 前綴；Caddy 送 HSTS。測試：`TestCookieNameFollowsSecure`、`TestConfigDefaults` | `SITE_ADDRESS` 是網域時已緩解；`:80` 只供本機使用 |
+| 註冊時自己指定角色 | 請求 schema 拒絕未定義的欄位；service 一律寫入 `user`。測試：`test_validation.py` 的 `additional_property` 案例、`test_create_user_sets_the_session_cookie`（角色是 `user`） | 已緩解 |
+| 同一帳號名稱同時註冊 | 由唯一索引決定，恰好一個成功，其餘 409。測試：`test_concurrent_sign_ups_for_one_account_get_it_once` | 已緩解 |
+| Token 走明文 http | 除非 `COOKIE_SECURE=false`，cookie 帶 `Secure` 與 `__Host-` 前綴；`MODE=prod` 下設 `COOKIE_SECURE=false` 拒絕啟動（`backend/src/app/platform/config.py`）。測試：`test_cookie_name_follows_secure`、`test_serve_defaults_are_production`、`test_invalid_values_stop_startup`（`test_config.py`）。HSTS 原本由 Caddy 送，D6 之後的負責者在步驟 7 改寫 | cookie 已緩解；HSTS 待步驟 7 |
 | 在日誌裡偽造 request id | backend 一律自己產生 UUIDv7，不採信傳入的 `X-Request-ID`；文字日誌的值含空白、引號或換行時加引號（`backend/src/app/main/logs.py`）。測試：`test_request_id_from_the_client_is_replaced`、`test_text_log_values_cannot_forge_a_line` | 已緩解 |
 | SQL injection | 查詢是 SQLAlchemy Core 的運算式，值一律是 bound parameter（`auth/repository.py`）；字串拼接的 SQL 會被 ruff S608 擋（`backend/ruff.toml` 的 `select = ["ALL"]`）；router 不能 import sqlalchemy（`backend/.importlinter` `sql-below-the-router`） | 已緩解 |
 | 登入後被導向外站 | `callbackUrl` 用 URL 解析後必須與本站同源，`/\evil.example`、`/\t/evil.example` 這類看起來像本站路徑的值也會被擋（`frontend/src/features/auth/callback.ts`）。測試：`callback.test.ts` | 已緩解 |
@@ -77,10 +77,10 @@
 |---|---|---|
 | 資料庫外洩導致 session 被盜用 | 只存 token 的 SHA-256，schema 用 CHECK 限制 32 byte。測試：`TestSchemaChecks` | 已緩解 |
 | 資料庫外洩導致密碼外洩 | argon2id m=19 MiB、t=2、p=1、16 byte salt，argon2-cffi 比對（`auth/service/passwords.py`）。測試：`test_hash_uses_owasp_argon2id_and_verifies` | 已緩解 |
-| 密碼或 token 寫進日誌 | 註冊、登入成功與失敗、驗證錯誤、格式錯誤的 body、未知的 token、登出、HIBP 查詢失敗，全部跑一遍後檢查日誌（含 debug 級）。測試：`TestCredentialsNeverLogged` | 已緩解 |
-| Script 讀到 token（XSS） | cookie 是 `HttpOnly`；頁面有 nonce 型 CSP，`connect-src 'self'`、`frame-ancestors 'none'`（`frontend/src/proxy.ts`）。測試：`TestCreateUserSetsSessionCookie`、前端 `proxy.test.ts` | build 出來的版本已緩解；`next dev` 不設 CSP |
-| 登入時從回應或時間差列舉帳號 | 不存在的帳號也跑一次 dummy hash，回同樣的 problem；節流也套用在不存在的帳號名。測試：`TestCreateSessionUnknownAccountRunsHash`、`TestLoginThrottlePerAccount` | 已緩解 |
-| 註冊時列舉帳號 | 帳號已存在回 `409 account_taken`。測試：`TestCreateUserDuplicate` | 接受：用帳號名而不是 email，無法隱藏名稱已被使用（ADR D6）；註冊有每 IP 限流 |
+| 密碼或 token 寫進日誌 | 註冊、登入成功與失敗、驗證錯誤、格式錯誤的 body、未知的 token、登出、HIBP 查詢失敗，全部跑一遍後檢查日誌（含 debug 級）。測試：`test_credentials_never_reach_the_log`（HIBP 查詢失敗那一步在步驟 5 移植時補回） | 已緩解 |
+| Script 讀到 token（XSS） | cookie 是 `HttpOnly`；頁面有 nonce 型 CSP，`connect-src 'self'`、`frame-ancestors 'none'`（`frontend/src/proxy.ts`）。測試：`test_create_user_sets_the_session_cookie`、`test_session_cookie_attributes`、前端 `proxy.test.ts` | build 出來的版本已緩解；`next dev` 不設 CSP |
+| 登入時從回應或時間差列舉帳號 | 不存在的帳號也跑一次 dummy hash，回同樣的 problem；節流也套用在不存在的帳號名。dummy hash 在啟動時就算好，第一次也不多一次雜湊。測試：`test_an_unknown_account_costs_a_hash_and_answers_like_a_wrong_password`、`test_sign_in_is_throttled_per_account_name_whether_or_not_it_exists` | 已緩解 |
+| 註冊時列舉帳號 | 帳號已存在回 `409 account_taken`。測試：`test_create_user_duplicate` | 接受：用帳號名而不是 email，無法隱藏名稱已被使用（ADR D6）；註冊有每 IP 限流 |
 | 讀到別人的使用者資料或 session | 非擁有者一律 404，與不存在的一樣（`auth/service/__init__.py` `user`、`session`，`auth/repository.py` `get_user_session`）。測試：`test_another_users_account_is_not_found_like_a_missing_one`、`test_get_session`（`test_auth_db.py`）；撤銷別人的 session 與列使用者仍是 Go 版（`TestDeleteOtherUsersSession`、`TestNonAdminCannotListUsers`），步驟 3c、5 移植 | 讀取已緩解 |
 | 內部錯誤洩漏細節 | 非預期錯誤變成不帶細節的 500，細節只進日誌（`httpapi/problem.go`）。測試：`TestUnhandledErrorHidden` | 已緩解 |
 | 密碼送到 HIBP | 只送 SHA-1 的前 5 個 hex 字元，帶 `Add-Padding`（`hibp.go`）。測試：`TestBreached` | 已緩解。HIBP 網路錯誤的訊息含請求網址，也就是同樣的 5 個字元，會寫進本機日誌（推論自 `net/http` 的 `*url.Error`）：接受，內容與送出去的相同 |
@@ -104,7 +104,7 @@
 |---|---|---|
 | 一般使用者呼叫 admin 操作 | 每個 `/api` route 剛好一個存取標記（`web/access.py`）；缺標記、多標記、「公開」與契約的 `security: []` 不一致、route 與契約的 operation 對不上（含路徑參數名稱），server 啟動就失敗（`backend/src/app/main/routes.py`）。契約 security 在驗證 body 之前就拒絕沒登入的請求。測試：`test_routes.py`、`test_every_operation_needs_a_session_unless_the_contract_says_public`（`test_auth_http.py`，逐一呼叫契約裡每個 operation，沒登入要 401）。admin 角色的標記與 403（Go 版 `requireRole`、`TestOperationAccessEnforced` 的 admin 部分）在步驟 5 移植；在那之前沒有 admin 操作的 route | 存取標記已緩解；角色檢查在步驟 5 之前沒有需要保護的 route |
 | 角色變更後仍用舊角色 | 每個請求都從資料庫讀角色。目前沒有改角色或改密碼的 operation；後端規則 8 要求這類功能撤銷該使用者所有 session（`backend/AGENTS.md`） | 已緩解 |
-| 匿名請求到達受保護的 handler | 契約宣告 security，validator 在參數與 body 之前檢查。測試：`TestUnauthenticatedBeforeValidation`、`TestOperationAccessEnforced` | 已緩解 |
+| 匿名請求到達受保護的 handler | 契約宣告 security，validator 在參數與 body 之前檢查。認證 middleware 在契約驗證之前設定 principal。測試：`test_an_invalid_cookie_with_an_invalid_body_is_unauthenticated_not_invalid`、`test_every_operation_needs_a_session_unless_the_contract_says_public` | 已緩解 |
 | backend 被入侵後改 schema | app 角色只有 DML。測試：`TestAppRoleCannotDDL` | 已緩解；所有表的資料仍可寫入，見「已接受的風險」 |
 | 偷到或忘了登出的 session 被拿來刪除帳號 | 刪除自己的帳號要求 session 在 10 分鐘內登入過（`auth.ReauthenticateWithin`），前端先用密碼重新登入再刪除。測試：`TestDeleteCurrentUser`、`delete-account.test.tsx` | 已緩解 |
 | 透過 API 建立 admin | 註冊一律寫 `user`；`EnsureAdmin` 只在 `seed-admin` 呼叫。測試：`TestSeedAdminCreatesAdmin` | 已緩解 |

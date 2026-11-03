@@ -38,7 +38,6 @@ UNIMPLEMENTED: frozenset[tuple[str, str]] = frozenset(
         # step 3c
         ("GET", "/sessions"),
         ("DELETE", "/sessions"),
-        ("GET", "/sessions/current"),
         ("DELETE", "/sessions/{id}"),
         ("DELETE", "/users/me"),
         # step 4

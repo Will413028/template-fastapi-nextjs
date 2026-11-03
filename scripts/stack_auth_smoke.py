@@ -74,10 +74,13 @@ def main() -> None:
     expect("read the signed-in user", status, 200)
     if not isinstance(user, dict) or user.get("account") != account:
         sys.exit(f"read the signed-in user: got {user!r}")
+    signed_out = dict(client.cookies)
     status, _, _ = client.call("DELETE", "/sessions/current")
     expect("sign out", status, 204)
+    # with the cookie the browser had before signing out: the session must be gone, not only the cookie
+    client.cookies = signed_out
     status, headers, _ = client.call("GET", "/users/me", headers={"X-Request-ID": "client-chosen"})
-    expect("read after sign-out", status, 401)
+    expect("read with the signed-out session", status, 401)
     # the backend makes every request id itself (D6): a client's own must not reach the logs or the response
     request_id = headers.get("x-request-id", "")
     if not request_id or request_id == "client-chosen":

@@ -12,7 +12,9 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from apitest import contract, deps
 from app.main.factory import create_app
 from app.modules.auth.dependencies import Auth, SessionCookie
-from app.modules.auth.service import Authenticated, AuthService, User, session_invalid
+from app.modules.auth.service import Authenticated, AuthService, SessionInfo, User
+from app.platform.errors import AppError, Kind
+from app.platform.principal import Principal, session_invalid
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
@@ -51,6 +53,13 @@ class FakeAuthService(AuthService):
     @override
     async def sign_out(self, token: str | None, *, user_id: uuid.UUID | None) -> None:
         self.signed_out.append(token)
+
+    @override
+    async def session(self, caller: Principal, session_id: uuid.UUID) -> SessionInfo:
+        if (caller.id, session_id) != (ALICE.id, SESSION_ID):
+            raise AppError(Kind.NOT_FOUND, "", "session not found")
+        at = ALICE.created_at
+        return SessionInfo(id=SESSION_ID, created_at=at, last_used_at=at, expires_at=at + timedelta(days=7))
 
 
 def fake_app(

@@ -368,7 +368,7 @@ class AuthService:
     async def _keep_an_admin(self, conn: AsyncConnection, user_id: uuid.UUID) -> None:
         """Refuses when user_id is the only enabled admin. The enabled admins stay locked until conn's transaction
         ends, so two admins deleting themselves at once cannot both pass."""
-        if await repository.lock_enabled_admins(conn) == [user_id]:
+        if await repository.lock_enabled_admins(conn) == [user_id, user_id]:
             raise _last_admin()
 
     def _live(self, caller: Principal) -> repository.Live:

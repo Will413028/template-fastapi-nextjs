@@ -72,7 +72,7 @@
   - 依賴套件（2026-11-03 Will 核准；PyPI 發佈日都超過 7 天）：`sqlalchemy[asyncio]==2.1.6`、`alembic==1.20.1`、`asyncpg==0.32.0`、`openapi-core==0.23.1`、`testcontainers==4.15.0`（dev）。`openapi-core` 不帶 `[starlette]`：那個 extra 限制 `starlette<1.1.0`，實測會把 starlette 從 1.10.0 降到 1.0.1，而 1.0.1 在 OSV 有 8 筆漏洞（例如 GHSA-jp82-jpqv-5vv3），osv-scanner 會擋；改在 `app.web` 寫一個實作 openapi-core Request 協定的 adapter。`pydantic-settings==2.16.1` 核准了但不裝，理由見 2a 的設定。
   - 消費端（三個子步驟共用）：`rg -n 'problem|cursor|ratelimit' backend/` 與前端 `rg -n 'code' frontend/src/lib/api`。
   - 不能動：problem 的 `type`／`code` 值必須和 Go 版 `backend/internal/httpapi/problem.go` 相同。
-- [ ] **2a. 資料庫**（被擋於：步驟 1、D2、D3）
+- [x] **2a. 資料庫**（被擋於：步驟 1、D2、D3）
   - 範圍：
     - 設定：`app.platform.config` 照 Go 版 `config.go` 加上 serve 的 `DATABASE_URL`、`DATABASE_PASSWORD`、`DATABASE_PLAINTEXT`、`DB_MAX_CONNS`、`DB_STATEMENT_TIMEOUT`，與 migrate 的 `MIGRATE_DATABASE_URL`、`MIGRATE_DATABASE_PASSWORD`、`DB_APP_USER`：任何 `KEY` 都可以改給 `KEY_FILE`，兩者都設是錯誤；URL 不得含密碼、不得帶 driver 後綴；不是 `sslmode=verify-full` 時必須有 `DATABASE_PLAINTEXT=same-host`；所有問題收集後一次回報。session、cookie、限流的設定在用到它們的步驟才加。繼續用標準函式庫、不用 pydantic-settings：上面這些規則它都不提供，要自己寫，它只省掉型別轉換；但它會讓每幾秒跑一次的 `app healthcheck` 多載入 pydantic（`.importlinter` 的 `light-healthcheck` 合約就是為了避免這種事）。
     - DB 連線：`app.platform.db`，SQLAlchemy async engine 加 asyncpg，密碼不進 URL；每條連線設 `statement_timeout`、`lock_timeout` 3s、`idle_in_transaction_session_timeout` 30s、`TimeZone=UTC`（Go 版 `db.go`）；`sslmode=verify-full` 時驗證伺服器憑證。共用的 `Base` 也放這裡。
@@ -181,7 +181,7 @@
 | 0 spike | 完成 | (a)(b)(c) 三項實測，輸出與重跑方式在 `2026-11-03-fastapi-template/spike.md` | 無 | 未提交（repo 在步驟 1 才 `git init`） |
 | 0b 部署 spike | 取消 | | template 不實際部署（2026-11-03 Will），改成部署文件的檢查清單 | |
 | 1 walking skeleton | 完成 | 本機：`make -C backend check`（14 測試、7 條 import-linter 合約、pyright strict 0 錯誤）、scripts 單元測試、actionlint／zizmor／gitleaks／osv-scanner；mutation：`/health` 回 500 時 `up --wait` 與 `app healthcheck` 失敗、加 `ports` 時 ports 檢查失敗、加 `# noqa` 時 suppression 鎖失敗、Action 改 tag 時 zizmor 失敗、8 種違反分層的 import 都被合約擋下。CI：run `41579063830` 五個 job 全綠、Security run `41579063799` 全綠 | stack job 的 `/health` 500 mutation 只在本機跑過（同一組 compose 指令），沒有推到 CI；之後本機不再起 compose（Will 2026-11-03） | `3643a05`、`ec63840` |
-| 2a 資料庫 | 進行中 | | | |
+| 2a 資料庫 | 完成 | 本機：`make -C backend check`（63 個非 db 測試、7 條 import-linter 合約、pyright strict 0 錯誤）、scripts 單元測試 27 個、actionlint／zizmor／osv-scanner／gitleaks／hadolint、`docker compose config` 的 secrets 與 ports 檢查；本機 mutation 7 項（plaintext 規則、URL 密碼、healthcheck 路徑、ready 不 ping、FK 不 cascade、加 `downgrade()`、模組沒登記）各讓一個測試失敗，light-healthcheck 合約擋下 config 匯入 sqlalchemy。CI：run `41592990891` 五個 job 全綠（10 個 db 測試、`make migration` 產生空 revision、migrate exit 0 並在 baseline、app 角色 `CREATE TABLE intruder` 被拒）。CI mutation（PR #10，run `41593118433`、`41593260148`）：baseline 拿掉 `items_title_check` 讓兩個 catalog 比對與不可修改檢查失敗（`alembic check` 照預期抓不到）；模型加欄位不加 revision 讓 `alembic check` 失敗；拿掉 append-only 的 REVOKE 讓 append-only 測試失敗；app 角色可在 `public` 建表讓 db 測試與 stack 的 intruder 檢查失敗；`alembic_version` 搬回 `public` 讓 catalog 比對與 migrate 測試失敗。design review 與 `/code-review` 各一輪，處理見 2a 的「執行中的決定與偏離」 | db 測試與 `make migration` 沒在本機跑（本機不起容器，2026-11-03 Will）；squawk 是否移植待 Will 決定 | `43cda9a`、`03a161e`、`f72dfde`、`c7eeb4b`、`b84ff93`、`0c545a4`、`3efb7af`、`41a03c4`、`84905f8`、`c78a926`、`353ef8e` |
 | 2b HTTP 共用層 | 未開始 | | | |
 | 2c D6 邊界與限流 | 未開始 | | | |
 | 3 auth | 未開始 | | | |

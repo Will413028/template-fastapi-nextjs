@@ -28,14 +28,14 @@
 | PATCH | `/items/{id}` | `updateItem` | 改寫 | 4 | 未開始 |
 | DELETE | `/items/{id}` | `deleteItem` | 改寫 | 4 | 未開始 |
 | GET | `/health` | （非契約） | 改寫 | 1 | 完成 |
-| GET | `/health/ready` | （非契約） | 改寫 | 2 | 未開始 |
+| GET | `/health/ready` | （非契約） | 改寫 | 2a、2c | 進行中（2a 完成 DB ping 與 503 problem；只接受 loopback 在 2c） |
 
 ## CLI 子命令（來源：`backend/cmd/app/main.go:64-72`）
 
 | 子命令 | 去向 | 步驟 | 狀態 |
 |---|---|---|---|
 | `serve` | 改寫（uvicorn 啟動） | 1 | 完成 |
-| `migrate` | 改寫成 Alembic（D2） | 2 | 未開始 |
+| `migrate` | 改寫成 Alembic（D2） | 2a | 完成 |
 | `seed-admin` | 改寫 | 3 | 未開始 |
 | `recover-admin` | 改寫 | 5 | 未開始 |
 | `healthcheck` | 改寫（容器 healthcheck 用） | 1 | 完成 |
@@ -50,7 +50,7 @@
 | `SECURITY.md`、`LICENSE` | 保留（`SECURITY.md` 網址換 repo 名） | 1 | 完成 |
 | `bin/hadolint` | 保留 | 1 | 完成 |
 | `.claude/`（openspec 指令、`add-crud`、`add-module` 指南） | 步驟 1 不照搬：內容是 Go 的寫法。第一個 module 做完後，依 D7 寫 Python 版的 `add-module` 指南（給 agent 照著做的範例）；openspec 指令不帶過來 | 4 | 未開始 |
-| `deploy/postgres/`（initdb 角色腳本） | 保留 | 1、2 | 進行中 |
+| `deploy/postgres/`（initdb 角色腳本） | 保留 | 1、2a | 完成 |
 | `deploy/Caddyfile`、compose 的 `caddy` 服務、`docker-compose.dev.yml` 的 caddy override | 刪除（D6：2026-11-03 Will 決定拿掉 Caddy） | 1 | 完成 |
 | `docker-compose.yml` 的 `frontend` 服務、固定 IP 與 ipam | 刪除（D6：前端在 Vercel；固定 IP 原本給 `TRUSTED_PROXIES`）；frontend 服務改由 `docker-compose.dev.yml` 完整定義 | 1 | 完成 |
 | compose 的 `cloudflared` 服務 | 新增（D6：`profiles: [tunnel]`，Cloudflare 後台管理，`--token-file` 讀 compose secret；路由規則在後台，寫進部署文件；image 釘 digest） | 1 | 完成 |
@@ -73,7 +73,7 @@
 | `scripts/check_commit_policy.py`、`check_locks.py`、`quality-locks.json` | 保留；`check_locks.py` 加 Python 的 suppression 與 pytest 報告 | 1 | 完成 |
 | `scripts/rename.py` | 改寫 module path 部分（Python 沒有 module path） | 6 | 未開始 |
 | `scripts/tool_versions.py` | 改寫 Go 工具清單為 Python 工具 | 1 | 完成 |
-| `docs/rules/`、`docs/security/`、`docs/privacy/`、`docs/deploy-vps.md` | 保留，Go 專屬段改寫 | 2、7 | 未開始 |
+| `docs/rules/`、`docs/security/`、`docs/privacy/`、`docs/deploy-vps.md` | 保留，Go 專屬段改寫 | 2、3、7 | 進行中（2a 改寫 `database-design.md` 的 schema、Migration、連線、角色；查詢與 Transaction 在步驟 3） |
 | `docs/adr/2026-10-22-account-abuse-and-lifecycle.md` | 保留（與語言無關的決定） | 1 | 完成 |
 | `docs/adr/2026-10-18-api-and-auth-baseline.md` | 保留；D1、D6（IP 來源）、D8 的決定與 Rationale，以及約束、Expected Outcome、Revocation Triggers 中的 Caddy 部分，由本 repo 的 D6 ADR 取代並標修訂；第 13 行與 Related 段指向 `2026-10-18-go-backend.md` 的連結改指本 repo 的 ADR | 1、7 | 進行中 |
 | `docs/adr/2026-10-18-go-backend.md` | 刪除（Go 專屬；以本計畫的 D1–D3 ADR 取代） | 7 | 未開始 |
@@ -88,13 +88,13 @@
 | 檔案與位置 | 內容 | 去向 | 步驟 | 狀態 |
 |---|---|---|---|---|
 | `.github/workflows/ci.yml:143` | `intruder` 檢查寫死 DB 與角色名 | 換成本 repo 佔位名稱 | 1 | 完成 |
-| `.github/workflows/ci.yml` stack job | 用 image 內附 Atlas 套用 migration | 改成 Alembic（D2） | 2 | 未開始 |
+| `.github/workflows/ci.yml` stack job | 用 image 內附 Atlas 套用 migration | 改成 Alembic（D2） | 2a | 完成 |
 | `.github/workflows/ci.yml:84-101` rename job | setup-go、`go vet`、module path 檢查 | 改成 Python | 6 | 未開始 |
 | `.github/workflows/ci.yml` backend job | Go 工具鏈 | 改成 Python | 1 | 完成 |
 | `.github/workflows/security.yml:12` | 註解寫死 `Will413028/template-go-nextjs` | 換 repo 名 | 1 | 完成 |
-| 根目錄 `Makefile` 的 `migration`、`generate-migration`、`seed`、`recover-admin` | 呼叫 Go 後端子命令 | 改成 Python 子命令 | 2、3、5 | 未開始 |
+| 根目錄 `Makefile` 的 `migration`、`generate-migration`、`seed`、`recover-admin` | 呼叫 Go 後端子命令 | 改成 Python 子命令 | 2a、3、5 | 進行中（`migration`、`generate-migration` 在 2a 完成） |
 | `scripts/check_commit_policy.py:27` | 寫死 `backend/.golangci.yml` | 改成 Python lint 設定檔 | 1 | 完成 |
 | `scripts/check_locks.py:25`、`--go-test-report` | Go suppression 正規式與報告格式 | 改成 Python | 1 | 完成 |
 | `lefthook.yml` backend 段 | gofmt、golangci-lint | 改成 ruff、pyright | 1 | 完成 |
-| `backend/Dockerfile` | Go build 與 Atlas | 改寫（Python image，不含 Atlas） | 1、2 | 進行中 |
-| `backend/Makefile` 的 `drift`、`squawk`、`migrations-immutable`、`atlas-age`、`sqlc`、`sqlc-diff` | Atlas 與 sqlc 的檢查 | 換成 Alembic 對應檢查或刪除（D2、D3） | 2 | 未開始 |
+| `backend/Dockerfile` | Go build 與 Atlas | 改寫（Python image，不含 Atlas） | 1、2a | 完成 |
+| `backend/Makefile` 的 `drift`、`squawk`、`migrations-immutable`、`atlas-age`、`sqlc`、`sqlc-diff` | Atlas 與 sqlc 的檢查 | 換成 Alembic 對應檢查或刪除（D2、D3） | 2a | 完成（drift 換成 catalog 比對與 `alembic check`、`migrations-immutable` 換成 Python 腳本；`atlas-age`、`sqlc`、`sqlc-diff` 刪除；squawk 待 Will 決定） |

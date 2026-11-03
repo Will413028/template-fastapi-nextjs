@@ -75,6 +75,7 @@
   - 驗收：`make -C backend check` 在本機綠燈；CI 的 backend、frontend、policy、stack job 綠燈，stack job 用 `docker compose exec` 跑 healthcheck 成功（不帶 `--profile tunnel`，因為 CI 沒有 tunnel token）；mutation：讓 `/health` 回 500，stack job 要失敗；mutation：給 backend 加一個 `ports`，「沒有服務發佈 port」檢查要失敗；mutation：給 cloudflared 加一個 `ports`，同一個檢查也要失敗。未涵蓋：`cloudflared` 在 CI 不會啟動，正式路徑由步驟 0b 和部署文件的手動驗證涵蓋；dev 走 `next dev` rewrite、正式走 Vercel，兩者不是同一套 proxy（D6 已接受的代價）。
   - 需要人做的事：無（建 repo 是可逆的）。
 - [ ] **2. 共用平台**（被擋於：步驟 1、步驟 0b、D2、D3）
+  - 資料庫測試（testcontainers）標成 pytest marker `db`；本機的 `make check` 與 lefthook pre-push 跑 `-m "not db"`，CI 的 backend job 跑全部，並檢查 `db` 測試真的有執行（`check_locks.py` 的測試數）。原因：本機不起 Postgres 容器（2026-11-03 Will，本機負載高）。
   - D6 新增的範圍：
     - 來源密鑰 middleware：`/api/*` 請求的 `X-Origin-Secret` 不符就回 403 problem，`type` 用既有的 `/problems/forbidden`、不帶 `code`（契約的 code 清單不變）；先轉成 bytes 再用 `hmac.compare_digest` 比對，非 ASCII 的 header 直接視為不符；`ORIGIN_SECRET` 可以放兩個值（逗號分隔，目前值與上一個值），輪換時新舊並存，啟動時有空項目就拒絕啟動；`MODE=prod` 沒設定就拒絕啟動。`MODE=dev` 時，沒帶 header 的請求放行（client IP 用連線來源位址，不採信 `X-Real-IP`），帶了但不符一律 403（2026-11-03 Will，因為 `next dev` 的 rewrite 帶不上 header）。`/health`、`/health/ready` 不檢查密鑰，但只接受來自 loopback 的請求（容器內的 `app healthcheck`），其他來源回 404，不依賴 tunnel 的路由規則（2026-11-03 Will）。
     - client IP 只在密鑰相符時取 `X-Real-IP`，否則用連線來源位址；request id 一律由 backend 產生，不信任傳入值；`Cache-Control: no-store` 沿用 Go 版 `securityHeaders`（`middleware.go:99`），external rewrite 的快取預設因此不會生效。

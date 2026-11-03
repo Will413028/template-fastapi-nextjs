@@ -33,6 +33,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# How often serve deletes expired sessions and stale sign-in throttles (AuthService.cleanup). One task in the one
+# uvicorn process: the stack runs one backend replica (plan D6); more would only repeat idempotent deletes.
+CLEANUP_EVERY_SECONDS = 3600.0
+
 # Below app healthcheck's 2 s client timeout: a pool exhausted by real requests answers 503 instead of hanging.
 READY_TIMEOUT_SECONDS = 1.0
 
@@ -66,6 +70,24 @@ class Deps:
     # checked against the contract (app.main.routes). Without them, as in tests of the HTTP layer against a test
     # contract, nothing authenticates and every operation that declares security is refused.
     auth: Auth | None = None
+    cleanup_every: float = CLEANUP_EVERY_SECONDS
+
+
+async def _clean_up_every(auth: Auth, seconds: float) -> None:
+    """Runs the auth cleanup at startup and then every seconds until cancelled: a process restarted more often than
+    the interval (compose watch, frequent deploys) still cleans up. A failed run is logged and the next one tries
+    again."""
+    while True:
+        try:
+            counts = await auth.service.cleanup()
+        except Exception:
+            logger.exception("auth cleanup failed")
+        else:
+            logger.info(
+                "auth cleanup",
+                extra={"sessions_deleted": counts.sessions, "throttles_deleted": counts.throttles},
+            )
+        await asyncio.sleep(seconds)
 
 
 def create_app(deps: Deps) -> FastAPI:
@@ -74,11 +96,17 @@ def create_app(deps: Deps) -> FastAPI:
 
     @contextlib.asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
+        cleanup: asyncio.Task[None] | None = None
         if deps.auth is not None:
             await deps.auth.service.start()
+            cleanup = asyncio.create_task(_clean_up_every(deps.auth, deps.cleanup_every))
         try:
             yield
         finally:
+            if cleanup is not None:
+                cleanup.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await cleanup
             if deps.auth is not None:
                 deps.auth.service.close()
             await database.close()

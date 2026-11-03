@@ -17,6 +17,7 @@ COMMANDS = {
     "serve": "app.main.server",
     "migrate": "app.main.migrate",
     "healthcheck": "app.main.healthcheck",
+    "seed-admin": "app.main.seed",
 }
 
 

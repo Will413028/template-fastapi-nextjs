@@ -18,6 +18,10 @@ if TYPE_CHECKING:
 _CURSOR = re.compile(r"[A-Za-z0-9_-]{22}")
 
 
+# The contract's Limit default (components.parameters.Limit), for every list operation; test_pagination checks it.
+DEFAULT_LIMIT = 20
+
+
 def encode_cursor(row_id: uuid.UUID) -> str:
     return base64.urlsafe_b64encode(row_id.bytes).rstrip(b"=").decode()
 

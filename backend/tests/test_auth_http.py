@@ -3,7 +3,9 @@ TestUnauthenticatedBeforeValidation, TestMeIgnoresBearer, TestInvalidSessionCook
 TestOperationAccessEnforced; config_test.go TestCookieNameFollowsSecure for the cookie the API reads).
 """
 
+import logging
 import re
+import time
 import uuid
 from datetime import timedelta
 
@@ -147,3 +149,23 @@ def test_sign_out_from_another_site_is_refused() -> None:
         response = client.delete("/api/sessions/current", headers=headers)
     assert assert_problem(response, 403, "/problems/forbidden")["code"] == "cross_origin_request"
     assert service.signed_out == []
+
+
+def test_serve_cleans_up_on_a_schedule_until_shutdown(caplog: pytest.LogCaptureFixture) -> None:
+    # Go version: cmd/app/main.go runEvery(cleanupEvery, Cleanup), plus a run at startup; a failed run is logged and the
+    # next one still runs
+    service = FakeAuthService()
+    service.cleanup_fails = {1}
+    deadline = time.monotonic() + 5
+    with caplog.at_level(logging.INFO, logger="app.main.factory"), TestClient(fake_app(service, cleanup_every=0.01)):
+        while service.cleanups < 3 and time.monotonic() < deadline:
+            time.sleep(0.01)
+    assert service.cleanups >= 3
+    stopped_at = service.cleanups
+    time.sleep(0.05)
+    assert service.cleanups == stopped_at  # the task ends with the app
+    messages = [r.getMessage() for r in caplog.records]
+    assert "auth cleanup failed" in messages
+    done = [r for r in caplog.records if r.getMessage() == "auth cleanup"]
+    assert done
+    assert (done[0].__dict__["sessions_deleted"], done[0].__dict__["throttles_deleted"]) == (1, 2)

@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from apitest import contract, deps
 from app.main.factory import create_app
 from app.modules.auth.dependencies import Auth, SessionCookie
-from app.modules.auth.service import Authenticated, AuthService, SessionInfo, User
+from app.modules.auth.service import Authenticated, AuthService, CleanupCounts, SessionInfo, User
 from app.platform.errors import AppError, Kind
 from app.platform.principal import Principal, session_invalid
 
@@ -42,6 +42,9 @@ class FakeAuthService(AuthService):
         super().__init__(engine, session_absolute=timedelta(days=7), session_idle=timedelta(days=1))
         self.lookups = 0
         self.signed_out: list[str | None] = []
+        self.cleanups = 0
+        # cleanup raises on the runs whose number (from 1) is in here
+        self.cleanup_fails: set[int] = set()
 
     @override
     async def authenticate(self, token: str) -> Authenticated:
@@ -61,11 +64,25 @@ class FakeAuthService(AuthService):
         at = ALICE.created_at
         return SessionInfo(id=SESSION_ID, created_at=at, last_used_at=at, expires_at=at + timedelta(days=7))
 
+    @override
+    async def cleanup(self) -> CleanupCounts:
+        self.cleanups += 1
+        if self.cleanups in self.cleanup_fails:
+            msg = "the database is down"
+            raise OSError(msg)
+        return CleanupCounts(sessions=1, throttles=2)
+
 
 def fake_app(
-    service: FakeAuthService, *, cookie: SessionCookie = SECURE, origin: OriginPolicy | None = None
+    service: FakeAuthService,
+    *,
+    cookie: SessionCookie = SECURE,
+    origin: OriginPolicy | None = None,
+    cleanup_every: float = 3600.0,
 ) -> FastAPI:
     base = deps(contract())
     return create_app(
-        dataclasses.replace(base, auth=Auth(service, cookie), origin=origin or base.origin),
+        dataclasses.replace(
+            base, auth=Auth(service, cookie), origin=origin or base.origin, cleanup_every=cleanup_every
+        ),
     )

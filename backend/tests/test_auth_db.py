@@ -325,6 +325,158 @@ def test_an_expired_session_is_not_found_before_cleanup_removes_it(api: AuthAPI)
     assert_problem(api.do("GET", f"/api/sessions/{stale['id']}", token), 404, "/problems/not-found")
 
 
+# the session resource (Go version: auth_resources_test.go and auth_test.go TestDeleteAllSessions)
+
+
+def current_session(api: AuthAPI, token: str) -> dict[str, Any]:
+    response = api.do("GET", "/api/sessions/current", token)
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def list_sessions(api: AuthAPI, token: str, limit: int) -> list[list[dict[str, Any]]]:
+    """Every page of the sessions token sees, following next_cursor."""
+    pages: list[list[dict[str, Any]]] = []
+    cursor = ""
+    while True:
+        query = f"?limit={limit}" + (f"&cursor={cursor}" if cursor else "")
+        response = api.do("GET", "/api/sessions" + query, token)
+        assert response.status_code == 200, response.text
+        body = response.json()
+        pages.append(body["sessions"])
+        if body["next_cursor"] is None:
+            return pages
+        cursor = body["next_cursor"]
+
+
+def assert_cleared(response: httpx2.Response) -> None:
+    assert response.status_code == 204, response.text
+    assert [c["max-age"] for c in set_cookie(response)] == ["0"]
+
+
+def test_list_sessions(api: AuthAPI) -> None:
+    alice, first = api.must_sign_up("alice")
+    api.must_sign_in("alice")
+    second, second_token = api.must_sign_in("alice")
+    _, bob = api.must_sign_up("bob")
+    pages = list_sessions(api, second_token, 2)
+    assert [len(page) for page in pages] == [2, 1]
+    listed = [s for page in pages for s in page]
+    for s in listed:
+        assert s["user"] == alice
+        assert s["current"] is (s["id"] == second["id"]), "only the session the request carries is current"
+    ids = [s["id"] for s in listed]
+    assert ids == sorted(ids, reverse=True)  # newest first
+    assert {current_session(api, first)["id"], second["id"]} <= set(ids)
+    assert len(set(ids)) == 3
+    assert [len(page) for page in list_sessions(api, bob, 20)] == [1]
+
+
+def test_list_sessions_excludes_expired(api: AuthAPI) -> None:
+    _, old = api.must_sign_up("alice")
+    stale = current_session(api, old)
+    api.clock.advance(timedelta(hours=23))
+    fresh, token = api.must_sign_in("alice")
+    api.clock.advance(timedelta(hours=2))  # the first session is now 25 hours unused, over the 1-day idle limit
+    assert [[s["id"] for s in page] for page in list_sessions(api, token, 20)] == [[fresh["id"]]]
+    assert_problem(api.do("DELETE", f"/api/sessions/{stale['id']}", token), 404, "/problems/not-found")
+
+
+def test_an_invalid_cursor_is_a_validation_error(api: AuthAPI) -> None:
+    _, token = api.must_sign_up("alice")
+    response = api.do("GET", "/api/sessions?cursor=not-one-of-ours", token)
+    assert field_errors(response) == [("/cursor", "invalid")]
+
+
+def test_delete_session(api: AuthAPI) -> None:
+    _, first = api.must_sign_up("alice")
+    second, second_token = api.must_sign_in("alice")
+    # revoking another of one's sessions leaves the cookie alone
+    response = api.do("DELETE", f"/api/sessions/{second['id']}", first)
+    assert response.status_code == 204, response.text
+    assert "set-cookie" not in response.headers
+    assert_me(api, second_token, 401)
+    assert_me(api, first, 200)
+    # revoking the current one also clears the cookie
+    assert_cleared(api.do("DELETE", f"/api/sessions/{current_session(api, first)['id']}", first))
+    assert_me(api, first, 401)
+
+
+def test_another_users_session_cannot_be_revoked(api: AuthAPI) -> None:
+    _, alice = api.must_sign_up("alice")
+    target = current_session(api, alice)
+    _, bob = api.must_sign_up("bob")
+    assert_problem(api.do("DELETE", f"/api/sessions/{target['id']}", bob), 404, "/problems/not-found")
+    assert_me(api, alice, 200)
+
+
+def test_delete_all_sessions(api: AuthAPI) -> None:
+    _, first = api.must_sign_up("alice")
+    _, second = api.must_sign_in("alice")
+    _, bob = api.must_sign_up("bob")
+    assert_cleared(api.do("DELETE", "/api/sessions", second))
+    assert_me(api, first, 401)
+    assert_me(api, second, 401)
+    assert_me(api, bob, 200)
+    assert_problem(api.do("DELETE", "/api/sessions"), 401, "/problems/unauthenticated")
+
+
+# deleting the account (Go version: auth_resources_test.go TestDeleteCurrentUser, TestDeleteCurrentUserLastAdmin)
+
+
+def test_delete_current_user(api: AuthAPI) -> None:
+    alice, token = api.must_sign_up("alice")
+    # the items module's routes land in step 4; its table already references users
+    [(item,)] = api.sql("INSERT INTO items (title, owner_id) VALUES ('mine', :owner) RETURNING id", owner=alice["id"])
+    _, other = api.must_sign_in("alice")
+    api.clock.advance(timedelta(minutes=10, seconds=1))
+    refused = api.do("DELETE", "/api/users/me", token)
+    assert code(refused, 403, "/problems/forbidden") == "reauthentication_required"
+    assert_me(api, token, 200)  # nothing was deleted
+
+    _, fresh = api.must_sign_in("alice")
+    assert_cleared(api.do("DELETE", "/api/users/me", fresh))
+    assert_me(api, other, 401)
+    assert_problem(api.sign_in("alice"), 401, "/problems/unauthenticated")
+    assert api.sql("SELECT count(*) FROM items WHERE id = :id", id=item) == [(0,)]
+    [event] = api.sql("SELECT action, target_id, actor_id, request_id FROM audit_events")
+    assert (event.action, str(event.target_id), str(event.actor_id)) == ("user.deleted", alice["id"], alice["id"])
+    assert event.request_id
+    api.must_sign_up("alice")  # the name is free again
+
+
+def test_a_session_issued_ten_minutes_ago_may_still_delete(api: AuthAPI) -> None:
+    _, token = api.must_sign_up("alice")
+    api.clock.advance(timedelta(minutes=10))
+    assert_cleared(api.do("DELETE", "/api/users/me", token))
+
+
+def test_deleting_the_account_twice_at_once_is_one_deletion(api: AuthAPI) -> None:
+    # the second request finds the account gone: its session is gone with it (401), not a 404 the contract lacks
+    _, token = api.must_sign_up("alice")
+
+    def delete(_: int) -> int:
+        return api.do("DELETE", "/api/users/me", token).status_code
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        statuses = sorted(pool.map(delete, range(2)))
+    assert statuses in ([204, 204], [204, 401])
+    assert api.sql("SELECT action FROM audit_events") == [("user.deleted",)]
+
+
+def test_the_only_enabled_admin_cannot_delete_itself(api: AuthAPI) -> None:
+    api.call(api.service.ensure_admin, "root", LONG_ENOUGH)
+    _, root = api.must_sign_in("root")
+    assert code(api.do("DELETE", "/api/users/me", root), 409, "/problems/conflict") == "last_admin"
+    assert_me(api, root, 200)
+    # a disabled admin does not count; a second enabled one does
+    api.call(api.service.ensure_admin, "spare", LONG_ENOUGH)
+    api.sql("UPDATE users SET is_disabled = true WHERE account = 'spare'")
+    assert code(api.do("DELETE", "/api/users/me", root), 409, "/problems/conflict") == "last_admin"
+    api.sql("UPDATE users SET is_disabled = false WHERE account = 'spare'")
+    assert_cleared(api.do("DELETE", "/api/users/me", root))
+
+
 # throttling
 
 
@@ -339,7 +491,7 @@ def test_sign_in_is_throttled_per_account_name_whether_or_not_it_exists(api: Aut
         assert response.headers["retry-after"] == "60"
         throttled[account] = without_request_id(response)
     assert throttled["alice"] == throttled["nobody"]
-    # while waiting even the right password is refused; afterwards it signs in and the count starts over
+    # while waiting even the right password is refused; afterwards it signs in and this client's count starts over
     assert_problem(api.sign_in("alice"), 429, "/problems/rate-limited")
     api.clock.advance(timedelta(minutes=1))
     api.must_sign_in("alice")
@@ -391,6 +543,26 @@ def test_ipv6_addresses_in_one_64_are_one_client(api: AuthAPI) -> None:
         assert api.sign_in("alice", WRONG, address="2001:db8::1").status_code == 401
     assert code(api.sign_in("alice", address="2001:db8::2"), 429, "/problems/rate-limited") == "login_throttled"
     assert api.sign_in("alice", address="2001:db8:0:1::1").status_code == 201
+
+
+def test_signing_in_clears_only_that_clients_wait(api: AuthAPI) -> None:
+    # plan D10, ADR account-abuse-and-lifecycle D4: the owner signing in elsewhere does not lift an attacker's wait
+    api.must_sign_up("alice")
+    for _ in range(5):
+        assert api.sign_in("alice", WRONG, address="198.51.100.1").status_code == 401
+    for _ in range(4):
+        assert api.sign_in("alice", WRONG, address="198.51.100.2").status_code == 401
+    assert api.sign_in("alice", address="198.51.100.2").status_code == 201
+    assert code(api.sign_in("alice", address="198.51.100.1"), 429, "/problems/rate-limited") == "login_throttled"
+    rows = api.sql("SELECT client_key FROM sign_in_throttles WHERE account_key = 'alice' ORDER BY client_key")
+    assert [r.client_key for r in rows] == ["ip:198.51.100.1"]  # the successful client's row is gone
+
+
+def test_successful_sign_ins_do_not_build_up_a_wait(api: AuthAPI) -> None:
+    # each attempt is counted before its password is checked; success must take that count back
+    api.must_sign_up("alice")
+    for attempt in range(8):
+        assert api.sign_in("alice").status_code == 201, f"sign-in {attempt + 1}"
 
 
 @pytest.mark.parametrize("operation", ["createUser", "createSession"])
@@ -476,3 +648,29 @@ def test_security_events_are_logged_with_the_user(api: AuthAPI, logs: io.StringI
         ("auth.sign_in", alice["id"], ""),
         ("auth.sign_out", alice["id"], ""),
     ]
+
+
+def test_signing_out_everywhere_is_logged(api: AuthAPI, logs: io.StringIO) -> None:
+    alice, token = api.must_sign_up("alice")
+    api.do("DELETE", "/api/sessions", token)
+    events = [json.loads(line) for line in logs.getvalue().splitlines()]
+    [entry] = [e for e in events if e.get("event") == "auth.sign_out_all"]
+    assert entry["user_id"] == alice["id"]
+    assert entry.get("request_id")
+
+
+# cleanup (Go version: service_test.go TestCleanup)
+
+
+def test_cleanup_deletes_expired_sessions_and_stale_throttles(api: AuthAPI) -> None:
+    api.must_sign_up("idle")
+    api.sign_in("ghost", WRONG)
+    api.clock.advance(timedelta(hours=25))
+    api.must_sign_up("fresh")
+    api.sign_in("ghost2", WRONG)
+    counts = api.call(api.service.cleanup)
+    assert (counts.sessions, counts.throttles) == (1, 1)  # the idle ones (step 5 adds the account-wide row)
+    assert [r.account for r in api.sql("SELECT u.account FROM sessions s JOIN users u ON u.id = s.user_id")] == [
+        "fresh"
+    ]
+    assert [r.account_key for r in api.sql("SELECT account_key FROM sign_in_throttles")] == ["ghost2"]

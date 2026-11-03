@@ -166,16 +166,23 @@
     - 交給 Will：登入成功時清掉該帳號所有來源的節流列（Go 版 `ClearLoginThrottles` 的行為，Python 照搬）。`/code-review` 指出：攻擊者在某個位址累積的退避，會在本人從別處登入成功時歸零。已決（D10，2026-11-04），由 3c 實作。
     - 審查（完成前，2026-11-04）：`/code-review high` 10 項、diff 視角 9 項（blocking 3）、design-review 9 項，合計 28 項（重疊的算一次後 23 項）：修 18、記錄 2、駁回 1、交給 Will 1；已修的一項是節流 SQL 的 deprecation（`915f11f`）。第 2 輪不派：每個修正都有先失敗後通過的測試或複本裡的 mutation（`red-proof.py`），文件由 `rg` 核對。
 - [ ] **3c. session 資源、刪帳號與 seed-admin**（被擋於：3b）
-  - 範圍：附件標 3c 的列：`listSessions`、`deleteAllSessions`、`deleteSession`、`deleteCurrentUser`（10 分鐘內登入過、唯一的 admin 不能刪、`user.deleted` 稽核紀錄）、`seed-admin` 與根目錄 `make seed`、每小時清理過期 session 與 1 天未動的節流列（lifespan 裡的背景 task，單一副本的前提成立：D6 單台 VM、單一 uvicorn 程序）；「尚未實作」集合移除這 4 個操作；登入成功只清這次來源的節流列（D10）：新增只刪 `(account_key, client_key)` 的查詢給 `sign_in` 用，清整個帳號的 `clear_login_throttles` 留給步驟 5 的 admin 解鎖與 `recover-admin`；ADR account-abuse-and-lifecycle D4 補寫成功時清除的範圍（走 ADR 修訂流程）；威脅模型第 45、96 列、`sign_in` docstring、附件第 28 列同步；文件補 3c 的部分。
+  - 範圍：附件標 3c 的列：`listSessions`、`deleteAllSessions`、`deleteSession`、`deleteCurrentUser`（10 分鐘內登入過、唯一的 admin 不能刪、`user.deleted` 稽核紀錄）、`seed-admin` 與根目錄 `make seed`、每小時清理過期 session 與 1 天未動的節流列（lifespan 裡的背景 task，單一副本的前提成立：D6 單台 VM、單一 uvicorn 程序）；「尚未實作」集合移除這 4 個操作；登入成功只清這次來源的節流列（D10）：新增只刪 `(account_key, client_key)` 的查詢給 `sign_in` 用，清整個帳號留給步驟 5 的 admin 解鎖與 `recover-admin`（3b 的 `clear_login_throttles` 在 3c 沒有呼叫端，vulture 不收，3c 刪掉、步驟 5 照 Go 版加回）；ADR account-abuse-and-lifecycle D4 補寫成功時清除的範圍（走 ADR 修訂流程）；威脅模型第 45、96 列、`sign_in` docstring、附件第 28 列同步；文件補 3c 的部分。
   - 消費端：`rg -n "sessions|users/me|seed" frontend/src Makefile .github/workflows -g '!**/schema.d.ts'`。
   - 不能動：同 3b。
   - 驗收：附件「測試對照」標 3c 的 Go 測試；mutation：拿掉重新驗證的時間檢查，`TestDeleteCurrentUser` 的 403 案例要失敗；mutation：拿掉 `keepAnAdmin`，`TestDeleteCurrentUserLastAdmin` 要失敗；seed-admin 的錯誤訊息不含密碼；D10 的 db 測試：來源 A 失敗後來源 B 登入成功，A 仍要等、成功的來源自己的列被清掉、連續成功不累積等待，mutation：改回清整個帳號、改成完全不清，各自要有測試失敗。
+  - 執行中的決定與偏離（2026-11-04）：
+    - `clear_login_throttles`（清整個帳號）在 3c 沒有呼叫端，vulture 不收，刪掉；步驟 5 加回（步驟 5 範圍已列）。
+    - 清理 task 啟動時先跑一次，之後每小時（Go 版 ticker 第一次要等一整個間隔）：`/code-review` 指出重啟比一小時頻繁時（compose watch、頻繁部署）永遠不會清。
+    - 刪帳號只在呼叫者是 admin 時鎖 admin 列；同時刪兩次時第二個回 401（帳號連 session 一起沒了），不回契約沒列的 404；`ensure_admin` 先查帳號是否存在，重跑 seed 對既有帳號一律不動、不檢查密碼（以上 `/code-review`）。`make seed` 的帳號名經環境變數傳給 shell，不貼進 recipe。
+    - Limit 的預設 20 放在 `app.platform.pagination.DEFAULT_LIMIT`，測試對照契約（design review：步驟 4、5 會再用）。
+    - 記錄不修：清理的 DELETE 沒有分批、`expires_at`／`last_used_at`／`updated_at` 沒有索引。單一副本的範本量級用不到；觸發條件：清理 log 出現 statement timeout，或任一表超過 10 萬列時，改成分批刪除並加索引（新 revision）。
+    - 駁回：`delete_own_account` 多讀一次 session 的 `created_at`（可放進 `Authenticated`）。nit；分開讀也涵蓋請求中途被撤銷的 session，Go 版同樣做法。
 - [ ] **4. items**（被擋於：步驟 3）
   - 範圍：inventory 標步驟 4 的 5 個操作，含 owner 權限與分頁。
   - 消費端：`rg -n 'items' frontend/src`。
   - 驗收：對照 Go 版 `items_test.go`、`authz_test.go`；mutation：拿掉 owner 檢查，跨使用者讀取的測試要失敗；`backend/src/app/modules/items/router.py`、`service.py` 不再只有 docstring。
 - [ ] **5. 帳號濫用與管理**（被擋於：步驟 3）
-  - 範圍：inventory 標步驟 5 的 5 個 admin 操作、`recover-admin`、trusted devices、登入鎖定、稽核紀錄、HIBP 密碼檢查（ADR account-abuse-and-lifecycle），以及附件 `auth-carryover.md` 標 5 的列：`ADMIN` 存取標記與 `insufficient_role`、`authz.denied`；登出全部、停用與 recover 也刪 trusted devices；清理也刪過期的 devices；「尚未實作」集合刪除。
+  - 範圍：inventory 標步驟 5 的 5 個 admin 操作、`recover-admin`、trusted devices、登入鎖定、稽核紀錄、HIBP 密碼檢查（ADR account-abuse-and-lifecycle），以及附件 `auth-carryover.md` 標 5 的列：`ADMIN` 存取標記與 `insufficient_role`、`authz.denied`；登出全部、停用與 recover 也刪 trusted devices；清理也刪過期的 devices；「尚未實作」集合刪除；加回清整個帳號節流的 `clear_login_throttles`（3c 刪掉，附件第 28 列）；`recover-admin` 與 `seed-admin` 共用建 `AuthService` 的組裝，不再各自塞用不到的 session 期限（3c design review）。
   - 驗收：對照 Go 版 `backend/internal/httpapi/throttle_test.go`、`users.go` 對應的 `authz_test.go` 案例、`backend/internal/modules/auth/service_test.go` 的 devices 與鎖定案例；mutation：把鎖定門檻加大，鎖定測試要失敗。
 - [ ] **6. rename 腳本與 smoke test**（被擋於：步驟 1）
   - 範圍：恢復步驟 1 拿掉的根目錄 `make rename` target 與 CI rename job（步驟 1 時 rename 腳本還是 Go 版，先移除）；`scripts/rename.py` 改成 Python 版（套件名、DB 與角色名、image、品牌字，沒有 module path）；CI rename job。（2a 起 `backend/tests/dbtest.py` 寫著角色與資料庫的佔位名稱，要納入替換或改成從設定讀取。）

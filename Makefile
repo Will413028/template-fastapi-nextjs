@@ -49,6 +49,24 @@ migration:
 generate-migration:
 	$(MAKE) -C backend migration MSG="$(MSG)"
 
+# --- Seed ---
+
+# Creates the admin account in the running stack (app seed-admin; an existing account is left unchanged):
+#   make seed ADMIN_ACCOUNT=admin
+# The password is read from the terminal without echo, or from stdin when it is piped, and reaches the container on
+# its stdin (ADMIN_PASSWORD_FILE=/dev/stdin): never on a command line, in an environment variable or in .env. The account
+# reaches the shell through the environment (export), never pasted into the recipe, so its characters are not shell code.
+.PHONY: seed
+seed: export ADMIN_ACCOUNT := $(ADMIN_ACCOUNT)
+seed:
+	@test -n "$$ADMIN_ACCOUNT" || { echo "usage: make seed ADMIN_ACCOUNT=<name> (the password is read from the terminal or stdin)"; exit 1; }
+	@if [ -t 0 ]; then \
+		trap 'stty echo' EXIT INT TERM; printf 'Password for %s: ' "$$ADMIN_ACCOUNT" >&2; stty -echo; \
+		IFS= read -r pw; stty echo; echo >&2; \
+	else IFS= read -r pw; fi; \
+	printf '%s' "$$pw" | $(COMPOSE) exec -T -e ADMIN_ACCOUNT -e ADMIN_PASSWORD_FILE=/dev/stdin \
+		backend app seed-admin
+
 # --- Logs ---
 
 .PHONY: logs

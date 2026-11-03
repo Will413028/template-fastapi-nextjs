@@ -133,6 +133,16 @@ jobs:
         run: >-
           docker compose run --rm --no-deps -T -v "$PWD/scripts/stack_auth_smoke.py:/smoke.py:ro" --entrypoint python
           backend /smoke.py
+      # the root Makefile's seed target as an operator runs it, with the password piped on stdin: the second run
+      # leaves the account alone
+      - name: Seed an admin with make seed, then again
+        run: |
+          printf '%s' 'a long enough ci admin passphrase' | make seed ADMIN_ACCOUNT=ci-admin | tee seed.out
+          grep -q "admin account 'ci-admin' created" seed.out
+          printf '%s' 'another long enough passphrase' | make seed ADMIN_ACCOUNT=CI-Admin | tee seed.out
+          grep -q "account 'ci-admin' already exists; nothing changed" seed.out
+          role="$(docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U template_fastapi_nextjs_app -d template_fastapi_nextjs -tAc "SELECT role FROM users WHERE account = 'ci-admin'")"
+          test "$role" = admin
       - name: The app role cannot change the schema
         run: |
           out="$(docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U template_fastapi_nextjs_app -d template_fastapi_nextjs -c 'CREATE TABLE public.intruder (id int)' 2>&1)" && exit 1

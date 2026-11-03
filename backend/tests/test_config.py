@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from app.platform.config import ConfigError, HttpSettings, MigrateSettings, Settings
+from app.platform.config import ConfigError, HttpSettings, MigrateSettings, SeedSettings, Settings
 
 if TYPE_CHECKING:
     import pathlib
@@ -199,3 +199,25 @@ def test_an_unreadable_file_names_the_variable(tmp_path: pathlib.Path) -> None:
 def test_migrate_needs_the_app_role() -> None:
     with pytest.raises(ConfigError, match="DB_APP_USER"):
         MigrateSettings.from_env({"MIGRATE_DATABASE_URL": DB_URL, "MIGRATE_DATABASE_PASSWORD": "pw"})
+
+
+def test_seed_reads_the_admin_and_the_database(tmp_path: pathlib.Path) -> None:
+    # Go version: config_test.go TestLoadSeed; the password comes from a file (make seed passes /dev/stdin)
+    secret = tmp_path / "admin"
+    secret.write_text("a long enough password\n", encoding="utf-8")
+    env = {
+        "DATABASE_URL": DB_URL,
+        "DATABASE_PASSWORD": "pw",
+        "ADMIN_ACCOUNT": "root",
+        "ADMIN_PASSWORD_FILE": str(secret),
+    }
+    settings = SeedSettings.from_env(env)
+    assert (settings.admin_account, settings.admin_password) == ("root", "a long enough password")
+    assert (settings.database.url, settings.database.password) == (DB_URL, "pw")
+
+
+def test_seed_names_each_missing_admin_variable() -> None:
+    with pytest.raises(ConfigError) as err:
+        SeedSettings.from_env({"DATABASE_URL": DB_URL, "DATABASE_PASSWORD": "pw"})
+    assert "ADMIN_ACCOUNT" in str(err.value)
+    assert "ADMIN_PASSWORD" in str(err.value)

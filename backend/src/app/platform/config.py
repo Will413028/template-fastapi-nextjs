@@ -197,6 +197,31 @@ class MigrateSettings:
         return cls(database=database, app_role=app_role)
 
 
+@dataclass(frozen=True, slots=True)
+class SeedSettings:
+    """What `app seed-admin` needs: the database as serve connects to it, and the admin account to create.
+    ADMIN_PASSWORD is normally ADMIN_PASSWORD_FILE=/dev/stdin (the root Makefile's seed target), so the password never
+    sits on a command line or in an environment variable."""
+
+    database: DatabaseSettings
+    admin_account: str
+    admin_password: str
+
+    @classmethod
+    def from_env(cls, environ: Mapping[str, str] | None = None) -> Self:
+        env = _Env(os.environ if environ is None else environ)
+        url = env.database_url("DATABASE_URL")
+        password = env.required("DATABASE_PASSWORD")
+        account = env.required("ADMIN_ACCOUNT")
+        admin_password = env.required("ADMIN_PASSWORD")
+        env.raise_problems()
+        return cls(
+            database=DatabaseSettings(url=url, password=password, max_conns=1),
+            admin_account=account,
+            admin_password=admin_password,
+        )
+
+
 class _Env:
     def __init__(self, environ: Mapping[str, str]) -> None:
         self.environ = environ

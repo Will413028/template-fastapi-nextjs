@@ -4,17 +4,20 @@ Each function runs one statement on the connection it is given; the service deci
 SQLAlchemy Core expressions over the tables in models.py, never SQL assembled from strings.
 """
 
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Integer, Row, case, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 
-from app.modules.auth.models import Session, SignInThrottle, User
+from app.modules.auth.models import AuditEvent, Session, SignInThrottle, User
 
 if TYPE_CHECKING:
     import uuid
+    from collections.abc import Sequence
     from datetime import datetime, timedelta
 
+    from sqlalchemy import ColumnElement
     from sqlalchemy.ext.asyncio import AsyncConnection
 
 # what the API shows of a user, in this order (service.User)
@@ -82,18 +85,98 @@ async def delete_session(conn: AsyncConnection, token_hash: bytes) -> None:
     await conn.execute(delete(Session).where(Session.token_hash == token_hash))
 
 
+@dataclass(frozen=True, slots=True)
+class Live:
+    """The user's sessions that authenticate would still accept at now: before expires_at and used within idle. The
+    session resource sees only these, so another user's session, an expired one, and one authenticate would refuse
+    for idleness are all not found before the cleanup removes the row (docs/adr/2026-10-18-api-and-auth-baseline.md
+    D9)."""
+
+    user_id: uuid.UUID
+    now: datetime
+    idle: timedelta
+
+    def where(self) -> tuple[ColumnElement[bool], ...]:
+        return (
+            Session.user_id == self.user_id,
+            Session.expires_at > self.now,
+            Session.last_used_at > self.now - self.idle,
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class AuditRecord:
+    """One administrative change: actor_id None is the operator on the host; request_id None outside a request."""
+
+    at: datetime
+    actor_id: uuid.UUID | None
+    action: str
+    target_id: uuid.UUID
+    request_id: str | None
+
+
 async def get_user_session(
-    conn: AsyncConnection, *, session_id: uuid.UUID, user_id: uuid.UUID, now: datetime, idle: timedelta
+    conn: AsyncConnection, session_id: uuid.UUID, live: Live
 ) -> Row[uuid.UUID, datetime, datetime, datetime] | None:
-    """The user's live session with session_id: another user's, an expired one and one Authenticate would refuse for
-    idleness are all not found, before the cleanup removes the row (docs/adr/2026-10-18-api-and-auth-baseline.md D9)."""
-    stmt = select(*SESSION_COLUMNS).where(
-        Session.id == session_id,
-        Session.user_id == user_id,
-        Session.expires_at > now,
-        Session.last_used_at > now - idle,
+    return (await conn.execute(select(*SESSION_COLUMNS).where(Session.id == session_id, *live.where()))).one_or_none()
+
+
+async def list_user_sessions(
+    conn: AsyncConnection, live: Live, *, after: uuid.UUID | None, rows: int
+) -> Sequence[Row[uuid.UUID, datetime, datetime, datetime]]:
+    """The live sessions newest first (UUIDv7 ids sort by creation time), after the cursor id when given."""
+    stmt = select(*SESSION_COLUMNS).where(*live.where())
+    if after is not None:
+        stmt = stmt.where(Session.id < after)
+    return (await conn.execute(stmt.order_by(Session.id.desc()).limit(rows))).all()
+
+
+async def delete_user_session(conn: AsyncConnection, session_id: uuid.UUID, live: Live) -> bool:
+    """Deletes the live session with session_id; False when there is none."""
+    return (await conn.execute(delete(Session).where(Session.id == session_id, *live.where()))).rowcount > 0
+
+
+async def delete_user_sessions(conn: AsyncConnection, user_id: uuid.UUID) -> None:
+    await conn.execute(delete(Session).where(Session.user_id == user_id))
+
+
+async def get_session_created_at(
+    conn: AsyncConnection, *, session_id: uuid.UUID, user_id: uuid.UUID
+) -> datetime | None:
+    """When the user's session was issued, that is when they last signed in with it."""
+    stmt = select(Session.created_at).where(Session.id == session_id, Session.user_id == user_id)
+    return (await conn.execute(stmt)).scalar_one_or_none()
+
+
+async def delete_expired_sessions(conn: AsyncConnection, *, now: datetime, idle: timedelta) -> int:
+    stmt = delete(Session).where(or_(Session.expires_at <= now, Session.last_used_at <= now - idle))
+    return (await conn.execute(stmt)).rowcount
+
+
+async def lock_enabled_admins(conn: AsyncConnection) -> list[uuid.UUID]:
+    """The enabled admins' ids, locked until the transaction ends: two admins deleting themselves at once cannot both
+    see the other still there."""
+    stmt = select(User.id).where(User.role == "admin", User.is_disabled.is_(False)).order_by(User.id).with_for_update()
+    return list((await conn.execute(stmt)).scalars())
+
+
+async def delete_user(conn: AsyncConnection, user_id: uuid.UUID) -> bool:
+    """Deletes the account; its sessions and every module's rows that reference it go with it (ON DELETE CASCADE).
+    False when there was no such user."""
+    return (await conn.execute(delete(User).where(User.id == user_id))).rowcount > 0
+
+
+async def insert_audit_event(conn: AsyncConnection, record: AuditRecord) -> None:
+    """Records one administrative change; callers run it in the change's own transaction."""
+    await conn.execute(
+        insert(AuditEvent).values(
+            at=record.at,
+            actor_id=record.actor_id,
+            action=record.action,
+            target_id=record.target_id,
+            request_id=record.request_id,
+        )
     )
-    return (await conn.execute(stmt)).one_or_none()
 
 
 async def reserve_login_attempt(conn: AsyncConnection, *, account_key: str, client_key: str, now: datetime) -> bool:
@@ -136,6 +219,14 @@ async def get_login_throttle(conn: AsyncConnection, *, account_key: str, client_
     return (await conn.execute(stmt)).scalar_one_or_none()
 
 
-async def clear_login_throttles(conn: AsyncConnection, account_key: str) -> None:
-    """Forgets every count for the account: after a successful sign-in."""
-    await conn.execute(delete(SignInThrottle).where(SignInThrottle.account_key == account_key))
+async def clear_login_throttle(conn: AsyncConnection, *, account_key: str, client_key: str) -> None:
+    """Forgets the count of one client for the account: after that client signs in. Other clients keep theirs, so the
+    owner signing in elsewhere does not lift the wait an attacker has built up (plan D10)."""
+    await conn.execute(
+        delete(SignInThrottle).where(SignInThrottle.account_key == account_key, SignInThrottle.client_key == client_key)
+    )
+
+
+async def delete_stale_login_throttles(conn: AsyncConnection, before: datetime) -> int:
+    """Deletes the counts with no attempt since before."""
+    return (await conn.execute(delete(SignInThrottle).where(SignInThrottle.updated_at <= before))).rowcount

@@ -13,11 +13,13 @@ from fastapi import APIRouter, Response, status
 
 from app.modules.auth.dependencies import Current, CurrentSession, Service
 from app.platform.errors import AppError, Kind
+from app.platform.pagination import DEFAULT_LIMIT
 from app.platform.principal import session_invalid
 from app.web import contract_models as api
 from app.web.access import PUBLIC, SignedIn
 from app.web.origin import current_client
 from app.web.ratelimit import RATE_LIMITED, limit_key
+from app.web.request_id import current_request_id
 
 if TYPE_CHECKING:
     from app.modules.auth.service import SessionInfo, User
@@ -42,6 +44,14 @@ def _session(session: SessionInfo, user: User, current: uuid.UUID | None) -> api
         expires_at=session.expires_at,
         current=session.id == current,
     )
+
+
+def _no_content(clear_cookie: str | None = None) -> Response:
+    """A 204, clearing the session cookie when clear_cookie is its Set-Cookie value."""
+    response = Response(status_code=status.HTTP_204_NO_CONTENT)
+    if clear_cookie is not None:
+        response.headers.append("Set-Cookie", clear_cookie)
+    return response
 
 
 def _issued(response: Response, location: str, cookie: str) -> None:
@@ -81,7 +91,31 @@ async def create_session(
 async def delete_current_session(service: Service, session: CurrentSession) -> Response:
     authenticated = session.authenticated
     await service.sign_out(session.token, user_id=authenticated.user.id if authenticated else None)
-    return Response(status_code=status.HTTP_204_NO_CONTENT, headers={"Set-Cookie": session.cookie.clear()})
+    return _no_content(session.cookie.clear())
+
+
+@router.get("/sessions")
+async def list_sessions(
+    service: Service, current: Current, limit: int = DEFAULT_LIMIT, cursor: str | None = None
+) -> api.SessionPage:
+    """The contract has already checked limit's range (app.web.contract)."""
+    page = await service.sessions(current.principal, limit=limit, cursor=cursor)
+    return api.SessionPage(
+        sessions=[_session(s, current.user, current.session_id) for s in page.sessions], next_cursor=page.next_cursor
+    )
+
+
+@router.delete("/sessions", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_all_sessions(service: Service, current: Current, session: CurrentSession) -> Response:
+    """Signs the user out everywhere, this browser included."""
+    await service.sign_out_all(current.user.id)
+    return _no_content(session.cookie.clear())
+
+
+@router.delete("/users/me", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_current_user(service: Service, current: Current, session: CurrentSession) -> Response:
+    await service.delete_own_account(current.principal, current.session_id, request_id=current_request_id())
+    return _no_content(session.cookie.clear())
 
 
 @router.get("/users/me")
@@ -110,3 +144,10 @@ async def get_user(id: uuid.UUID, service: Service, principal: SignedIn) -> api.
 @router.get("/sessions/{id}")
 async def get_session(id: uuid.UUID, service: Service, current: Current) -> api.Session:
     return _session(await service.session(current.principal, id), current.user, current.session_id)
+
+
+@router.delete("/sessions/{id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_session(id: uuid.UUID, service: Service, current: Current, session: CurrentSession) -> Response:
+    """Revokes one of the user's sessions; revoking the one the request carries also clears its cookie."""
+    await service.revoke_session(current.principal, id)
+    return _no_content(session.cookie.clear() if id == current.session_id else None)

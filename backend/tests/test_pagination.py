@@ -4,9 +4,11 @@ import base64
 import uuid
 
 import pytest
+import yaml
 
+from apitest import CONTRACT_PATH
 from app.platform.errors import AppError, Kind
-from app.platform.pagination import after, decode_cursor, encode_cursor, page_rows, trim_page
+from app.platform.pagination import DEFAULT_LIMIT, after, decode_cursor, encode_cursor, page_rows, trim_page
 
 
 def test_cursor_round_trip() -> None:
@@ -53,3 +55,8 @@ def test_trim_page() -> None:
     assert decode_cursor(next_cursor) == ids[2]
     # no extra row: the last page has no cursor
     assert trim_page(ids[:3], 3, lambda row: row) == (ids[:3], None)
+
+
+def test_the_default_limit_is_the_contracts() -> None:
+    document = yaml.safe_load(CONTRACT_PATH.read_text(encoding="utf-8"))
+    assert document["components"]["parameters"]["Limit"]["schema"]["default"] == DEFAULT_LIMIT

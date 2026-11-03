@@ -7,10 +7,12 @@ from typing import TYPE_CHECKING, Annotated, Any
 
 import pytest
 from fastapi import Path, Response
+from fastapi.testclient import TestClient
 
 from apitest import (
     CONTRACT_PATH,
     LOOPBACK,
+    PEER,
     assert_problem,
     bare_app,
     call_asgi,
@@ -218,6 +220,31 @@ def test_secured_operation_without_a_session_is_unauthenticated() -> None:
         response = client.get("/api/users/me")
     problem = assert_problem(response, 401, "/problems/unauthenticated")
     assert problem["detail"] == "this operation needs a signed-in session"
+
+
+FULL_WIDTH_ABC = "\uff41\uff42\uff43"
+
+
+@pytest.mark.parametrize("account", ["abc\n", "abc\ndef", FULL_WIDTH_ABC])
+def test_pattern_dollar_matches_only_the_end(account: str) -> None:
+    # OpenAPI patterns are ECMA-262: `$` ends the string. Python's re also lets it match before a final newline, so
+    # "abc\n" would pass ^[A-Za-z0-9_.-]+$ and reach the database (design review 2026-11-03); the Go version's RE2
+    # agrees with ECMA. Full-width letters are not A-Z either.
+    app = create_app(deps(contract()))
+    body = {"account": account, "password": "a long enough password"}
+    with checked_client(app, against=contract()) as client:
+        response = client.post("/api/users", json=body)
+    errors = assert_problem(response, 422, "/problems/validation")["errors"]
+    assert [(e["pointer"], e["code"]) for e in errors] == [("/account", "pattern")]
+
+
+def test_a_matching_pattern_passes_validation() -> None:
+    app = create_app(deps(contract()))
+    body = {"account": "abc", "password": "a long enough password"}
+    # past validation: createUser has no route in this app, and a 404 is not one of its contract responses, so the
+    # client does not check responses against the contract
+    with TestClient(app, client=PEER) as client:
+        assert_problem(client.post("/api/users", json=body), 404, "/problems/not-found")
 
 
 def test_health_is_outside_validation() -> None:

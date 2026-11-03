@@ -164,7 +164,14 @@ jobs:
       # suppression comments may only go down and executed tests only up (scripts/quality-locks.json)
       - run: python3 scripts/check_locks.py --vitest-report frontend/test-report.json
         working-directory: .
+      # ORIGIN_SECRET is server-only (src/lib/env.ts): a sentinel set at build time, also under the NEXT_PUBLIC_ name
+      # that would inline it, must not reach the JavaScript sent to browsers
       - run: pnpm build
+        env:
+          ORIGIN_SECRET: origin-secret-bundle-sentinel
+          NEXT_PUBLIC_ORIGIN_SECRET: origin-secret-bundle-sentinel
+      - name: The origin secret stays out of the browser bundle
+        run: if grep -rl origin-secret-bundle-sentinel .next/static; then exit 1; fi
 
   gate:
     # The only required check on main: it passes when every other job in this workflow succeeded or was skipped.

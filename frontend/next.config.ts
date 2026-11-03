@@ -5,8 +5,8 @@ import { apiUrl, isDevelopment } from "./src/lib/env";
 const nextConfig: NextConfig = {
   output: "standalone",
   // Development only: next dev forwards /api to the backend so the browser
-  // stays on one origin. In production Caddy routes /api (deploy/Caddyfile)
-  // and the build carries no rewrite.
+  // stays on one origin. In production Vercel's rewrite routes /api
+  // (vercel.json) and the build carries no rewrite.
   async rewrites() {
     if (!isDevelopment()) return [];
     return [{ source: "/api/:path*", destination: `${apiUrl()}/api/:path*` }];

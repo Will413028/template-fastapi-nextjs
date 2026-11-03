@@ -8,3 +8,8 @@ export const appUrl = () =>
   process.env.NEXT_PUBLIC_APP_URL || "https://example.com";
 
 export const apiUrl = () => process.env.API_URL || "http://localhost:8000";
+
+// Server-only: the X-Origin-Secret the backend requires of every /api request
+// in production (the same value as Vercel's rewrite adds, vercel.json). Unset
+// in development, where the backend lets requests without it through.
+export const originSecret = () => process.env.ORIGIN_SECRET || undefined;

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("server-only", () => ({}));
 
@@ -24,6 +24,10 @@ beforeEach(() => {
   mockFetch.mockReset();
 });
 
+afterEach(() => {
+  vi.stubEnv("ORIGIN_SECRET", undefined);
+});
+
 describe("getServerUser", () => {
   it("returns null without calling the backend when there are no cookies", async () => {
     withCookies("");
@@ -41,9 +45,32 @@ describe("getServerUser", () => {
       mockFetch.mock.calls[0] ?? expect.unreachable("fetch was not called");
     expect(request.url).toBe("http://backend:8000/api/users/me");
     expect(request.headers.get("cookie")).toBe("session=abc");
-    // Next is a trusted proxy: forwarding X-Forwarded-For would let the client
-    // choose the backend's rate-limit key.
+    // The backend believes no X-Forwarded-For, and forwarding the browser's
+    // would only add a header any client can forge.
     expect(request.headers.has("x-forwarded-for")).toBe(false);
+  });
+
+  it("sends the origin secret, which the backend requires in production", async () => {
+    vi.stubEnv("ORIGIN_SECRET", "secret-from-the-environment");
+    withCookies("session=abc");
+    mockFetch.mockResolvedValueOnce(Response.json(user));
+
+    await getServerUser();
+    const [request] =
+      mockFetch.mock.calls[0] ?? expect.unreachable("fetch was not called");
+    expect(request.headers.get("x-origin-secret")).toBe(
+      "secret-from-the-environment",
+    );
+  });
+
+  it("sends no origin secret when none is set (development)", async () => {
+    withCookies("session=abc");
+    mockFetch.mockResolvedValueOnce(Response.json(user));
+
+    await getServerUser();
+    const [request] =
+      mockFetch.mock.calls[0] ?? expect.unreachable("fetch was not called");
+    expect(request.headers.has("x-origin-secret")).toBe(false);
   });
 
   it("returns null when the backend rejects the session", async () => {

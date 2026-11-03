@@ -1,15 +1,16 @@
 import createClient, { type Middleware } from "openapi-fetch";
-import { apiUrl } from "../env";
+import { apiUrl, originSecret } from "../env";
 import type { paths } from "./schema";
 
-// The API is served on the page's own origin under /api (Caddy in production,
-// the next dev rewrite in development), so the browser sends the session cookie
-// without CORS. Server-side code has no page origin and calls the backend
-// directly at API_URL.
+// The API is served on the page's own origin under /api (Vercel's rewrite in
+// production, vercel.json; the next dev rewrite in development), so the browser
+// sends the session cookie without CORS. Server-side code has no page origin and
+// calls the backend directly at API_URL.
 //
-// Only the headers a caller passes are sent. The backend trusts only Caddy
-// (TRUSTED_PROXIES), so a server-side call is rate-limited as Next's own
-// address whatever X-Forwarded-For it carries.
+// Only the headers a caller passes are sent, plus the origin secret on the
+// server: the backend refuses an /api request without it in production. It
+// takes X-Real-IP only from requests with the secret and no server-side call
+// sets one, so such a call is rate-limited as the server's own address.
 function baseUrl(): string {
   if (typeof window !== "undefined") return `${window.location.origin}/api`;
   return `${apiUrl()}/api`;
@@ -26,5 +27,16 @@ const redirectOnUnauthenticated: Middleware = {
   },
 };
 
+// Server-side only: in the browser the env value is never inlined (it has no
+// NEXT_PUBLIC_ prefix), and Vercel's rewrite adds the header instead.
+const sendOriginSecret: Middleware = {
+  onRequest({ request }) {
+    if (typeof window !== "undefined") return;
+    const secret = originSecret();
+    if (secret) request.headers.set("X-Origin-Secret", secret);
+    return request;
+  },
+};
+
 export const api = createClient<paths>({ baseUrl: baseUrl() });
-api.use(redirectOnUnauthenticated);
+api.use(sendOriginSecret, redirectOnUnauthenticated);

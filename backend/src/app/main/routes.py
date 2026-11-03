@@ -32,15 +32,9 @@ API_PREFIX = "/api"
 
 # Operations whose step has not landed yet (docs/plans/2026-11-03-fastapi-template.md): each step removes its own,
 # and step 5 deletes this set. Needed only while some operation has no route; without it the check could not pass
-# before steps 4 and 5.
+# before step 5.
 UNIMPLEMENTED: frozenset[tuple[str, str]] = frozenset(
     {
-        # step 4
-        ("POST", "/items"),
-        ("GET", "/items"),
-        ("GET", "/items/{id}"),
-        ("PATCH", "/items/{id}"),
-        ("DELETE", "/items/{id}"),
         # step 5
         ("GET", "/users"),
         ("PATCH", "/users/{id}"),

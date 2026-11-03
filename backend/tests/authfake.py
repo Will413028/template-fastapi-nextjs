@@ -10,9 +10,10 @@ from typing import TYPE_CHECKING, override
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from apitest import contract, deps
-from app.main.factory import create_app
+from app.main.factory import Modules, create_app
 from app.modules.auth.dependencies import Auth, SessionCookie
 from app.modules.auth.service import Authenticated, AuthService, CleanupCounts, SessionInfo, User
+from app.modules.items.service import ItemsService
 from app.platform.errors import AppError, Kind
 from app.platform.principal import Principal, session_invalid
 
@@ -33,13 +34,15 @@ SESSION_ID = uuid.UUID("01900000-0000-7000-8000-0000000000aa")
 TOKEN = "t" * 43
 
 
+# an engine that never connects: nothing that would reach the database runs in these tests
+NO_DATABASE = create_async_engine("postgresql+asyncpg://nobody@127.0.0.1:1/none")
+
+
 class FakeAuthService(AuthService):
     """Knows one session, TOKEN for ALICE, and counts the lookups."""
 
     def __init__(self) -> None:
-        # never connects: every method that would reach the database is replaced
-        engine = create_async_engine("postgresql+asyncpg://nobody@127.0.0.1:1/none")
-        super().__init__(engine, session_absolute=timedelta(days=7), session_idle=timedelta(days=1))
+        super().__init__(NO_DATABASE, session_absolute=timedelta(days=7), session_idle=timedelta(days=1))
         self.lookups = 0
         self.signed_out: list[str | None] = []
         self.cleanups = 0
@@ -73,6 +76,11 @@ class FakeAuthService(AuthService):
         return CleanupCounts(sessions=1, throttles=2)
 
 
+def fake_modules(service: FakeAuthService | None = None, cookie: SessionCookie = SECURE) -> Modules:
+    """The modules around service, with an items service that never reaches a database."""
+    return Modules(auth=Auth(service or FakeAuthService(), cookie), items=ItemsService(NO_DATABASE))
+
+
 def fake_app(
     service: FakeAuthService,
     *,
@@ -83,6 +91,9 @@ def fake_app(
     base = deps(contract())
     return create_app(
         dataclasses.replace(
-            base, auth=Auth(service, cookie), origin=origin or base.origin, cleanup_every=cleanup_every
+            base,
+            modules=fake_modules(service, cookie),
+            origin=origin or base.origin,
+            cleanup_every=cleanup_every,
         ),
     )

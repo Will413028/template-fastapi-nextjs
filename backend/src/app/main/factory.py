@@ -13,6 +13,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from app.main.routes import check_routes
 from app.modules.auth.dependencies import Auth, AuthenticateMiddleware
 from app.modules.auth.router import router as auth_router
+from app.modules.items.router import router as items_router
 from app.platform.config import DEFAULT_AUTH_RATE_LIMIT_PER_MIN
 from app.web.access_log import AccessLogMiddleware
 from app.web.cross_origin import CrossOriginMiddleware
@@ -28,6 +29,7 @@ from app.web.validation import ContractValidation
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
 
+    from app.modules.items.service import ItemsService
     from app.web.contract import Contract
     from app.web.origin import OriginPolicy
 
@@ -50,6 +52,15 @@ class Database(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
+class Modules:
+    """The feature modules, each mounted with its routes. They come together: items needs the sessions auth resolves,
+    and the route check (app.main.routes) needs every module's routes to compare them with the contract."""
+
+    auth: Auth
+    items: ItemsService
+
+
+@dataclass(frozen=True, slots=True)
 class Deps:
     """What the app is built from; app.main.server (the composition root) supplies them, tests their own."""
 
@@ -66,10 +77,10 @@ class Deps:
     # the per-address buckets of the operations with dependencies=[app.web.ratelimit.RATE_LIMITED]; by default
     # AUTH_RATE_LIMIT_PER_MIN's default on the monotonic clock
     limiter: IPLimiter | None = None
-    # The modules (accounts and sessions so far). With them the app is the real API: their routes are mounted and
-    # checked against the contract (app.main.routes). Without them, as in tests of the HTTP layer against a test
-    # contract, nothing authenticates and every operation that declares security is refused.
-    auth: Auth | None = None
+    # With the modules the app is the real API: their routes are mounted and checked against the contract
+    # (app.main.routes). Without them, as in tests of the HTTP layer against a test contract, nothing authenticates
+    # and every operation that declares security is refused.
+    modules: Modules | None = None
     cleanup_every: float = CLEANUP_EVERY_SECONDS
 
 
@@ -93,13 +104,14 @@ async def _clean_up_every(auth: Auth, seconds: float) -> None:
 def create_app(deps: Deps) -> FastAPI:
     """The API under /api, checked against the contract, and the health checks."""
     database, contract = deps.database, deps.contract
+    auth = deps.modules.auth if deps.modules else None
 
     @contextlib.asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
         cleanup: asyncio.Task[None] | None = None
-        if deps.auth is not None:
-            await deps.auth.service.start()
-            cleanup = asyncio.create_task(_clean_up_every(deps.auth, deps.cleanup_every))
+        if auth is not None:
+            await auth.service.start()
+            cleanup = asyncio.create_task(_clean_up_every(auth, deps.cleanup_every))
         try:
             yield
         finally:
@@ -107,8 +119,8 @@ def create_app(deps: Deps) -> FastAPI:
                 cleanup.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await cleanup
-            if deps.auth is not None:
-                deps.auth.service.close()
+            if auth is not None:
+                auth.service.close()
             await database.close()
 
     # The contract is the hand-written api/openapi.yaml, so FastAPI's generated schema and docs stay off.
@@ -133,8 +145,10 @@ def create_app(deps: Deps) -> FastAPI:
         return JSONResponse({"status": "ready"})
 
     docs_paths = _add_docs(app, contract) if deps.docs else frozenset[str]()
-    if deps.auth is not None:
+    if deps.modules is not None:
         app.include_router(auth_router)
+        app.include_router(items_router)
+        app.state.items_service = deps.modules.items  # app.modules.items.dependencies
         check_routes(app, contract, docs_paths=docs_paths)
     install_exception_handlers(app)
     _add_middleware(app, deps, docs_paths)
@@ -169,8 +183,8 @@ def _add_middleware(app: FastAPI, deps: Deps, docs_paths: frozenset[str]) -> Non
     #     reaches the database, and before the contract so its security sees the session;
     #   - ContractValidation, so an operation sees only requests the contract accepts.
     app.add_middleware(ContractValidation, contract=deps.contract, skip=docs_paths)
-    if deps.auth is not None:
-        app.add_middleware(AuthenticateMiddleware, auth=deps.auth)
+    if deps.modules is not None:
+        app.add_middleware(AuthenticateMiddleware, auth=deps.modules.auth)
     app.add_middleware(OriginGuardMiddleware, policy=deps.origin)
     app.add_middleware(CrossOriginMiddleware, app_origin=deps.app_origin)
     app.add_middleware(RecoverMiddleware)

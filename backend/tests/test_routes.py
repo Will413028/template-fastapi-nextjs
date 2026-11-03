@@ -11,9 +11,8 @@ from starlette.routing import Mount
 from apitest import contract, deps, stub_contract
 from app.main.factory import create_app
 from app.main.routes import UNIMPLEMENTED, RouteContractError, check_routes, contract_operations
-from app.modules.auth.dependencies import Auth
 from app.web.access import PUBLIC, SIGNED_IN
-from authfake import SECURE, FakeAuthService, fake_app
+from authfake import FakeAuthService, fake_app, fake_modules
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -65,7 +64,7 @@ def test_the_real_app_routes_every_operation_not_listed_as_unimplemented() -> No
 def test_the_app_is_not_built_when_its_routes_and_contract_disagree() -> None:
     # the auth routes against the test contract, which has none of their operations
     with pytest.raises(RouteContractError, match="POST /api/users is routed but is not an operation"):
-        create_app(dataclasses.replace(deps(stub_contract()), auth=Auth(FakeAuthService(), SECURE)))
+        create_app(dataclasses.replace(deps(stub_contract()), modules=fake_modules()))
 
 
 def test_an_operation_without_a_route() -> None:

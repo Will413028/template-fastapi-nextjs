@@ -12,10 +12,11 @@ from typing import TYPE_CHECKING, Any, override
 from sqlalchemy import text
 
 from apitest import PEER, checked_client, contract, deps
-from app.main.factory import create_app
+from app.main.factory import Modules, create_app
 from app.modules.auth.dependencies import Auth, SessionCookie
 from app.modules.auth.service import AuthService
 from app.modules.auth.service.passwords import Argon2Params, PasswordHasher
+from app.modules.items.service import ItemsService
 from app.platform.db import Database, create_engine
 from app.web.origin import OriginPolicy
 from app.web.ratelimit import IPLimiter
@@ -205,7 +206,9 @@ def auth_api(
             database=database,
             origin=OriginPolicy(secrets=(SECRET,), required=False),
             limiter=IPLimiter(per_min, lambda: 1_000_000.0),
-            auth=Auth(service, SessionCookie(name=COOKIE, secure=True)),
+            modules=Modules(
+                auth=Auth(service, SessionCookie(name=COOKIE, secure=True)), items=ItemsService(database.engine)
+            ),
         )
     )
     with checked_client(app, against=contract(), peer=PEER) as client:

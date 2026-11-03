@@ -22,11 +22,11 @@
 | DELETE | `/sessions/current` | `deleteCurrentSession` | 改寫 | 3 | 完成（3b） |
 | GET | `/sessions/{id}` | `getSession` | 改寫 | 3 | 完成（3b） |
 | DELETE | `/sessions/{id}` | `deleteSession` | 改寫 | 3 | 未開始 |
-| POST | `/items` | `createItem` | 改寫 | 4 | 未開始 |
-| GET | `/items` | `listItems` | 改寫 | 4 | 未開始 |
-| GET | `/items/{id}` | `getItem` | 改寫 | 4 | 未開始 |
-| PATCH | `/items/{id}` | `updateItem` | 改寫 | 4 | 未開始 |
-| DELETE | `/items/{id}` | `deleteItem` | 改寫 | 4 | 未開始 |
+| POST | `/items` | `createItem` | 改寫 | 4 | 完成 |
+| GET | `/items` | `listItems` | 改寫 | 4 | 完成 |
+| GET | `/items/{id}` | `getItem` | 改寫 | 4 | 完成 |
+| PATCH | `/items/{id}` | `updateItem` | 改寫 | 4 | 完成 |
+| DELETE | `/items/{id}` | `deleteItem` | 改寫 | 4 | 完成 |
 | GET | `/health` | （非契約） | 改寫 | 1 | 完成 |
 | GET | `/health/ready` | （非契約） | 改寫 | 2a、2c | 完成（2a：DB ping 與 503 problem；2c：只接受 loopback） |
 
@@ -49,7 +49,7 @@
 | `AGENTS.md`、`README.md` | 改寫（Go 專屬規則換成 Python） | 1、7 | 進行中 |
 | `SECURITY.md`、`LICENSE` | 保留（`SECURITY.md` 網址換 repo 名） | 1 | 完成 |
 | `bin/hadolint` | 保留 | 1 | 完成 |
-| `.claude/`（openspec 指令、`add-crud`、`add-module` 指南） | 步驟 1 不照搬：內容是 Go 的寫法。第一個 module 做完後，依 D7 寫 Python 版的 `add-module` 指南（給 agent 照著做的範例）；openspec 指令不帶過來 | 4 | 未開始 |
+| `.claude/`（openspec 指令、`add-crud`、`add-module` 指南） | 步驟 1 不照搬：內容是 Go 的寫法。第一個 module 做完後，依 D7 寫 Python 版的 `add-module` 指南（給 agent 照著做的範例）；openspec 指令不帶過來 | 4 | 完成（`docs/rules/add-module.md`，Claude Code skill `.claude/skills/add-module/SKILL.md` 指向它；涵蓋 Go 版 add-module 與 add-crud） |
 | `deploy/postgres/`（initdb 角色腳本） | 保留 | 1、2a | 完成 |
 | `deploy/Caddyfile`、compose 的 `caddy` 服務、`docker-compose.dev.yml` 的 caddy override | 刪除（D6：2026-11-03 Will 決定拿掉 Caddy） | 1 | 完成 |
 | `docker-compose.yml` 的 `frontend` 服務、固定 IP 與 ipam | 刪除（D6：前端在 Vercel；固定 IP 原本給 `TRUSTED_PROXIES`）；frontend 服務改由 `docker-compose.dev.yml` 完整定義 | 1 | 完成 |

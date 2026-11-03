@@ -7,11 +7,12 @@ from typing import TYPE_CHECKING
 
 import uvicorn
 
-from app.main.factory import Deps, create_app
+from app.main.factory import Deps, Modules, create_app
 from app.main.logs import configure_logging
 from app.main.routes import RouteContractError
 from app.modules.auth.dependencies import Auth, SessionCookie
 from app.modules.auth.service import AuthService
+from app.modules.items.service import ItemsService
 from app.platform.config import ConfigError, Settings
 from app.platform.db import Database
 from app.web.contract import Contract, ContractError
@@ -50,7 +51,10 @@ def run(environ: Mapping[str, str] | None) -> int:
                 app_origin=settings.app_origin,
                 docs=settings.mode == "dev",
                 limiter=IPLimiter(settings.auth_rate_limit_per_min, time.monotonic),
-                auth=Auth(auth, SessionCookie(name=settings.session_cookie_name, secure=settings.cookie_secure)),
+                modules=Modules(
+                    auth=Auth(auth, SessionCookie(name=settings.session_cookie_name, secure=settings.cookie_secure)),
+                    items=ItemsService(database.engine),
+                ),
             )
         )
     except RouteContractError as err:

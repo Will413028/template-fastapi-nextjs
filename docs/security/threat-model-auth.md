@@ -36,7 +36,7 @@
 | `deleteCurrentUser` | `DELETE /api/users/me` | 登入者；session 必須是 10 分鐘內登入的，否則 403 `reauthentication_required` |
 | `listUsers`、`patchUser`、`deleteUser` | `GET /api/users`、`PATCH`／`DELETE /api/users/{id}` | 只有 admin |
 
-不在範圍內：`items` 的各個 operation（擁有者範圍之外）、主機與 Docker 的強化、Caddy 的 TLS 設定。
+不在範圍內：`items` 各 operation 擁有者範圍以外的部分、主機與 Docker 的強化、Caddy 的 TLS 設定。
 
 ## Spoofing（冒充）
 
@@ -82,6 +82,7 @@
 | 登入時從回應或時間差列舉帳號 | 不存在的帳號也跑一次 dummy hash，回同樣的 problem；節流也套用在不存在的帳號名。dummy hash 在啟動時就算好，第一次也不多一次雜湊。測試：`test_an_unknown_account_costs_a_hash_and_answers_like_a_wrong_password`、`test_sign_in_is_throttled_per_account_name_whether_or_not_it_exists` | 已緩解 |
 | 註冊時列舉帳號 | 帳號已存在回 `409 account_taken`。測試：`test_create_user_duplicate` | 接受：用帳號名而不是 email，無法隱藏名稱已被使用（ADR D6）；註冊有每 IP 限流 |
 | 讀到別人的使用者資料或 session | 非擁有者一律 404，與不存在的一樣（`auth/service/__init__.py` `user`、`session`，`auth/repository.py` `get_user_session`）。測試：`test_another_users_account_is_not_found_like_a_missing_one`、`test_get_session`、`test_list_sessions`、`test_another_users_session_cannot_be_revoked`（`test_auth_db.py`，撤銷也只看本人的 session：`auth/repository.py` `Live`）；列使用者仍是 Go 版（`TestNonAdminCannotListUsers`），步驟 5 移植 | 讀取與撤銷 session 已緩解 |
+| 讀到或改到別人的 item | 每個讀、改、刪既有 item 的查詢都帶 `owner_id = 呼叫者`，非擁有者一律 404（`items/repository.py`）。測試：`test_queries_on_existing_items_are_scoped_to_the_owner`（`test_items_repository.py`，本機）、`test_another_users_item_is_not_found_like_a_missing_one`、`test_another_users_item_cannot_be_changed_or_deleted`（`test_items_db.py`） | 已緩解 |
 | 內部錯誤洩漏細節 | 非預期錯誤變成不帶細節的 500，細節只進日誌（`httpapi/problem.go`）。測試：`TestUnhandledErrorHidden` | 已緩解 |
 | 密碼送到 HIBP | 只送 SHA-1 的前 5 個 hex 字元，帶 `Add-Padding`（`hibp.go`）。測試：`TestBreached` | 已緩解。HIBP 網路錯誤的訊息含請求網址，也就是同樣的 5 個字元，會寫進本機日誌（推論自 `net/http` 的 `*url.Error`）：接受，內容與送出去的相同 |
 | API 契約與 Swagger UI 外露 | 只在 `MODE=dev` 提供，預設 `prod`。測試：`TestDocs` | 已緩解 |

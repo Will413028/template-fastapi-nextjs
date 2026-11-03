@@ -2,7 +2,7 @@
 
 Fullstack monorepo template with a FastAPI backend and a Next.js frontend. The frontend deploys to Vercel, which rewrites `/api/*` to the backend on one origin; the backend and PostgreSQL run with Docker Compose on a VM and are reached through a Cloudflare Tunnel.
 
-Status: modules in progress. The backend serves `GET /health`, `GET /health/ready` and eleven of the contract's operations (sign-up, sign-in, sign-out, the current user and session, reading a user and a session, listing and revoking sessions, signing out everywhere, deleting one's own account), with the `serve`, `migrate`, `healthcheck` and `seed-admin` commands (`make seed` creates the admin); the operations not routed yet are listed in `backend/src/app/main/routes.py` `UNIMPLEMENTED`, and each module adds its own.
+Status: modules in progress. The backend serves `GET /health`, `GET /health/ready` and sixteen of the contract's operations (sign-up, sign-in, sign-out, the current user and session, reading a user and a session, listing and revoking sessions, signing out everywhere, deleting one's own account, and the items CRUD), with the `serve`, `migrate`, `healthcheck` and `seed-admin` commands (`make seed` creates the admin); the operations not routed yet are listed in `backend/src/app/main/routes.py` `UNIMPLEMENTED`, and each module adds its own.
 
 ## Verification
 
@@ -97,6 +97,7 @@ pnpm gen:api          # Regenerate API types from backend/api/openapi.yaml
 ## Architecture
 
 - Frontend (Next.js App Router, feature-based, next-intl, generated API client): `frontend/AGENTS.md`.
+- Adding a backend module: `docs/rules/add-module.md` (the items module is the worked example).
 - Decisions: `docs/adr/`. Some documents under `docs/` still describe the Go template's Caddy deployment; they are being rewritten.
 - `docker-compose.yml` runs what the VM runs and publishes no port. `docker-compose.dev.yml` adds the frontend dev server on `127.0.0.1:3000`, whose development rewrite forwards `/api` to the backend.
 

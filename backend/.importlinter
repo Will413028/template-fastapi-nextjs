@@ -66,9 +66,13 @@ source_modules =
     app.modules.*.dependencies
 forbidden_modules =
     sqlalchemy
+    app.modules.*.repository
+    app.modules.*.models
+    app.platform.db
 # Only what these files import themselves: a router calls its service, which imports sqlalchemy, and that chain is the
-# layering this file asks for (router > service > repository > models). http-stays-at-the-edge does check indirect
-# imports, because a service must not reach starlette even through app.web.
+# layering this file asks for (router > service > repository > models). The queries, the tables and the engine are
+# forbidden too, or a router could run SQL through them without naming sqlalchemy (layers let it import lower layers).
+# http-stays-at-the-edge does check indirect imports, because a service must not reach starlette even through app.web.
 allow_indirect_imports = True
 broken_contract_guidance = Routers call the module's service, which owns the transaction; put queries in service.py or repository.py.
 

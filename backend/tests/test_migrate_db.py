@@ -39,7 +39,8 @@ def denied(settings: DatabaseSettings, statement: str) -> bool:
     try:
         asyncio.run(execute(settings, statement))
     except DBAPIError as err:
-        return "permission denied" in str(err.orig)
+        # both are SQLSTATE 42501 insufficient_privilege; ALTER on another role's table says the second
+        return any(text in str(err.orig) for text in ("permission denied", "must be owner"))
     return False
 
 

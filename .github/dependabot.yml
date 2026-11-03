@@ -23,11 +23,17 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+    # uv_build is uv's build backend and moves with required-version (upgraded by hand with uv itself)
+    ignore:
+      - dependency-name: uv-build
+        update-types: [version-update:semver-major, version-update:semver-minor]
     groups:
       backend-minor-patch:
         update-types: [minor, patch]
 
-  # the uv and Python base images, pinned by digest in backend/Dockerfile
+  # the uv and Python base images, pinned by digest in backend/Dockerfile. A new Python minor needs
+  # requires-python in backend/pyproject.toml changed with it, and a new uv minor needs required-version there, so
+  # those are upgraded by hand; patches and digests come through here.
   - package-ecosystem: docker
     target-branch: dev
     directory: /backend
@@ -35,6 +41,11 @@ updates:
       interval: weekly
     cooldown:
       default-days: 7
+    ignore:
+      - dependency-name: python
+        update-types: [version-update:semver-major, version-update:semver-minor]
+      - dependency-name: astral-sh/uv
+        update-types: [version-update:semver-major, version-update:semver-minor]
 
   # node in frontend/Dockerfile, pinned by digest
   - package-ecosystem: docker

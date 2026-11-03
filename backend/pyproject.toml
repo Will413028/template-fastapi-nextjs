@@ -31,5 +31,7 @@ build-backend = "uv_build"
 module-name = "app"
 
 [tool.uv]
+# One uv everywhere: CI reads this (astral-sh/setup-uv version-file), and backend/Dockerfile pins the same image tag.
+required-version = "==0.12.23"
 # Supply-chain cooldown, the same 7 days as Dependabot (.github/dependabot.yml) and pnpm's minimumReleaseAge.
 exclude-newer = "7 days"

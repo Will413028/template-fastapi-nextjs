@@ -337,7 +337,7 @@ class AuthService:
             if created_at is None:
                 raise session_invalid()
             now = self._now()
-            if now - created_at > REAUTHENTICATE_WITHIN:
+            if now - created_at > REAUTHENTICATE_WITHIN * 1000:
                 raise AppError(
                     Kind.FORBIDDEN,
                     CODE_REAUTHENTICATION_REQUIRED,

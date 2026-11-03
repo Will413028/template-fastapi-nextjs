@@ -28,6 +28,8 @@ from app.web.origin import OriginPolicy
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
+    from starlette.types import Message
+
     from app.platform.config import Mode
 
 SECRET = "s" * 43
@@ -67,7 +69,7 @@ def find(entries: list[dict[str, Any]], msg: str) -> dict[str, Any]:
     return matches[0]
 
 
-def test_error_log_and_access_log_carry_the_request_id(capture: Capture) -> None:
+def test_panic_log_and_access_log_carry_request_id(capture: Capture) -> None:
     stream = capture()
     with checked_client(stub_app(origin=PROD)) as client:
         response = client.get(
@@ -102,10 +104,15 @@ def test_access_log_client_ip_is_the_connection_without_the_secret(capture: Capt
     assert find(lines(stream), "request")["client_ip"] == PEER[0]
 
 
-def test_a_refused_request_is_logged(capture: Capture) -> None:
+@pytest.mark.parametrize("secret", [None, "wrong-" + SECRET], ids=["no secret", "wrong secret"])
+def test_a_refused_request_is_logged_with_the_connection_address(capture: Capture, secret: str | None) -> None:
+    # a forged X-Real-IP is ignored whether the secret is missing or wrong
     stream = capture()
+    headers = {"x-real-ip": "198.51.100.9"}
+    if secret:
+        headers["x-origin-secret"] = secret
     with checked_client(stub_app(origin=PROD)) as client:
-        client.get("/api/widgets", headers={"x-real-ip": "198.51.100.9"})
+        client.get("/api/widgets", headers=headers)
     access = find(lines(stream), "request")
     assert (access["status"], access["client_ip"]) == (403, PEER[0])
 
@@ -130,7 +137,7 @@ async def abort() -> None:
     raise AbortError
 
 
-def test_access_log_abort_before_sending(capture: Capture) -> None:
+def test_access_log_abort_before_writing(capture: Capture) -> None:
     stream = capture()
     app = bare_app()
     app.get("/api/widgets/{widget_id}")(abort)
@@ -148,6 +155,24 @@ def test_access_log_abort_after_the_response_started(capture: Capture) -> None:
         asyncio.run(call_asgi(app, {"method": "GET", "path": "/api/widgets"}, [EMPTY_BODY]))
     aborted = find(lines(stream), "request aborted")
     assert (aborted["level"], aborted["status"]) == ("WARNING", 200)
+
+
+def test_the_servers_error_line_carries_the_request_id(capture: Capture) -> None:
+    stream = capture()
+    app = bare_app()
+    stream_then_fail(app, "/api/widgets")
+    sent: list[Message] = []
+
+    async def serve() -> None:
+        # as uvicorn does: the app, then the server's own error line in the same task
+        try:
+            await call_asgi(app, {"method": "GET", "path": "/api/widgets"}, [EMPTY_BODY], sent=sent)
+        except BoomError:
+            logging.getLogger("uvicorn.error").exception("Exception in ASGI application")
+
+    asyncio.run(serve())
+    request_id = dict(sent[0]["headers"])[b"x-request-id"].decode()
+    assert find(lines(stream), "Exception in ASGI application")["request_id"] == request_id
 
 
 def test_dev_logs_are_text_with_the_request_id(capture: Capture) -> None:
@@ -168,6 +193,19 @@ def test_text_log_values_cannot_forge_a_line(capture: Capture) -> None:
     output = stream.getvalue()
     assert output.count("\n") == 1, output
     assert 'path="/api/x\\n2026-01-01 INFO app.access request status=200 x=\\""' in output
+
+
+def test_a_message_with_request_data_stays_on_one_line(capture: Capture) -> None:
+    stream = capture("dev")
+    logging.getLogger("app.test").warning("bad header %s", "x\r\n2026-01-01 ERROR app.access forged")
+    assert stream.getvalue().count("\n") == 1, stream.getvalue()
+
+
+def test_extra_fields_cannot_replace_the_core_keys(capture: Capture) -> None:
+    stream = capture()
+    logging.getLogger("app.test").warning("real", extra={"level": "DEBUG", "logger": "forged"})
+    entry = find(lines(stream), "real")
+    assert (entry["level"], entry["logger"]) == ("WARNING", "app.test")
 
 
 def test_a_log_line_outside_a_request_has_no_request_id(capture: Capture) -> None:

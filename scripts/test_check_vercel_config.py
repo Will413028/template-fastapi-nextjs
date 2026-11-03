@@ -52,6 +52,18 @@ class CheckVercelConfigTest(unittest.TestCase):
         del api_route(config)["env"]
         self.assert_fails(config, "env must list BACKEND_ORIGIN")
 
+    def test_env_must_be_a_list_of_names(self):
+        config = real_config()
+        api_route(config)["env"] = "BACKEND_ORIGIN"
+        api_route(config)["transforms"][0]["env"] = "ORIGIN_SECRET"
+        self.assert_fails(config, "env must list BACKEND_ORIGIN")
+        self.assert_fails(config, "env must list ORIGIN_SECRET")
+
+    def test_a_malformed_transform_is_a_problem_not_a_crash(self):
+        config = real_config()
+        api_route(config)["transforms"] = ["X-Origin-Secret"]
+        self.assert_fails(config, "found 0")
+
     def test_transform_env_missing(self):
         config = real_config()
         api_route(config)["transforms"][0]["env"] = []

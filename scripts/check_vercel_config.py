@@ -37,9 +37,17 @@ def _strings(value: object) -> list[str]:
     return []
 
 
+def _names(value: object) -> list[str]:
+    """An env whitelist: Vercel takes a list of names; a single string is not one."""
+    return [v for v in value if isinstance(v, str)] if isinstance(value, list) else []
+
+
 def _secret_transforms(route: dict) -> list[dict]:
     found = []
-    for transform in route.get("transforms", []):
+    transforms = route.get("transforms", [])
+    for transform in transforms if isinstance(transforms, list) else []:
+        if not isinstance(transform, dict):
+            continue
         target = transform.get("target", {})
         key = target.get("key") if isinstance(target, dict) else None
         if transform.get("type") == "request.headers" and isinstance(key, str) and key.lower() == SECRET_HEADER:
@@ -58,7 +66,7 @@ def problems(config: object) -> list[str]:
     dest = route.get("dest", "")
     if not (isinstance(dest, str) and dest.endswith("/api/$1") and _references(dest.removesuffix("/api/$1"), "BACKEND_ORIGIN")):
         found.append(f"the route's dest must be ${{BACKEND_ORIGIN}}/api/$1, got {dest!r}")
-    if "BACKEND_ORIGIN" not in route.get("env", []):
+    if "BACKEND_ORIGIN" not in _names(route.get("env")):
         found.append("the route's env must list BACKEND_ORIGIN, or Vercel sends ${BACKEND_ORIGIN} literally")
     transforms = _secret_transforms(route)
     if len(transforms) != 1:
@@ -70,7 +78,7 @@ def problems(config: object) -> list[str]:
         args = transform.get("args")
         if not (isinstance(args, str) and _references(args, "ORIGIN_SECRET")):
             found.append(f"the X-Origin-Secret transform's args must be exactly $ORIGIN_SECRET, got {args!r}")
-        if "ORIGIN_SECRET" not in transform.get("env", []):
+        if "ORIGIN_SECRET" not in _names(transform.get("env")):
             found.append("the X-Origin-Secret transform's env must list ORIGIN_SECRET, or Vercel sends it literally")
     found.extend(
         f"a value that looks like a secret: {s[:4]}... ({len(s)} characters)"

@@ -1,6 +1,7 @@
 """`app serve`: the HTTP server."""
 
 import sys
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -12,6 +13,7 @@ from app.platform.config import ConfigError, Settings
 from app.platform.db import Database
 from app.web.contract import Contract, ContractError
 from app.web.origin import OriginPolicy
+from app.web.ratelimit import IPLimiter
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -39,7 +41,7 @@ def run(environ: Mapping[str, str] | None) -> int:
         contract=contract,
         origin=OriginPolicy(secrets=settings.origin_secrets, required=settings.mode == "prod"),
         docs=settings.mode == "dev",
-        rate_limit_per_min=settings.auth_rate_limit_per_min,
+        limiter=IPLimiter(settings.auth_rate_limit_per_min, time.monotonic),
     )
     uvicorn.run(
         app,

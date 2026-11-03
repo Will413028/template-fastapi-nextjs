@@ -46,12 +46,13 @@ def create_app(
     contract: Contract,
     origin: OriginPolicy,
     docs: bool = False,
-    rate_limit_per_min: int = DEFAULT_AUTH_RATE_LIMIT_PER_MIN,
+    limiter: IPLimiter | None = None,
 ) -> FastAPI:
     """The API under /api, checked against contract, and the health checks. origin decides which requests come
     through the site (app.web.origin). docs (MODE=dev only) serves the contract at /api/openapi.yaml and Swagger UI at
-    /api/docs; without it those paths are undefined routes like any other. rate_limit_per_min is the per-address limit
-    of the operations that depend on app.web.ratelimit.rate_limit (AUTH_RATE_LIMIT_PER_MIN)."""
+    /api/docs; without it those paths are undefined routes like any other. limiter holds the per-address buckets of
+    the operations with dependencies=[app.web.ratelimit.RATE_LIMITED]; by default AUTH_RATE_LIMIT_PER_MIN's default
+    on the monotonic clock."""
 
     @contextlib.asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
@@ -62,7 +63,7 @@ def create_app(
 
     # The contract is the hand-written api/openapi.yaml, so FastAPI's generated schema and docs stay off.
     app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None, lifespan=lifespan)
-    app.state.ip_limiter = IPLimiter(rate_limit_per_min, time.monotonic)
+    app.state.ip_limiter = limiter or IPLimiter(DEFAULT_AUTH_RATE_LIMIT_PER_MIN, time.monotonic)
 
     # /health is liveness: 200 while the process runs, without checking dependencies. /health/ready is readiness:
     # 503 while the database is unavailable. Both sit outside the API contract.

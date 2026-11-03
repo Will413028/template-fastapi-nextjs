@@ -18,9 +18,9 @@
 
 **信任邊界**
 
-1. 瀏覽器 → Caddy：只有 Caddy 發佈 port（`docker-compose.yml`）。`SITE_ADDRESS` 是網域時有 TLS 與 HSTS（`deploy/Caddyfile`）。
-2. Caddy → backend（`/api/*`）與 Caddy → Next（其餘），走 compose 網路。backend 只相信 `TRUSTED_PROXIES`（預設是 Caddy 的固定位址）送來的 `X-Forwarded-For` 與 `X-Request-ID`。
-3. Next server → backend：server 端呼叫直接打 `API_URL`，只轉送請求的 cookie（`frontend/src/features/auth/server.ts`）。Next 不是受信任的 proxy，無法指定 client 位址。
+1. 瀏覽器 → Vercel：頁面與 `/api/*` 同一個網域；`/api/*` 由 `frontend/vercel.json` 的 rewrite 轉給 backend 的公開位址，並設定 `X-Origin-Secret`（值在 Vercel 環境變數）。Vercel 覆寫 client 送的 `X-Forwarded-For`，`X-Real-IP` 是使用者位址（Vercel 文件）。
+2. Vercel → Cloudflare Tunnel → backend：沒有服務發佈 port（`docker-compose.yml`，CI 檢查）。tunnel 的位址任何人都能連，所以 backend 只把帶相符 `X-Origin-Secret` 的 `/api` 請求當成來自網站，也只在這時採信 `X-Real-IP`；`MODE=prod` 下沒帶或帶錯都回 403，`/health` 只接受 loopback（`backend/src/app/web/origin.py`）。`X-Request-ID` 一律由 backend 產生（`backend/src/app/web/request_id.py`）。
+3. Next server → backend：server 端呼叫直接打 `API_URL`，只轉送請求的 cookie，並帶 `X-Origin-Secret`（`frontend/src/lib/api/client.ts`）。它不帶 `X-Real-IP`，所以限流的位址是連線來源（正式環境是 cloudflared），會限流的 operation 不從 server 端呼叫。
 4. backend → PostgreSQL：用 app 角色，只有 DML 權限（`deploy/postgres/initdb/10-roles.sh`、`backend/internal/platform/migrate/migrate.go`）。
 5. backend → Have I Been Pwned range API：只在 `PASSWORD_HIBP_CHECK=true` 時（`backend/internal/platform/hibp/hibp.go`）。
 
@@ -49,7 +49,7 @@
 | Session fixation | 每次登入都發新 token，並刪掉請求帶來的舊 token。測試：`TestCreateSessionIssuesNewToken` | 已緩解 |
 | 登出、停用或過期後重用 token | 每個請求都重讀 session 與使用者；idle 預設 1 天、絕對期限 7 天；停用會刪掉該使用者所有 session。測試：`TestSessionIdleExpiry`、`TestSessionAbsoluteExpiry`、`TestDeleteCurrentSessionRevokes`、`TestDeleteAllSessions`、`TestAdminDisablesUserRevokesSessions`、`TestMeDisabledAccount`、`TestMeAfterUserDeleted` | 已緩解 |
 | 用 header 代替 cookie 送 token | 只讀 cookie（`httpapi/auth.go`）。測試：`TestMeIgnoresBearer` | 已緩解 |
-| Client 偽造位址規避每 IP 限流 | `X-Forwarded-For` 從右往左走，只經過受信任的 proxy（`httpapi/middleware.go`）。測試：`TestClientIP`、`TestRateLimitIgnoresXFFFromUntrustedPeer`、`TestRateLimitPerIPBehindTrustedProxy` | `TRUSTED_PROXIES` 只列 proxy 時已緩解 |
+| Client 偽造位址規避每 IP 限流 | 只在請求帶相符的 `X-Origin-Secret` 時採信 `X-Real-IP`，其他一律用連線來源位址；`X-Forwarded-For` 從不採信（`backend/src/app/web/origin.py`）。測試：`test_rate_limit_ignores_x_real_ip_without_the_secret`、`test_rate_limit_per_ip_behind_a_verified_origin` | 來源密鑰沒外洩時已緩解；正式路徑上 `X-Real-IP` 是否真是使用者位址列在部署文件的第一次部署檢查清單 |
 | 被停用的帳號登入 | 回應與密碼錯誤相同的 `invalid_credentials`。測試：`TestCreateSessionDisabledAccount` | 已緩解 |
 
 ## Tampering（竄改）
@@ -60,7 +60,7 @@
 | 註冊時自己指定角色 | 請求 schema 拒絕未定義的欄位；service 一律寫入 `user`。測試：`TestValidationCodes`（`additional_property`）、`TestCreateUserSetsSessionCookie`（角色是 `user`） | 已緩解 |
 | 同一帳號名稱同時註冊 | 由唯一索引決定，恰好一個成功，其餘 409。測試：`TestCreateUserConcurrentSameAccount` | 已緩解 |
 | Token 走明文 http | 除非 `COOKIE_SECURE=false`，cookie 帶 `Secure` 與 `__Host-` 前綴；Caddy 送 HSTS。測試：`TestCookieNameFollowsSecure`、`TestConfigDefaults` | `SITE_ADDRESS` 是網域時已緩解；`:80` 只供本機使用 |
-| 在日誌裡偽造 request id | 只接受受信任來源、格式為 `[A-Za-z0-9-]{1,64}` 的值；Caddy 覆寫 client 送的值。測試：`TestRequestIDFromUntrustedPeerReplaced`、`TestRequestIDMalformedReplaced` | 已緩解 |
+| 在日誌裡偽造 request id | backend 一律自己產生 UUIDv7，不採信傳入的 `X-Request-ID`；文字日誌的值含空白、引號或換行時加引號（`backend/src/app/main/logs.py`）。測試：`test_request_id_from_the_client_is_replaced`、`test_text_log_values_cannot_forge_a_line` | 已緩解 |
 | SQL injection | 查詢只經過 sqlc 產生的程式碼；手寫 pgx `Query` 會被 lint 擋（`backend/.golangci.yml` forbidigo） | 已緩解 |
 | 登入後被導向外站 | `callbackUrl` 用 URL 解析後必須與本站同源，`/\evil.example`、`/\t/evil.example` 這類看起來像本站路徑的值也會被擋（`frontend/src/features/auth/callback.ts`）。測試：`callback.test.ts` | 已緩解 |
 
@@ -68,7 +68,7 @@
 
 | 威脅 | 程式碼裡的緩解 | 狀態 |
 |---|---|---|
-| 無法追蹤某個請求 | 每個請求一行 access log，帶 `request_id`、`method`、`path`、`status`、`duration_ms`、`client_ip`（`httpapi/middleware.go`）。測試：`TestPanicLogAndAccessLogCarryRequestID` | 已緩解 |
+| 無法追蹤某個請求 | 每個請求一行 access log，帶 `request_id`、`method`、`path`、`status`、`duration_ms`、`client_ip`（`backend/src/app/web/access_log.py`）。測試：`test_error_log_and_access_log_carry_the_request_id` | 已緩解 |
 | 使用者或 admin 否認做過某個操作 | admin 的停用、啟用、刪除、解鎖與主機上的 `recover-admin`，在同一個交易寫進 `audit_events`（執行者、動作、對象、request id）；app 角色對它只能新增與讀取，保留 365 天。註冊、登入成功與失敗、登出、被拒絕的 admin 操作寫安全事件日誌，帶 user id 與 request id；容器日誌有輪替。測試：`TestAdminChangesAreAudited`（每個會改狀態的 admin operation 都要有案例）、`TestAuditEventsAppendOnly`、`TestAppendOnlyTables`、`TestSecurityEventsLogged` | 已緩解。紀錄存在同一個資料庫，能拿到 owner 或 superuser 權限的人仍可修改；需要防竄改證明時改送外部儲存 |
 
 ## Information disclosure（資訊洩漏）
@@ -125,5 +125,5 @@
 - 新增角色，或改變授予角色的方式。
 - Session 期限、cookie 名稱或屬性、token 格式改變。
 - 新增外部身分提供者、MFA、Bearer token 或任何非瀏覽器的 client。
-- `TRUSTED_PROXIES`、backend 前面的 proxy、backend 副本數改變。
+- 來源密鑰的機制、backend 前面的 proxy（Vercel、Cloudflare Tunnel）、backend 副本數改變。
 - 上面某個 Open 項目處理完：改狀態並寫出測試。

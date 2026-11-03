@@ -1,4 +1,4 @@
 {
   "suppressions": { "python": 0, "typescript": 0 },
-  "tests": { "frontend": 42, "backend": 212, "backend_db": 10 }
+  "tests": { "frontend": 42, "backend": 216, "backend_db": 10 }
 }

@@ -24,9 +24,18 @@ DEV = OriginPolicy(secrets=(SECRET,), required=False)
 WIDGET = {"name": "gear"}
 
 
+class Clock:
+    def __init__(self) -> None:
+        self.now = 1_700_000_000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+
 def limited_client(per_min: int, origin: OriginPolicy) -> TestClient:
     """POST /api/widgets (createWidget) limited to per_min per client address, GET /api/widgets not limited."""
-    app = bare_app(origin=origin, rate_limit_per_min=per_min)
+    # a stopped clock: Retry-After does not depend on how fast the machine runs the requests
+    app = bare_app(origin=origin, limiter=IPLimiter(per_min, Clock()))
 
     @app.post("/api/widgets", dependencies=[RATE_LIMITED])
     async def create_widget(request: Request) -> Response:
@@ -93,14 +102,6 @@ def test_a_request_the_contract_rejects_uses_no_token() -> None:
         for _ in range(3):
             assert client.post("/api/widgets", json={"name": "x"}).status_code == 422
         assert post_from(client, secret="") == 201
-
-
-class Clock:
-    def __init__(self) -> None:
-        self.now = 1_700_000_000.0
-
-    def __call__(self) -> float:
-        return self.now
 
 
 def test_ip_limiter_refills_and_sweeps() -> None:

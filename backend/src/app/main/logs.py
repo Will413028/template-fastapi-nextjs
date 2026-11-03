@@ -50,12 +50,13 @@ def _time(record: logging.LogRecord) -> str:
 class JsonFormatter(logging.Formatter):
     @override
     def format(self, record: logging.LogRecord) -> str:
+        # the core keys come last, so an extra= of the same name cannot replace them
         entry: dict[str, Any] = {
+            **_fields(record),
             "time": _time(record),
             "level": record.levelname,
             "logger": record.name,
             "msg": record.getMessage(),
-            **_fields(record),
         }
         if record.exc_info:
             entry["exc_info"] = self.formatException(record.exc_info)
@@ -66,7 +67,9 @@ class TextFormatter(logging.Formatter):
     @override
     def format(self, record: logging.LogRecord) -> str:
         pairs = " ".join(f"{key}={_text_value(value)}" for key, value in _fields(record).items())
-        line = f"{_time(record)} {record.levelname} {record.name} {record.getMessage()}"
+        # a message may carry request data (uvicorn's warnings do): its line breaks are escaped too
+        message = record.getMessage().replace("\r", "\\r").replace("\n", "\\n")
+        line = f"{_time(record)} {record.levelname} {record.name} {message}"
         if pairs:
             line = f"{line} {pairs}"
         if record.exc_info:

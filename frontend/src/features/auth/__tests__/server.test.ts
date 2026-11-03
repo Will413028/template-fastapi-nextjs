@@ -25,7 +25,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  vi.stubEnv("ORIGIN_SECRET", undefined);
+  vi.unstubAllEnvs();
 });
 
 describe("getServerUser", () => {
@@ -64,6 +64,7 @@ describe("getServerUser", () => {
   });
 
   it("sends no origin secret when none is set (development)", async () => {
+    vi.stubEnv("ORIGIN_SECRET", "");
     withCookies("session=abc");
     mockFetch.mockResolvedValueOnce(Response.json(user));
 

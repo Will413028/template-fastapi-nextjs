@@ -128,6 +128,11 @@ def _under(path: str, prefix: str) -> bool:
     return path == prefix or path.startswith(prefix + "/")
 
 
+def is_health_path(path: str) -> bool:
+    """/health and /health/ready: outside the API, answered only to loopback, logged at debug."""
+    return _under(path, "/health")
+
+
 class OriginGuardMiddleware:
     """An /api request without a configured secret gets a 403 problem (no code: the contract's code list stays as it
     is), and the health checks answer only loopback (`app healthcheck` inside the container): from anywhere else they
@@ -146,7 +151,7 @@ class OriginGuardMiddleware:
             msg = "OriginGuardMiddleware runs inside ClientMiddleware"
             raise RuntimeError(msg)
         path: str = scope["path"]
-        if _under(path, "/health") and not (client.peer is not None and client.peer.is_loopback):
+        if is_health_path(path) and not (client.peer is not None and client.peer.is_loopback):
             await problem_response(NOT_FOUND)(scope, receive, send)
             return
         if _under(path, "/api") and self._refused(client.origin):

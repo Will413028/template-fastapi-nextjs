@@ -4,7 +4,7 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
-from app.web.origin import current_client
+from app.web.origin import current_client, is_health_path
 
 if TYPE_CHECKING:
     from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -52,6 +52,5 @@ class AccessLogMiddleware:
         except BaseException:
             logger.warning("request aborted", extra=fields())
             raise
-        path: str = scope["path"]
-        health = path == "/health" or path.startswith("/health/")
-        logger.log(logging.DEBUG if health else logging.INFO, "request", extra=fields())
+        level = logging.DEBUG if is_health_path(scope["path"]) else logging.INFO
+        logger.log(level, "request", extra=fields())

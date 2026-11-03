@@ -29,6 +29,8 @@ if TYPE_CHECKING:
     import httpx2
     from starlette.types import Message, Scope
 
+    from app.web.ratelimit import IPLimiter
+
 CONTRACT_PATH = Path(__file__).parents[1] / "api" / "openapi.yaml"
 TEST_CONTRACT_PATH = Path(__file__).parent / "testdata" / "test-openapi.yaml"
 
@@ -115,9 +117,9 @@ class BoomError(Exception):
     """An unexpected failure inside an operation."""
 
 
-def bare_app(*, origin: OriginPolicy = DEV_ORIGIN, rate_limit_per_min: int = 5) -> FastAPI:
+def bare_app(*, origin: OriginPolicy = DEV_ORIGIN, limiter: IPLimiter | None = None) -> FastAPI:
     """The full app around tests/testdata/test-openapi.yaml without operations; a test adds the one it needs."""
-    return create_app(FakeDatabase(), contract=stub_contract(), origin=origin, rate_limit_per_min=rate_limit_per_min)
+    return create_app(FakeDatabase(), contract=stub_contract(), origin=origin, limiter=limiter)
 
 
 def stub_app(*, docs: bool = False, origin: OriginPolicy = DEV_ORIGIN) -> FastAPI:

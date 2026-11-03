@@ -8,9 +8,10 @@ import type { paths } from "./schema";
 // calls the backend directly at API_URL.
 //
 // Only the headers a caller passes are sent, plus the origin secret on the
-// server: the backend refuses an /api request without it in production. It
-// takes X-Real-IP only from requests with the secret and no server-side call
-// sets one, so such a call is rate-limited as the server's own address.
+// server: the backend refuses an /api request without it in production. A
+// server-side call sets no X-Real-IP, so the backend keys it by the connection's
+// address, which in production every such call shares (cloudflared's): never
+// call a rate-limited operation (sign-up, sign-in) from the server.
 function baseUrl(): string {
   if (typeof window !== "undefined") return `${window.location.origin}/api`;
   return `${apiUrl()}/api`;

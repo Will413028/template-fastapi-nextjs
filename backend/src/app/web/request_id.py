@@ -41,7 +41,7 @@ class RequestIdMiddleware:
             await send(message)
 
         token = _request_id.set(request_id)
-        try:
-            await self.app(scope, receive, send_with_id)
-        finally:
-            _request_id.reset(token)
+        await self.app(scope, receive, send_with_id)
+        # Reset only when the app returns. An exception goes on to the server, which logs it in the same task (uvicorn
+        # runs each request in its own), so that line keeps the id; the task and its context end with the request.
+        _request_id.reset(token)

@@ -40,8 +40,12 @@ output-model-type = "pydantic_v2.BaseModel"
 target-python-version = "3.14"
 use-annotated = true
 field-constraints = true
-# nullable: true is what allows null; a field left out of `required` only gets a default
+# Only nullable: true allows null. A field left out of `required` defaults to pydantic.MISSING (stable since Pydantic
+# 2.14): the model rejects null where the contract does, a PATCH tells "not sent" (MISSING) from "sent null" (None),
+# and a dump leaves out what was not set instead of writing null.
 strict-nullable = true
+use-missing-sentinel = true
+target-pydantic-version = "2.14"
 enum-field-as-literal = "all"
 # ItemTitle's constraints go inline into the fields that use it, instead of a RootModel to unwrap
 collapse-root-models = true

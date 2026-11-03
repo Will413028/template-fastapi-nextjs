@@ -19,8 +19,9 @@ ignore = [
 "tests/**" = ["S101", "PLR2004"]
 # the one module allowed to read the environment
 "src/app/platform/config.py" = ["TID251"]
-# written by make gen: its docstrings are the contract's descriptions, which stay as the Go version wraps them
-"src/app/web/contract_models.py" = ["E501"]
+# written by make gen: its docstrings are the contract's descriptions, which stay as the Go version wraps them (E501),
+# and the generator writes a nullable optional field as `T | None | MISSING` (RUF036 only orders the union)
+"src/app/web/contract_models.py" = ["E501", "RUF036"]
 
 [lint.flake8-tidy-imports]
 ban-relative-imports = "all"

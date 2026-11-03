@@ -4,7 +4,7 @@
 from typing import Annotated, Literal
 from uuid import UUID
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
+from pydantic import MISSING, AwareDatetime, BaseModel, ConfigDict, Field
 
 
 class User(BaseModel):
@@ -99,7 +99,7 @@ class UserPatch(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
-    is_disabled: bool | None = None
+    is_disabled: bool | MISSING = MISSING
 
 
 class Item(BaseModel):
@@ -136,15 +136,15 @@ class Problem(BaseModel):
     """
     The HTTP status code.
     """
-    detail: str | None = None
+    detail: str | MISSING = MISSING
     """
     Human-readable explanation for developers; clients must not parse it.
     """
-    code: str | None = None
+    code: str | MISSING = MISSING
     """
     Stable machine-readable code refining `type`. The list grows (x-extensible-enum), so clients translate the values they know and fall back for the rest.
     """
-    request_id: str | None = None
+    request_id: str | MISSING = MISSING
     """
     The request's `X-Request-ID`, for matching a report with the server logs.
     """
@@ -177,18 +177,18 @@ class CreateItemRequest(BaseModel):
     """
     1 to 200 characters (code points).
     """
-    description: str | None = None
+    description: str | None | MISSING = MISSING
 
 
 class ItemPatch(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
     )
-    title: Annotated[str | None, Field(max_length=200, min_length=1)] = None
+    title: Annotated[str | MISSING, Field(max_length=200, min_length=1)] = MISSING
     """
     1 to 200 characters (code points).
     """
-    description: str | None = None
+    description: str | None | MISSING = MISSING
 
 
 class ValidationProblem(Problem):

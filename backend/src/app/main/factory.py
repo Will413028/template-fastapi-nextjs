@@ -79,7 +79,8 @@ def create_app(database: Database, *, contract: Contract, docs: bool = False) ->
 
     install_exception_handlers(app)
     # Outermost first (add_middleware puts each one outside the ones before it):
-    #   - RequestIdMiddleware, so every response and every log line, the error log included, has the request id;
+    #   - RequestIdMiddleware, so every response, problems included, has the request id (log lines get it with the
+    #     structured logging of step 2c);
     #   - SecurityHeadersMiddleware, on every response, problems included;
     #   - RecoverMiddleware turns an unexpected exception into a 500 problem inside the two above;
     #   - ContractValidation, so an operation sees only requests the contract accepts.

@@ -241,3 +241,17 @@ def test_docs_serve_the_contract_file() -> None:
     app = create_app(FakeDatabase(), contract=contract(), docs=True)
     with checked_client(app, against=contract()) as client:
         assert client.get("/api/openapi.yaml").content == CONTRACT_PATH.read_bytes()
+
+
+def test_binding_failure_on_a_missing_value_is_required() -> None:
+    # the contract leaves limit optional, the route requires it
+    app = bare_app()
+
+    @app.get("/api/widgets")
+    async def list_widgets(limit: int) -> Response:
+        return Response(str(limit))
+
+    with checked_client(app) as client:
+        response = client.get("/api/widgets")
+    errors = assert_problem(response, 422, "/problems/validation")["errors"]
+    assert errors == [{"pointer": "/limit", "code": "required", "detail": "value is required"}]

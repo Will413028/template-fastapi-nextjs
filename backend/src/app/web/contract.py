@@ -40,6 +40,10 @@ def strict_json(value: bytes, **_parameters: str) -> object:
     return json.loads(value.decode(), parse_constant=_reject_constant)
 
 
+class ContractError(Exception):
+    """The contract file cannot be read or is not valid OpenAPI."""
+
+
 @dataclass(frozen=True, slots=True)
 class Contract:
     openapi: OpenAPI
@@ -50,7 +54,11 @@ class Contract:
     def load(cls, path: Path) -> Self:
         """Reads and validates the contract; a contract that is not valid OpenAPI fails here, at startup."""
         config = Config(extra_media_type_deserializers=dict.fromkeys(JSON_MEDIA_TYPES, strict_json))
-        return cls(OpenAPI.from_file_path(str(path), config=config), path.read_bytes())
+        try:
+            return cls(OpenAPI.from_file_path(str(path), config=config), path.read_bytes())
+        except Exception as err:  # a missing file, YAML or OpenAPI errors: each library raises its own type
+            msg = f"load the contract {path}: {err}"
+            raise ContractError(msg) from err
 
 
 @dataclass(slots=True)

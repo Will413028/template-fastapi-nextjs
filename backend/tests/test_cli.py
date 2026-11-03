@@ -8,6 +8,7 @@ import pytest
 from app.main import cli
 
 if TYPE_CHECKING:
+    import pathlib
     from collections.abc import Iterator
 
 
@@ -66,3 +67,30 @@ def test_unknown_command_is_a_usage_error() -> None:
 def test_every_command_resolves() -> None:
     for module in cli.COMMANDS.values():
         assert callable(importlib.import_module(module).run)
+
+
+SERVE_ENV = {
+    "MODE": "prod",
+    "HTTP_ADDR": "127.0.0.1:18742",
+    "DATABASE_URL": "postgres://app@127.0.0.1:1/app",
+    "DATABASE_PASSWORD": "x",
+    "DATABASE_PLAINTEXT": "same-host",
+}
+
+
+def test_serve_without_the_contract_fails_cleanly(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.chdir(tmp_path)  # no api/openapi.yaml here
+    assert cli.main(["serve"], environ=SERVE_ENV) == 1
+    assert "serve: " in capsys.readouterr().err
+
+
+def test_serve_with_an_invalid_contract_fails_cleanly(
+    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "api").mkdir()
+    (tmp_path / "api" / "openapi.yaml").write_text("openapi: 3.0.3\npaths: nope\n")
+    monkeypatch.chdir(tmp_path)
+    assert cli.main(["serve"], environ=SERVE_ENV) == 1
+    assert "serve: " in capsys.readouterr().err

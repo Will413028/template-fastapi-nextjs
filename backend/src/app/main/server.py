@@ -9,7 +9,7 @@ import uvicorn
 from app.main.factory import create_app
 from app.platform.config import ConfigError, Settings
 from app.platform.db import Database
-from app.web.contract import Contract
+from app.web.contract import Contract, ContractError
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -26,7 +26,11 @@ def run(environ: Mapping[str, str] | None) -> int:
     except ConfigError as err:
         sys.stderr.write(f"serve: {err}\n")
         return 1
-    contract = Contract.load(CONTRACT_PATH)
+    try:
+        contract = Contract.load(CONTRACT_PATH)
+    except ContractError as err:
+        sys.stderr.write(f"serve: {err}\n")
+        return 1
     uvicorn.run(
         create_app(Database.open(settings.database), contract=contract, docs=settings.mode == "dev"),
         host=settings.http.host,

@@ -6,6 +6,7 @@ from datetime import timedelta
 from typing import TYPE_CHECKING
 
 import pytest
+from fastapi import HTTPException
 
 from apitest import (
     EMPTY_BODY,
@@ -124,3 +125,23 @@ def test_values_outside_the_contract_are_reported() -> None:
     body = b'{"type":"/problems/teapot","code":"brewing","errors":[{"pointer":"/a","code":"too_hot","detail":""}]}'
     assert values_outside_contract(body) == ["type /problems/teapot", "code brewing", "field code too_hot"]
     assert values_outside_contract(b'{"type":"/problems/validation","errors":[{"code":"too_short"}]}') == []
+
+
+@pytest.mark.parametrize("seconds", [0, -3])
+def test_rate_limited_without_a_positive_wait_has_no_retry_after(seconds: int) -> None:
+    error = AppError(Kind.RATE_LIMITED, "login_throttled", retry_after=timedelta(seconds=seconds))
+    with checked_client(raising(error)) as client:
+        response = client.get("/api/widgets")
+    assert_problem(response, 429, "/problems/rate-limited")
+    assert "retry-after" not in response.headers
+
+
+def test_other_http_errors_keep_their_status_and_headers() -> None:
+    # FastAPI and Starlette raise HTTPException themselves (security helpers, request parsing); a status with a
+    # problem type keeps it instead of becoming a 500
+    with checked_client(raising(HTTPException(401, headers={"WWW-Authenticate": "Cookie"}))) as client:
+        response = client.get("/api/widgets")
+    assert_problem(response, 401, "/problems/unauthenticated")
+    assert response.headers["www-authenticate"] == "Cookie"
+    with checked_client(stub_app()) as client:
+        assert client.post("/health").headers["allow"] == "GET"

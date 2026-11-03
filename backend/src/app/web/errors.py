@@ -2,7 +2,6 @@
 into a logged 500 whose details are never sent (they can hold SQL, hostnames or user data)."""
 
 import logging
-from http import HTTPStatus
 from typing import TYPE_CHECKING
 
 from fastapi.exceptions import RequestValidationError
@@ -11,8 +10,8 @@ from starlette.exceptions import HTTPException
 from app.platform.errors import AppError
 from app.web.problems import (
     INTERNAL,
-    METHOD_NOT_ALLOWED,
-    NOT_FOUND,
+    PROBLEM_TYPES,
+    VALIDATION,
     FieldError,
     app_error_response,
     pointer,
@@ -26,6 +25,8 @@ if TYPE_CHECKING:
     from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 logger = logging.getLogger(__name__)
+
+_STATUS_PROBLEMS = {int(p.status): p for p in PROBLEM_TYPES if p not in {INTERNAL, VALIDATION}}
 
 
 class RecoverMiddleware:
@@ -72,11 +73,10 @@ async def _handle(_: Request, error: Exception) -> Response:
             return app_error_response(error)
         case RequestValidationError():
             return _binding_problem(error)
-        case HTTPException(status_code=HTTPStatus.NOT_FOUND):
-            # Starlette's routing outside /api, which the contract covers: a path no route has
-            return problem_response(NOT_FOUND)
-        case HTTPException(status_code=HTTPStatus.METHOD_NOT_ALLOWED):
-            return problem_response(METHOD_NOT_ALLOWED)
+        case HTTPException(status_code=status) if status in _STATUS_PROBLEMS:
+            # Starlette's routing outside /api (a path no route has, a method it lacks; its Allow header is kept) and
+            # what FastAPI's own helpers raise
+            return problem_response(_STATUS_PROBLEMS[status], headers=error.headers)
         case _:
             raise error  # RecoverMiddleware logs it and answers 500
 
@@ -89,5 +89,10 @@ def _binding_problem(error: RequestValidationError) -> Response:
     for item in error.errors():
         # ("body", "a", 0) points into the body, ("query", "limit") names a parameter: drop the location either way
         location: tuple[str | int, ...] = tuple(item.get("loc", ()))
-        fields.append(FieldError(pointer(location[1:]), "invalid_type", "value cannot be parsed as the declared type"))
+        if item.get("type") == "missing":
+            fields.append(FieldError(pointer(location[1:]), "required", "value is required"))
+        else:
+            fields.append(
+                FieldError(pointer(location[1:]), "invalid_type", "value cannot be parsed as the declared type")
+            )
     return validation_response(fields)

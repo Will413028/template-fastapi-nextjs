@@ -176,7 +176,7 @@ def checked_client(app: FastAPI, against: Contract | None = None) -> TestClient:
             body=request.content,
         )
         try:
-            spec.openapi.validate_response(contract_request, _ContractResponse(response))
+            spec.openapi.validate_response(contract_request, ContractResponse(response))
         except PathError:
             return  # not a contract operation (health, docs, an undefined route)
 
@@ -184,7 +184,7 @@ def checked_client(app: FastAPI, against: Contract | None = None) -> TestClient:
     return client
 
 
-class _ContractResponse:
+class ContractResponse:
     """httpx's response as openapi-core's Response protocol."""
 
     def __init__(self, response: httpx2.Response) -> None:

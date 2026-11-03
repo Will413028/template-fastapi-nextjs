@@ -15,7 +15,7 @@ from app.platform.errors import AppError, Kind
 from app.web.request_id import current_request_id
 
 if TYPE_CHECKING:
-    from collections.abc import Iterable
+    from collections.abc import Iterable, Mapping
 
 PROBLEM_CONTENT_TYPE = "application/problem+json"
 
@@ -87,7 +87,7 @@ def pointer(tokens: Iterable[str | int]) -> str:
 
 
 def problem_response(
-    problem: ProblemType, detail: str = "", code: str = "", headers: dict[str, str] | None = None
+    problem: ProblemType, detail: str = "", code: str = "", headers: Mapping[str, str] | None = None
 ) -> JSONResponse:
     """A problem of type problem; detail and code are left out when empty."""
     body = _base(problem)
@@ -109,7 +109,8 @@ def app_error_response(error: AppError) -> JSONResponse:
     if error.kind is Kind.VALIDATION:
         return validation_response([FieldError(error.pointer, error.code, error.detail)])
     headers = None
-    if error.kind is Kind.RATE_LIMITED and error.retry_after is not None:
+    # RFC 9110 delay-seconds is a non-negative integer; a wait that already elapsed sends none, as the Go version
+    if error.kind is Kind.RATE_LIMITED and error.retry_after is not None and error.retry_after.total_seconds() > 0:
         headers = {"Retry-After": str(math.ceil(error.retry_after.total_seconds()))}
     return problem_response(KIND_PROBLEMS[error.kind], error.detail, error.code, headers)
 
@@ -123,5 +124,5 @@ def _base(problem: ProblemType) -> dict[str, Any]:
     return body
 
 
-def _response(problem: ProblemType, body: dict[str, Any], headers: dict[str, str] | None = None) -> JSONResponse:
+def _response(problem: ProblemType, body: dict[str, Any], headers: Mapping[str, str] | None = None) -> JSONResponse:
     return JSONResponse(body, status_code=problem.status, headers=headers, media_type=PROBLEM_CONTENT_TYPE)

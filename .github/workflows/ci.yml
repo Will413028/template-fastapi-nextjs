@@ -55,8 +55,10 @@ jobs:
           echo "$new"
           test "$(wc -l <<< "$new")" -eq 1
           file="$(sed 's/^?? backend\///' <<< "$new")"
+          cat "$file"
           grep -q '^def upgrade() -> None:$' "$file"
-          test "$(sed -n '/^def upgrade/,$p' "$file" | sed 1d | tr -d ' \n')" = pass
+          # autogenerate wraps the body in "# ### commands auto generated ..." comments; without them only pass is left
+          test "$(sed -n '/^def upgrade/,$p' "$file" | sed 1d | grep -v '^ *#' | tr -d ' \n')" = pass
 
   # Every commit that edits a checker's configuration or moves a lock the bad way names why in a Quality-Gate trailer
   # (scripts/check_commit_policy.py; lefthook checks it at commit time too).

@@ -78,4 +78,7 @@ forbidden_modules =
     fastapi
     starlette
     uvicorn
-broken_contract_guidance = `app healthcheck` runs every few seconds under a timeout; importing the web stack took it to 6.7 s on a loaded host. Keep it on the standard library and app.platform.config; app.main.cli imports a command's module only when that command runs.
+    pydantic
+    sqlalchemy
+    alembic
+broken_contract_guidance = `app healthcheck` runs every few seconds under a timeout; importing the web stack took it to 6.7 s on a loaded host. Keep it on the standard library and app.platform.config (which is why settings do not use pydantic-settings); app.main.cli imports a command's module only when that command runs.

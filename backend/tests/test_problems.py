@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 from fastapi import HTTPException
+from fastapi.responses import StreamingResponse
 
 from apitest import (
     EMPTY_BODY,
@@ -25,6 +26,8 @@ from app.web.problems import KIND_PROBLEMS, PROBLEM_TYPES
 from app.web.validation import SCHEMA_CODES
 
 if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
     from fastapi import FastAPI
     from starlette.types import Message
 
@@ -145,3 +148,22 @@ def test_other_http_errors_keep_their_status_and_headers() -> None:
     assert response.headers["www-authenticate"] == "Cookie"
     with checked_client(stub_app()) as client:
         assert client.post("/health").headers["allow"] == "GET"
+
+
+async def _stream_then_app_error() -> AsyncIterator[bytes]:
+    yield b'{"items":['
+    raise AppError(Kind.CONFLICT, "account_taken")
+
+
+def test_app_error_after_the_response_started_aborts_it() -> None:
+    app = bare_app()
+
+    @app.get("/api/widgets")
+    async def stream() -> StreamingResponse:
+        return StreamingResponse(_stream_then_app_error(), media_type="application/json")
+
+    sent: list[Message] = []
+    with pytest.raises(RuntimeError, match="response already started"):
+        asyncio.run(call_asgi(app, {"method": "GET", "path": "/api/widgets"}, [EMPTY_BODY], sent=sent))
+    assert sent[0]["status"] == 200
+    assert not any(b"problems" in m.get("body", b"") for m in sent)

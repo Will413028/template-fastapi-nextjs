@@ -16,6 +16,7 @@ import pytest
 
 from apitest import assert_problem
 from app.main.logs import configure_logging
+from authfake import ADMIN_OPERATIONS
 from authtest import LONG_ENOUGH, START, AuthAPI, auth_api, session_token, set_cookie
 
 if TYPE_CHECKING:
@@ -475,6 +476,158 @@ def test_the_only_enabled_admin_cannot_delete_itself(api: AuthAPI) -> None:
     assert code(api.do("DELETE", "/api/users/me", root), 409, "/problems/conflict") == "last_admin"
     api.sql("UPDATE users SET is_disabled = false WHERE account = 'spare'")
     assert_cleared(api.do("DELETE", "/api/users/me", root))
+
+
+# administration (Go version: auth_test.go TestAdminDisablesUserRevokesSessions and the next three,
+# auth_resources_test.go TestListUsers, TestNonAdminCannotListUsers, TestAdminDeletesUser, authz_test.go
+# TestAdminChangesAreAudited)
+
+
+def must_admin(api: AuthAPI, account: str = "root") -> tuple[str, str]:
+    """An enabled admin account and a fresh session of it: (user id, token)."""
+    api.call(api.service.ensure_admin, account, LONG_ENOUGH)
+    session, token = api.must_sign_in(account)
+    return session["user"]["id"], token
+
+
+def patch_user(api: AuthAPI, token: str, user_id: str, body: object) -> httpx2.Response:
+    return api.do(
+        "PATCH", f"/api/users/{user_id}", token, json=body, headers={"Content-Type": "application/merge-patch+json"}
+    )
+
+
+def test_an_admin_disables_a_user_and_ends_their_sessions(api: AuthAPI) -> None:
+    _, admin = must_admin(api)
+    alice, token = api.must_sign_up("alice")
+    disabled = patch_user(api, admin, alice["id"], {"is_disabled": True})
+    assert (disabled.status_code, disabled.json()["is_disabled"]) == (200, True), disabled.text
+    assert_me(api, token, 401)
+    enabled = patch_user(api, admin, alice["id"], {"is_disabled": False})
+    assert (enabled.status_code, enabled.json()["is_disabled"]) == (200, False), enabled.text
+    assert_me(api, token, 401)  # re-enabling does not bring the sessions back
+    api.must_sign_in("alice")
+    # an empty merge patch changes nothing
+    unchanged = patch_user(api, admin, alice["id"], {})
+    assert (unchanged.status_code, unchanged.json()["is_disabled"]) == (200, False), unchanged.text
+    assert_problem(patch_user(api, admin, str(uuid.uuid4()), {"is_disabled": True}), 404, "/problems/not-found")
+    assert_problem(patch_user(api, admin, str(uuid.uuid4()), {}), 404, "/problems/not-found")
+
+
+def test_the_only_enabled_admin_cannot_be_disabled(api: AuthAPI) -> None:
+    root_id, root = must_admin(api)
+    assert code(patch_user(api, root, root_id, {"is_disabled": True}), 409, "/problems/conflict") == "last_admin"
+    second_id, second = must_admin(api, "second")
+    response = patch_user(api, root, root_id, {"is_disabled": True})
+    assert response.status_code == 200, response.text
+    assert code(patch_user(api, second, second_id, {"is_disabled": True}), 409, "/problems/conflict") == "last_admin"
+
+
+def test_two_admins_disabling_each_other_at_once_leave_one(api: AuthAPI) -> None:
+    # the enabled admins are locked first, so exactly one succeeds; the other gets 409, or 401 when the winner has
+    # already ended its session
+    root_id, root = must_admin(api)
+    second_id, second = must_admin(api, "second")
+
+    def disable(caller_and_target: tuple[str, str]) -> int:
+        caller, target = caller_and_target
+        return patch_user(api, caller, target, {"is_disabled": True}).status_code
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        statuses = sorted(pool.map(disable, [(root, second_id), (second, root_id)]))
+    assert statuses in ([200, 401], [200, 409])
+    assert api.sql("SELECT count(*) FROM users WHERE role = 'admin' AND NOT is_disabled") == [(1,)]
+
+
+def test_a_user_cannot_administer_users(api: AuthAPI) -> None:
+    victim, victim_token = api.must_sign_up("alice")
+    _, token = api.must_sign_up("mallory")
+    refused = [
+        patch_user(api, token, victim["id"], {"is_disabled": True}),
+        api.do("DELETE", f"/api/users/{victim['id']}", token),
+        api.do("GET", "/api/users", token),
+    ]
+    assert [code(r, 403, "/problems/forbidden") for r in refused] == ["insufficient_role"] * 3
+    assert_me(api, victim_token, 200)
+    assert_problem(api.do("GET", "/api/users", ""), 401, "/problems/unauthenticated")
+    assert api.sql("SELECT count(*) FROM audit_events") == [(0,)]
+
+
+def test_list_users(api: AuthAPI) -> None:
+    admin_id, admin = must_admin(api)
+    want = {admin_id: False}
+    for account in ("alice", "bob", "carol"):
+        user, _ = api.must_sign_up(account)
+        want[user["id"]] = account == "bob"
+        if account == "bob":
+            assert patch_user(api, admin, user["id"], {"is_disabled": True}).status_code == 200
+    pages: list[list[dict[str, Any]]] = []
+    path = "/api/users?limit=3"
+    while True:
+        response = api.do("GET", path, admin)
+        assert response.status_code == 200, response.text
+        pages.append(response.json()["users"])
+        cursor = response.json()["next_cursor"]
+        if cursor is None:
+            break
+        path = f"/api/users?limit=3&cursor={cursor}"
+    assert [len(p) for p in pages] == [3, 1]
+    listed = [u for p in pages for u in p]
+    # each user once, disabled ones included, newest (largest UUIDv7) first
+    assert {u["id"]: u["is_disabled"] for u in listed} == want
+    assert len(listed) == len(want)
+    ids = [uuid.UUID(u["id"]) for u in listed]
+    assert ids == sorted(ids, reverse=True)
+
+
+def test_an_admin_deletes_a_user(api: AuthAPI) -> None:
+    admin_id, admin = must_admin(api)
+    alice, token = api.must_sign_up("alice")
+    created = api.do("POST", "/api/items", token, json={"title": "mine"})
+    assert created.status_code == 201, created.text
+    path = f"/api/users/{alice['id']}"
+    assert api.do("DELETE", path, admin).status_code == 204
+    assert_me(api, token, 401)
+    assert api.sql("SELECT count(*) FROM items") == [(0,)]
+    assert_problem(api.do("GET", path, admin), 404, "/problems/not-found")
+    assert_problem(api.do("DELETE", path, admin), 404, "/problems/not-found")
+    assert code(api.do("DELETE", f"/api/users/{admin_id}", admin), 409, "/problems/conflict") == "last_admin"
+    # a stale admin session cannot delete accounts either
+    bob, _ = api.must_sign_up("bob")
+    api.clock.advance(timedelta(minutes=11))
+    stale = api.do("DELETE", f"/api/users/{bob['id']}", admin)
+    assert code(stale, 403, "/problems/forbidden") == "reauthentication_required"
+
+
+# every admin operation that changes state, with the audit action it leaves; the sign-in lock joins in step 5b
+AUDITED: dict[tuple[str, str], tuple[str, str]] = {
+    ("PATCH", "/users/{id}"): ("user.disabled", '{"is_disabled": true}'),
+    ("DELETE", "/users/{id}"): ("user.deleted", ""),
+}
+
+
+def test_admin_changes_are_audited(api: AuthAPI) -> None:
+    # one audit row naming the admin, the action, the target and the request id (OWASP Logging Cheat Sheet: user
+    # administration); a new state-changing admin operation fails here until it has a case, so it cannot ship
+    # unaudited
+    admin_id, admin = must_admin(api)
+    assert set(AUDITED) == {op for op in ADMIN_OPERATIONS if op[0] != "GET"}
+    for (method, path), (action, body) in AUDITED.items():
+        target, _ = api.must_sign_up(f"target-{method.lower()}")
+        before = len(api.sql("SELECT 1 FROM audit_events"))
+        headers = {"Content-Type": "application/merge-patch+json"} if body else None
+        response = api.do(
+            method,
+            "/api" + path.replace("{id}", target["id"]),
+            admin,
+            json=json.loads(body) if body else None,
+            headers=headers,
+        )
+        assert response.status_code < 300, response.text
+        events = api.sql("SELECT actor_id, action, target_id, request_id FROM audit_events ORDER BY at, id")
+        assert len(events) == before + 1
+        event = events[-1]
+        assert (str(event.actor_id), event.action, str(event.target_id)) == (admin_id, action, target["id"])
+        assert event.request_id
 
 
 # throttling

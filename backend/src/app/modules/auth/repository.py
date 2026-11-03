@@ -48,6 +48,24 @@ async def get_user(conn: AsyncConnection, user_id: uuid.UUID) -> Row[uuid.UUID, 
     return (await conn.execute(select(*USER_COLUMNS).where(User.id == user_id))).one_or_none()
 
 
+async def list_users(
+    conn: AsyncConnection, *, after: uuid.UUID | None, rows: int
+) -> Sequence[Row[uuid.UUID, str, str, bool, datetime]]:
+    """Every user, disabled ones included, newest first (UUIDv7 ids sort by creation time), after the cursor id."""
+    stmt = select(*USER_COLUMNS)
+    if after is not None:
+        stmt = stmt.where(User.id < after)
+    return (await conn.execute(stmt.order_by(User.id.desc()).limit(rows))).all()
+
+
+async def set_user_disabled(
+    conn: AsyncConnection, user_id: uuid.UUID, *, disabled: bool
+) -> Row[uuid.UUID, str, str, bool, datetime] | None:
+    """Sets is_disabled and returns the user; None when there is no such user."""
+    stmt = update(User).where(User.id == user_id).values(is_disabled=disabled).returning(*USER_COLUMNS)
+    return (await conn.execute(stmt)).one_or_none()
+
+
 async def get_login_user(conn: AsyncConnection, account: str) -> Row[uuid.UUID, str, str, bool, datetime, str] | None:
     """The user and its password hash, for checking a sign-in."""
     stmt = select(*USER_COLUMNS, User.password_hash).where(User.account == account)

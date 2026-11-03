@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING, Literal
 from app.modules.auth import repository
 from app.modules.auth.service.passwords import PasswordHasher, is_common_password, normalize_password
 from app.platform import pagination
+from app.platform import principal as principal_module
 from app.platform.errors import AppError, Kind
 from app.platform.principal import Principal, session_invalid
 
@@ -31,7 +32,7 @@ if TYPE_CHECKING:
 
 
 type Role = Literal["admin", "user"]
-ROLE_ADMIN: Role = "admin"
+ROLE_ADMIN: Role = principal_module.ROLE_ADMIN
 ROLE_USER: Role = "user"
 
 CODE_ACCOUNT_TAKEN = "account_taken"
@@ -42,7 +43,10 @@ CODE_LOGIN_THROTTLED = "login_throttled"
 CODE_LAST_ADMIN = "last_admin"
 CODE_REAUTHENTICATION_REQUIRED = "reauthentication_required"
 
-# Audit actions (audit_events.action, models.AUDIT_ACTIONS); the others arrive with step 5's admin operations.
+# Audit actions (audit_events.action, models.AUDIT_ACTIONS); user.unlocked and admin.recovered arrive with
+# steps 5b and 5c.
+AUDIT_USER_DISABLED = "user.disabled"
+AUDIT_USER_ENABLED = "user.enabled"
 AUDIT_USER_DELETED = "user.deleted"
 
 # How recently the session must have signed in for an operation that cannot be undone, such as deleting the account:
@@ -88,6 +92,13 @@ class NewSession:
     token: str
     # the absolute lifetime, for the cookie's Max-Age
     max_age: timedelta
+
+
+@dataclass(frozen=True, slots=True)
+class UserPage:
+    users: list[User]
+    # None on the last page
+    next_cursor: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -328,21 +339,47 @@ class AuthService:
         if not deleted:
             raise _session_not_found()
 
+    async def list_users(self, *, limit: int, cursor: str | None) -> UserPage:
+        """Up to limit users, disabled ones included, newest first, after cursor (None for the first page). Only
+        admins may call it; the route's ADMIN marker enforces that."""
+        after = pagination.after(cursor)
+        async with self._engine.connect() as conn:
+            rows = await repository.list_users(conn, after=after, rows=pagination.page_rows(limit))
+        page, next_cursor = pagination.trim_page(rows, limit, lambda row: row[0])
+        return UserPage(users=[_user(row) for row in page], next_cursor=next_cursor)
+
+    async def set_disabled(
+        self, caller: Principal, user_id: uuid.UUID, *, disabled: bool, request_id: str | None
+    ) -> User:
+        """Disables or re-enables a user, for an admin (the route's ADMIN marker). Disabling deletes all of the
+        user's sessions in the same transaction, so re-enabling later does not bring them back, and is refused for
+        the only enabled admin. The change is audited with caller as the actor."""
+        async with self._engine.begin() as conn:
+            if disabled:
+                await self._keep_an_admin(conn, user_id)
+            row = await repository.set_user_disabled(conn, user_id, disabled=disabled)
+            if row is None:
+                raise _user_not_found()
+            if disabled:
+                await repository.delete_user_sessions(conn, user_id)
+            await repository.insert_audit_event(
+                conn,
+                repository.AuditRecord(
+                    at=self._now(),
+                    actor_id=caller.id,
+                    action=AUDIT_USER_DISABLED if disabled else AUDIT_USER_ENABLED,
+                    target_id=user_id,
+                    request_id=request_id,
+                ),
+            )
+        return _user(row)
+
     async def delete_own_account(self, caller: Principal, session_id: uuid.UUID, *, request_id: str | None) -> None:
         """Deletes the caller's account and everything it owns. The session the request carries (session_id) must
         have been issued within REAUTHENTICATE_WITHIN, and the only enabled admin cannot delete itself. The deletion
         is audited with request_id."""
         async with self._engine.begin() as conn:
-            created_at = await repository.get_session_created_at(conn, session_id=session_id, user_id=caller.id)
-            if created_at is None:
-                raise session_invalid()
-            now = self._now()
-            if now - created_at > REAUTHENTICATE_WITHIN:
-                raise AppError(
-                    Kind.FORBIDDEN,
-                    CODE_REAUTHENTICATION_REQUIRED,
-                    f"sign in again within the last {REAUTHENTICATE_WITHIN.total_seconds() / 60:g} minutes to do this",
-                )
+            now = await self._recently_signed_in(conn, caller, session_id)
             if caller.role == ROLE_ADMIN:
                 # only an admin can be the last admin; a user's deletion does not lock the admins
                 await self._keep_an_admin(conn, caller.id)
@@ -356,6 +393,23 @@ class AuthService:
                 ),
             )
 
+    async def delete_user(
+        self, caller: Principal, session_id: uuid.UUID, user_id: uuid.UUID, *, request_id: str | None
+    ) -> None:
+        """Deletes a user and everything it owns, for an admin (the route's ADMIN marker). Like delete_own_account it
+        needs a session issued within REAUTHENTICATE_WITHIN, and the only enabled admin cannot be deleted."""
+        async with self._engine.begin() as conn:
+            now = await self._recently_signed_in(conn, caller, session_id)
+            await self._keep_an_admin(conn, user_id)
+            if not await repository.delete_user(conn, user_id):
+                raise _user_not_found()
+            await repository.insert_audit_event(
+                conn,
+                repository.AuditRecord(
+                    at=now, actor_id=caller.id, action=AUDIT_USER_DELETED, target_id=user_id, request_id=request_id
+                ),
+            )
+
     async def cleanup(self) -> CleanupCounts:
         """Deletes expired sessions and sign_in_throttles rows untouched for THROTTLE_TTL; serve runs it hourly
         (app.main.factory). (Step 5 also deletes expired trusted devices.)"""
@@ -364,6 +418,21 @@ class AuthService:
             sessions = await repository.delete_expired_sessions(conn, now=now, idle=self._idle)
             throttles = await repository.delete_stale_login_throttles(conn, now - THROTTLE_TTL)
         return CleanupCounts(sessions=sessions, throttles=throttles)
+
+    async def _recently_signed_in(self, conn: AsyncConnection, caller: Principal, session_id: uuid.UUID) -> datetime:
+        """Refuses unless session_id, the caller's current session, was issued within REAUTHENTICATE_WITHIN: an
+        operation that cannot be undone needs the password again, not just a session (OWASP ASVS 5.0 V6)."""
+        created_at = await repository.get_session_created_at(conn, session_id=session_id, user_id=caller.id)
+        if created_at is None:
+            raise session_invalid()
+        now = self._now()
+        if now - created_at > REAUTHENTICATE_WITHIN:
+            raise AppError(
+                Kind.FORBIDDEN,
+                CODE_REAUTHENTICATION_REQUIRED,
+                f"sign in again within the last {REAUTHENTICATE_WITHIN.total_seconds() / 60:g} minutes to do this",
+            )
+        return now
 
     async def _keep_an_admin(self, conn: AsyncConnection, user_id: uuid.UUID) -> None:
         """Refuses when user_id is the only enabled admin. The enabled admins stay locked until conn's transaction

@@ -33,6 +33,9 @@ ALICE = User(
 SESSION_ID = uuid.UUID("01900000-0000-7000-8000-0000000000aa")
 TOKEN = "t" * 43
 
+# the operations only admins may call (Go version: authz.go operationAccess); step 5b adds the sign-in lock
+ADMIN_OPERATIONS = (("GET", "/users"), ("PATCH", "/users/{id}"), ("DELETE", "/users/{id}"))
+
 
 # an engine that never connects: nothing that would reach the database runs in these tests
 NO_DATABASE = create_async_engine("postgresql+asyncpg://nobody@127.0.0.1:1/none")

@@ -7,12 +7,12 @@
 | 方法 | 路徑 | operationId | 去向 | 步驟 | 狀態 |
 |---|---|---|---|---|---|
 | POST | `/users` | `createUser` | 改寫 | 3 | 完成（3b） |
-| GET | `/users` | `listUsers` | 改寫 | 5 | 未開始 |
+| GET | `/users` | `listUsers` | 改寫 | 5 | 完成 |
 | GET | `/users/me` | `getCurrentUser` | 改寫 | 3 | 完成（3b） |
 | DELETE | `/users/me` | `deleteCurrentUser` | 改寫 | 3 | 未開始 |
 | GET | `/users/{id}` | `getUser` | 改寫 | 3（2026-11-03 從 5 移入：`createUser` 的 201 `Location` 指向它） | 完成（3b） |
-| PATCH | `/users/{id}` | `patchUser` | 改寫 | 5 | 未開始 |
-| DELETE | `/users/{id}` | `deleteUser` | 改寫 | 5 | 未開始 |
+| PATCH | `/users/{id}` | `patchUser` | 改寫 | 5 | 完成 |
+| DELETE | `/users/{id}` | `deleteUser` | 改寫 | 5 | 完成 |
 | GET | `/users/{id}/sign-in-lock` | `getSignInLock` | 改寫 | 5 | 未開始 |
 | DELETE | `/users/{id}/sign-in-lock` | `deleteSignInLock` | 改寫 | 5 | 未開始 |
 | POST | `/sessions` | `createSession` | 改寫 | 3 | 完成（3b） |

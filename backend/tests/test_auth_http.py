@@ -16,7 +16,7 @@ from apitest import PEER, assert_problem, checked_client, contract
 from app.main.routes import contract_operations
 from app.modules.auth.dependencies import SessionCookie
 from app.web.origin import OriginPolicy
-from authfake import ALICE, SECURE, SESSION_ID, TOKEN, FakeAuthService, fake_app
+from authfake import ADMIN_OPERATIONS, ALICE, SECURE, SESSION_ID, TOKEN, FakeAuthService, fake_app
 
 SECRET = "s" * 43
 SAME_ORIGIN = {"Sec-Fetch-Site": "same-origin"}
@@ -122,6 +122,26 @@ def test_every_operation_needs_a_session_unless_the_contract_says_public() -> No
                 headers=SAME_ORIGIN | ({"Content-Type": content_type} if body is not None else {}),
             )
             assert_problem(response, 401, "/problems/unauthenticated")
+
+
+@pytest.mark.parametrize(("method", "path"), ADMIN_OPERATIONS)
+def test_a_user_who_is_not_an_admin_is_refused_and_it_is_logged(
+    method: str, path: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    service = FakeAuthService()
+    url = "/api" + path.replace("{id}", str(uuid.uuid4()))
+    patch = method == "PATCH"
+    headers = SAME_ORIGIN | ({"Content-Type": "application/merge-patch+json"} if patch else {})
+    with checked_client(fake_app(service), against=contract()) as client:
+        client.cookies.set("__Host-session", TOKEN)
+        with caplog.at_level(logging.WARNING, logger="app.web.access"):
+            response = client.request(method, url, json={} if patch else None, headers=headers)
+    problem = assert_problem(response, 403, "/problems/forbidden")
+    assert problem["code"] == "insufficient_role"
+    denied = [r for r in caplog.records if getattr(r, "event", None) == "authz.denied"]
+    assert [(getattr(r, "user_id", None), getattr(r, "operation", None)) for r in denied] == [
+        (str(ALICE.id), f"{method} /api{path}")
+    ]
 
 
 def test_session_cookie_attributes() -> None:

@@ -36,9 +36,6 @@ API_PREFIX = "/api"
 UNIMPLEMENTED: frozenset[tuple[str, str]] = frozenset(
     {
         # step 5
-        ("GET", "/users"),
-        ("PATCH", "/users/{id}"),
-        ("DELETE", "/users/{id}"),
         ("GET", "/users/{id}/sign-in-lock"),
         ("DELETE", "/users/{id}/sign-in-lock"),
     }

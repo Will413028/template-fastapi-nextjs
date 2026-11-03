@@ -89,6 +89,8 @@ def test_every_query_builds() -> None:
         "get_session_created_at": lambda c: repository.get_session_created_at(c, session_id=ID, user_id=ID),
         "delete_expired_sessions": lambda c: repository.delete_expired_sessions(c, now=NOW, idle=timedelta(days=1)),
         "lock_enabled_admins": repository.lock_enabled_admins,
+        "list_users": lambda c: repository.list_users(c, after=ID, rows=2),
+        "set_user_disabled": lambda c: repository.set_user_disabled(c, ID, disabled=True),
         "delete_user": lambda c: repository.delete_user(c, ID),
         "insert_audit_event": lambda c: repository.insert_audit_event(
             c, repository.AuditRecord(at=NOW, actor_id=None, action="user.deleted", target_id=ID, request_id=None)

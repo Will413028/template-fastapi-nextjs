@@ -7,12 +7,16 @@ Services do not read it: a router passes the principal to a service explicitly.
 
 import contextvars
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final
 
 from app.platform.errors import AppError, Kind
 
 if TYPE_CHECKING:
     import uuid
+
+
+# The role that may administer users (users.role); app.web.access's ADMIN marker requires it.
+ROLE_ADMIN: Final = "admin"
 
 
 @dataclass(frozen=True, slots=True)

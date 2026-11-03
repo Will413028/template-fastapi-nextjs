@@ -17,7 +17,7 @@ from starlette.requests import cookie_parser
 from app.modules.auth.service import Authenticated, AuthService
 from app.platform.errors import AppError, Kind
 from app.platform.principal import Principal, reset_principal, session_invalid, set_principal
-from app.web.access import SIGNED_IN
+from app.web.access import ADMIN, SIGNED_IN
 
 if TYPE_CHECKING:
     from datetime import timedelta
@@ -138,22 +138,34 @@ def request_session(request: Request) -> RequestSession:
 
 
 CurrentSession = Annotated[RequestSession, Depends(request_session)]
-# SIGNED_IN, the access marker, from inside Current: a route that takes the current user needs a session
+# the access markers, from inside Current and CurrentAdmin: a route that takes the current user needs a session, and
+# one that takes the current admin needs the admin role
 _SignedIn = Annotated[Principal, SIGNED_IN]
+_Admin = Annotated[Principal, ADMIN]
 
 
 def auth_service(session: CurrentSession) -> AuthService:
     return session.service
 
 
-async def current(principal: _SignedIn, session: CurrentSession) -> Authenticated:
-    """The signed-in user with its session; it carries the SIGNED_IN marker, so a route that takes it needs no
-    other."""
+def _authenticated(principal: Principal, session: RequestSession) -> Authenticated:
     authenticated = session.authenticated
     if authenticated is None or authenticated.user.id != principal.id:
         raise session_invalid()
     return authenticated
 
 
+async def current(principal: _SignedIn, session: CurrentSession) -> Authenticated:
+    """The signed-in user with its session; it carries the SIGNED_IN marker, so a route that takes it needs no
+    other."""
+    return _authenticated(principal, session)
+
+
+async def current_admin(principal: _Admin, session: CurrentSession) -> Authenticated:
+    """The signed-in admin with its session; it carries the ADMIN marker, so a route that takes it needs no other."""
+    return _authenticated(principal, session)
+
+
 Service = Annotated[AuthService, Depends(auth_service)]
 Current = Annotated[Authenticated, Depends(current)]
+CurrentAdmin = Annotated[Authenticated, Depends(current_admin)]

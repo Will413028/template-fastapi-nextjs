@@ -10,13 +10,14 @@ import uuid
 from typing import TYPE_CHECKING
 
 from fastapi import APIRouter, Response, status
+from pydantic import MISSING
 
-from app.modules.auth.dependencies import Current, CurrentSession, Service
+from app.modules.auth.dependencies import Current, CurrentAdmin, CurrentSession, Service
 from app.platform.errors import AppError, Kind
 from app.platform.pagination import DEFAULT_LIMIT
 from app.platform.principal import session_invalid
 from app.web import contract_models as api
-from app.web.access import PUBLIC, SignedIn
+from app.web.access import PUBLIC, Admin, SignedIn
 from app.web.origin import current_client
 from app.web.ratelimit import RATE_LIMITED, limit_key
 from app.web.request_id import current_request_id
@@ -136,6 +137,15 @@ async def get_current_session(service: Service, current: Current) -> api.Session
     return _session(session, current.user, current.session_id)
 
 
+@router.get("/users")
+async def list_users(
+    service: Service, _admin: Admin, limit: int = DEFAULT_LIMIT, cursor: str | None = None
+) -> api.UserPage:
+    """Admins only. The contract has already checked limit's range (app.web.contract)."""
+    page = await service.list_users(limit=limit, cursor=cursor)
+    return api.UserPage(users=[_user(u) for u in page.users], next_cursor=page.next_cursor)
+
+
 @router.get("/users/{id}")
 async def get_user(id: uuid.UUID, service: Service, principal: SignedIn) -> api.User:
     return _user(await service.user(principal, id))
@@ -151,3 +161,19 @@ async def delete_session(id: uuid.UUID, service: Service, current: Current, sess
     """Revokes one of the user's sessions; revoking the one the request carries also clears its cookie."""
     await service.revoke_session(current.principal, id)
     return _no_content(session.cookie.clear() if id == current.session_id else None)
+
+
+@router.patch("/users/{id}")
+async def patch_user(id: uuid.UUID, body: api.UserPatch, service: Service, principal: Admin) -> api.User:
+    """Admins only. JSON Merge Patch with one field; an empty patch returns the user unchanged."""
+    if body.is_disabled is MISSING:
+        return _user(await service.user(principal, id))
+    user = await service.set_disabled(principal, id, disabled=body.is_disabled, request_id=current_request_id())
+    return _user(user)
+
+
+@router.delete("/users/{id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_user(id: uuid.UUID, service: Service, current: CurrentAdmin) -> Response:
+    """Admins only; the session must also have signed in recently (the service checks)."""
+    await service.delete_user(current.principal, current.session_id, id, request_id=current_request_id())
+    return _no_content()

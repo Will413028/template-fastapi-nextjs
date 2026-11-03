@@ -57,12 +57,12 @@
 | `.github/workflows/ci.yml` stack job 的 ports、同源 curl、health、frontend secrets 檢查 | 修改（D6）：ports 改成 `== []` 並用 `--profile tunnel` 的 config；刪除 Caddy 同源 curl；health 改用 `docker compose exec`；frontend 的檢查改對 dev compose | 1 | 完成 |
 | 根目錄 `Makefile` 的 `up`、`logs-frontend` | 修改（D6）：`up` 不再印 `http://localhost`，`logs-frontend` 改用 dev compose；新增 `up-prod` | 1 | 完成 |
 | `.github/workflows/ci.yml` frontend job、`scripts/check_vercel_config.py` | 修改／新增（D6）：bundle 哨兵檢查；`vercel.json` 的 policy 檢查 | 2、3 | 完成（2c：兩項都做；`ORIGIN_SECRET` 的 bundle 哨兵在 frontend job 的 build） |
-| `frontend/src/lib/env.ts`、`frontend/src/features/auth/__tests__/server.test.ts` | 修改（D6）：加 `originSecret()`；加伺服器端帶密鑰的測試 | 3 | 未開始 |
+| `frontend/src/lib/env.ts`、`frontend/src/features/auth/__tests__/server.test.ts` | 修改（D6）：加 `originSecret()`；加伺服器端帶密鑰的測試 | 3 | 完成（2c 提前做：`315d07c`；2026-11-03 核對） |
 | `.github/workflows/ci.yml` stack job 的 secrets、request id、auth curl 流程 | 修改（D6）：backend secrets 加 `origin_secret`；request id 與 auth 流程改用 compose network 上的 curl 容器並帶密鑰 | 2、3 | 進行中（2c 完成 backend secrets 加 `origin_secret`；curl 容器的 request id 與 auth 流程在步驟 3） |
 | `frontend/vercel.json` | 新增：一條 `/api/(.*)` route，`dest` 取 `$BACKEND_ORIGIN`，`set` transform 設 `X-Origin-Secret` 為 `$ORIGIN_SECRET`；CI policy job 檢查它（D6） | 2 | 完成 |
 | `frontend/next.config.ts` | 修改：第 7-9 行提到 Caddy 的註解改寫；rewrite 維持只在 development 啟用，production 的 `/api` 由 `vercel.json` 轉送（D6） | 2 | 完成 |
-| `frontend/src/lib/api/client.ts`、`frontend/src/features/auth/server.ts` | 修改：伺服器端呼叫帶 `X-Origin-Secret`，值取自 `ORIGIN_SECRET`（不帶 `NEXT_PUBLIC_`），`client.ts:5-12` 的 Caddy 註解改寫；驗收：測試確認伺服器端請求帶密鑰，build 後瀏覽器 bundle 裡找不到密鑰的值（mutation：把變數改成 `NEXT_PUBLIC_ORIGIN_SECRET`，bundle 檢查要失敗）（D6） | 3 | 未開始 |
-| `frontend/.env.example` | 修改：`API_URL` 說明改成 backend 公開網址，加 `ORIGIN_SECRET`（D6） | 3 | 未開始 |
+| `frontend/src/lib/api/client.ts`、`frontend/src/features/auth/server.ts` | 修改：伺服器端呼叫帶 `X-Origin-Secret`，值取自 `ORIGIN_SECRET`（不帶 `NEXT_PUBLIC_`），`client.ts:5-12` 的 Caddy 註解改寫；驗收：測試確認伺服器端請求帶密鑰，build 後瀏覽器 bundle 裡找不到密鑰的值（mutation：把變數改成 `NEXT_PUBLIC_ORIGIN_SECRET`，bundle 檢查要失敗）（D6） | 3 | 完成（2c 提前做：`315d07c`、bundle 哨兵 `8ac82fa`；`server.ts` 經 `client.ts` 的共用 middleware 帶上，不必改；2026-11-03 核對） |
+| `frontend/.env.example` | 修改：`API_URL` 說明改成 backend 公開網址，加 `ORIGIN_SECRET`（D6） | 3 | 完成（2c 提前做：`315d07c`；2026-11-03 核對） |
 | `scripts/init_env.py`、根目錄 `.env-example`、`backend/.env-example` | 修改（D6）：產生 `.secrets/origin_secret`；刪除 `TRUSTED_PROXIES`、`SITE_ADDRESS`，加 `APP_ORIGIN` | 2 | 完成（`backend/.env-example` 不存在；`TRUSTED_PROXIES`、`SITE_ADDRESS` 在步驟 1 就沒搬進來） |
 | `docs/deploy-vps.md`、`docs/security/threat-model-auth.md`、`docs/privacy/data-inventory.md`、`docs/frontend-known-issues.md` | 改寫成 Vercel + VM + Cloudflare Tunnel（D6） | 7 | 未開始 |
 | `.github/dependabot.yml` | 修改：caddy 註解換成 cloudflared（D6） | 7 | 未開始 |

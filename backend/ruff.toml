@@ -36,3 +36,7 @@ max-args = 5
 max-branches = 12
 max-returns = 6
 max-statements = 50
+
+[lint.flake8-type-checking]
+# SQLAlchemy reads Mapped[...] annotations at runtime, so the types a model names must be imported for real.
+runtime-evaluated-base-classes = ["app.platform.db.Base"]

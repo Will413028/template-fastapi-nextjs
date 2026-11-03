@@ -7,6 +7,7 @@ backend/coverage.xml
 __pycache__/
 .venv/
 backend/test-report.xml
+backend/test-db-report.xml
 .pytest_cache/
 .ruff_cache/
 AGENTS.local.md

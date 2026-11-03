@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 
 COMMANDS = {
     "serve": "app.main.server",
+    "migrate": "app.main.migrate",
     "healthcheck": "app.main.healthcheck",
 }
 

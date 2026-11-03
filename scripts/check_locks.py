@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Compare suppression comments and executed tests with the values locked in scripts/quality-locks.json.
 
-Usage: python3 scripts/check_locks.py [--vitest-report <file>] [--pytest-report <file>]
+Usage: python3 scripts/check_locks.py [--vitest-report <file>] [--pytest-report <file>] [--pytest-db-report <file>]
 Run from the repository root. Suppressions are counted in tracked files on every run; a test count is checked when its
-report is given: vitest's json reporter for the frontend, pytest's JUnit XML (backend/test-report.xml from `make test`)
-for the backend.
+report is given: vitest's json reporter for the frontend, pytest's JUnit XML for the backend (backend/test-report.xml
+from `make test`) and for its database tests (backend/test-db-report.xml from `make test-db`, which only CI runs).
 
 Every count must equal its lock. Suppressions may only go down and executed tests only up: when a count moves the
 good way, lower or raise the lock in the same commit; when it moves the bad way, a
@@ -63,6 +63,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--vitest-report", type=pathlib.Path)
     parser.add_argument("--pytest-report", type=pathlib.Path)
+    parser.add_argument("--pytest-db-report", type=pathlib.Path)
     args = parser.parse_args()
 
     locks = json.loads(LOCKS.read_text(encoding="utf-8"))
@@ -71,6 +72,8 @@ def main() -> int:
         counts["tests.frontend"] = count_vitest(args.vitest_report)
     if args.pytest_report:
         counts["tests.backend"] = count_pytest(args.pytest_report)
+    if args.pytest_db_report:
+        counts["tests.backend_db"] = count_pytest(args.pytest_db_report)
 
     failed = False
     for key, got in counts.items():

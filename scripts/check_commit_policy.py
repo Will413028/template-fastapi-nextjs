@@ -34,6 +34,7 @@ GATE_FILES = {
     "frontend/tsconfig.json",
     "scripts/check_locks.py",
     "scripts/check_commit_policy.py",
+    "scripts/check_migrations_immutable.py",
 }
 GATE_SUFFIXES = ("osv-scanner.toml",)
 

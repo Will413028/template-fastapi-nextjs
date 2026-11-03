@@ -51,7 +51,7 @@ def test_healthcheck_fails_on_a_malformed_address(capsys: pytest.CaptureFixture[
     assert "HTTP_ADDR must be host:port" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("command", ["serve"])
+@pytest.mark.parametrize("command", ["serve", "migrate"])
 def test_missing_settings_stop_the_command(command: str, capsys: pytest.CaptureFixture[str]) -> None:
     assert cli.main([command], environ={}) == 1
     assert "missing required environment variable" in capsys.readouterr().err

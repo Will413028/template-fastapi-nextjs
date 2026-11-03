@@ -31,20 +31,41 @@ lint: ## ruff (ruff.toml) and the architecture contracts (.importlinter)
 typecheck: ## pyright in strict mode (pyrightconfig.json)
 	$(UV) pyright
 
-# Called by name, so they look unused: FastAPI route decorators, pytest fixtures, http.server's do_<METHOD> handlers,
-# and each CLI command module's run(), which app.main.cli imports when its command runs.
+# Called by name, so they look unused: FastAPI route decorators, pytest fixtures, hooks and pytestmark, http.server's
+# do_<METHOD> handlers, each CLI command module's run(), which app.main.cli imports when its command runs, and what
+# Alembic reads from a revision file. models.py is left out: a column is part of the schema (tests/test_schema_db.py
+# compares it with the migrations) whether or not code reads it.
 .PHONY: deadcode
 deadcode:
-	$(UV) vulture src tests --min-confidence 60 \
-		--ignore-decorators '@*.get,@*.post,@*.put,@*.patch,@*.delete,@pytest.fixture' --ignore-names 'do_GET,run'
+	$(UV) vulture src tests --min-confidence 60 --exclude '*/models.py' \
+		--ignore-decorators '@*.get,@*.post,@*.put,@*.patch,@*.delete,@pytest.fixture' \
+		--ignore-names 'do_GET,run,pytest_*,pytestmark,revision,down_revision,upgrade'
 
 .PHONY: test
-test: ## pytest; writes test-report.xml for scripts/check_locks.py
-	$(UV) pytest --junitxml=test-report.xml
+test: ## pytest without the db tests; writes test-report.xml for scripts/check_locks.py
+	$(UV) pytest -m "not db" --junitxml=test-report.xml
+
+# Not part of check: these start PostgreSQL containers, which run only in CI (AGENTS.md, Verification).
+.PHONY: test-db
+test-db: ## Needs Docker: the db tests; writes test-db-report.xml for scripts/check_locks.py
+	$(UV) pytest -m db --junitxml=test-db-report.xml
+
+.PHONY: migration
+migration: ## Needs Docker: generate a revision from the models, make migration MSG=add_widgets
+	@test -n "$(MSG)" || { echo "usage: make migration MSG=<name>"; exit 1; }
+	$(UV) python tests/generate_migration.py "$(MSG)"
+	$(UV) ruff format src/app/main/migrations/versions
+	$(UV) ruff check --fix src/app/main/migrations/versions
+
+.PHONY: migrations-immutable
+migrations-immutable: ## Revisions already on BASE (default origin/main) must not change
+	python3 ../scripts/check_migrations_immutable.py $(BASE)
 
 .PHONY: lock-check
 lock-check: ## uv.lock matches pyproject.toml
 	uv lock --check
 
+BASE ?= origin/main
+
 .PHONY: check
-check: lock-check fmt-check lint typecheck deadcode test ## Everything CI's backend job runs
+check: lock-check fmt-check lint typecheck deadcode test migrations-immutable ## CI's backend job, minus test-db

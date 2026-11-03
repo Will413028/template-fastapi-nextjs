@@ -97,4 +97,4 @@
 | `scripts/check_locks.py:25`、`--go-test-report` | Go suppression 正規式與報告格式 | 改成 Python | 1 | 完成 |
 | `lefthook.yml` backend 段 | gofmt、golangci-lint | 改成 ruff、pyright | 1 | 完成 |
 | `backend/Dockerfile` | Go build 與 Atlas | 改寫（Python image，不含 Atlas） | 1、2a | 完成 |
-| `backend/Makefile` 的 `drift`、`squawk`、`migrations-immutable`、`atlas-age`、`sqlc`、`sqlc-diff` | Atlas 與 sqlc 的檢查 | 換成 Alembic 對應檢查或刪除（D2、D3） | 2a | 完成（drift 換成 catalog 比對與 `alembic check`、`migrations-immutable` 換成 Python 腳本；`atlas-age`、`sqlc`、`sqlc-diff` 刪除；squawk 待 Will 決定） |
+| `backend/Makefile` 的 `drift`、`squawk`、`migrations-immutable`、`atlas-age`、`sqlc`、`sqlc-diff` | Atlas 與 sqlc 的檢查 | 換成 Alembic 對應檢查或刪除（D2、D3） | 2a | 完成（drift 換成 catalog 比對與 `alembic check`、`migrations-immutable` 換成 Python 腳本；`atlas-age`、`sqlc`、`sqlc-diff` 刪除；squawk 改成對 Alembic offline 模式輸出的 SQL 執行） |

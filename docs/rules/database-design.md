@@ -135,12 +135,12 @@ Alembic（ADR go-backend D2 在 FastAPI 版改選 Alembic，見 `docs/plans/2026
 - 舊程式還在用的結構不能在同一版刪除或改形：刪或改名欄位與表、換主鍵或 `ON CONFLICT` 依賴的唯一約束、把欄位改成舊程式寫不進去的型別或約束。做法是拆成兩版（Martin Fowler「Parallel Change」、GitLab「Avoiding downtime in migrations」）：
   - **expand**：新增新結構，新程式只用它，舊結構原封不動（例：Go 版以 `sign_in_throttles` 取代 `login_throttles`，舊表在下一個 PR 才刪除）。
   - **contract**：新程式上線之後的下一版，才刪掉舊結構。範本的「一版」就是合併進 `main` 的一個 PR。
-- Go 版用 squawk 自動擋這類變更與長時間鎖表；FastAPI 版目前沒有移植，由審查 revision 的人照這一節與下一節檢查。移植的做法是 CI 用 Alembic 的 offline 模式（`alembic upgrade --sql`）把 revision 輸出成 SQL 再交給 squawk；要不要做待 Will 決定（計畫步驟 2a）。
+- squawk 擋下這類變更（`ban-drop-column`、`ban-drop-table`、`renaming-*` 等）：`make -C backend squawk`（`make check` 的一部分，不需要資料庫）用 Alembic 的 offline 模式把每支 revision 輸出成各自的 SQL 檔（`tests/revision_sql.py`），再交給 squawk（設定在 `backend/.squawk.toml`）。只有兩種情況可以在 revision 裡用 `op.execute("-- squawk-ignore <rule>")` 寫在那個 statement 前面，並在上一行註解寫理由：contract 步驟（寫出舊程式在哪一版停止使用它），或同一個 statement 立刻補回等價的約束。ignore 的數量鎖在 `scripts/quality-locks.json`。
 
-### 鎖與安全
+### 鎖與安全（squawk）
 
-- 對既有的表建或刪索引一律 `CONCURRENTLY`：`op.create_index(..., postgresql_concurrently=True)`，包在 `with op.get_context().autocommit_block():` 裡（`CONCURRENTLY` 不能在 transaction 裡執行）。
-- 對已有資料的表加帶常數 default 的 `NOT NULL` 欄位（`ADD COLUMN n bigint NOT NULL DEFAULT 0`）是安全的：PostgreSQL 11 起不重寫表。會重寫表或讓既有列違反約束的是 volatile default（例如 `DEFAULT uuidv7()`）與沒有 default 的 `NOT NULL` 欄位。這兩種改走 expand 步驟，每一步是一支 revision：先加 nullable、沒有 default 的欄位 → 手寫 backfill。需要 default 時，backfill 之後再加：`ALTER COLUMN … SET DEFAULT` 只影響之後的新列，不重寫表。
+- 對既有的表建或刪索引一律 `CONCURRENTLY`：`op.create_index(..., postgresql_concurrently=True)`，包在 `with op.get_context().autocommit_block():` 裡（`CONCURRENTLY` 不能在 transaction 裡執行）。沒有 `CONCURRENTLY` 時 squawk 擋下（`require-concurrent-index-creation`）。
+- 對已有資料的表加帶常數 default 的 `NOT NULL` 欄位（`ADD COLUMN n bigint NOT NULL DEFAULT 0`）是安全的：PostgreSQL 11 起不重寫表，squawk 也放行。會重寫表或讓既有列違反約束的是 volatile default（例如 `DEFAULT uuidv7()`）與沒有 default 的 `NOT NULL` 欄位，squawk 會擋下。這兩種改走 expand 步驟，每一步是一支 revision：先加 nullable、沒有 default 的欄位 → 手寫 backfill。需要 default 時，backfill 之後再加：`ALTER COLUMN … SET DEFAULT` 只影響之後的新列，不重寫表。
 - 對已有資料的表補 `NOT NULL` 或加 FK、CHECK：照上面的例外手寫不鎖表的步驟。`NOT NULL` 的步驟是 `CHECK (x IS NOT NULL) NOT VALID` → 下一支 `VALIDATE CONSTRAINT` → 再下一支 `SET NOT NULL` 並 `DROP CONSTRAINT` 那個 CHECK（PostgreSQL 12 起 `SET NOT NULL` 會用已驗證的 CHECK 跳過掃表）。
 - **NEVER** 在 revision 裡寫 `SET lock_timeout`：`app migrate` 已在連線上設定 `lock_timeout` 5s（`app.platform.config.MigrateSettings`），每支 revision 在自己的 transaction 裡執行（`migrations/env.py` 的 `transaction_per_migration`）。
 

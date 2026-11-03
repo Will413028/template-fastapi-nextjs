@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import logging
 import time
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
 from fastapi import FastAPI
@@ -11,6 +12,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 
 from app.platform.config import DEFAULT_AUTH_RATE_LIMIT_PER_MIN
 from app.web.access_log import AccessLogMiddleware
+from app.web.cross_origin import CrossOriginMiddleware
 from app.web.docs import DOCS_HTML
 from app.web.errors import RecoverMiddleware, install_exception_handlers
 from app.web.headers import SecurityHeadersMiddleware
@@ -40,19 +42,28 @@ class Database(Protocol):
     async def close(self) -> None: ...
 
 
-def create_app(
-    database: Database,
-    *,
-    contract: Contract,
-    origin: OriginPolicy,
-    docs: bool = False,
-    limiter: IPLimiter | None = None,
-) -> FastAPI:
-    """The API under /api, checked against contract, and the health checks. origin decides which requests come
-    through the site (app.web.origin). docs (MODE=dev only) serves the contract at /api/openapi.yaml and Swagger UI at
-    /api/docs; without it those paths are undefined routes like any other. limiter holds the per-address buckets of
-    the operations with dependencies=[app.web.ratelimit.RATE_LIMITED]; by default AUTH_RATE_LIMIT_PER_MIN's default
-    on the monotonic clock."""
+@dataclass(frozen=True, slots=True)
+class Deps:
+    """What the app is built from; app.main.server (the composition root) supplies them, tests their own."""
+
+    database: Database
+    # the HTTP contract every /api request is checked against
+    contract: Contract
+    # which requests come through the site (app.web.origin)
+    origin: OriginPolicy
+    # the site's origin as browsers send it (APP_ORIGIN), for the CSRF check (app.web.cross_origin)
+    app_origin: str
+    # MODE=dev only: the contract at /api/openapi.yaml and Swagger UI at /api/docs; without it those paths are
+    # undefined routes like any other
+    docs: bool = False
+    # the per-address buckets of the operations with dependencies=[app.web.ratelimit.RATE_LIMITED]; by default
+    # AUTH_RATE_LIMIT_PER_MIN's default on the monotonic clock
+    limiter: IPLimiter | None = None
+
+
+def create_app(deps: Deps) -> FastAPI:
+    """The API under /api, checked against the contract, and the health checks."""
+    database, contract = deps.database, deps.contract
 
     @contextlib.asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
@@ -63,7 +74,7 @@ def create_app(
 
     # The contract is the hand-written api/openapi.yaml, so FastAPI's generated schema and docs stay off.
     app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None, lifespan=lifespan)
-    app.state.ip_limiter = limiter or IPLimiter(DEFAULT_AUTH_RATE_LIMIT_PER_MIN, time.monotonic)
+    app.state.ip_limiter = deps.limiter or IPLimiter(DEFAULT_AUTH_RATE_LIMIT_PER_MIN, time.monotonic)
 
     # /health is liveness: 200 while the process runs, without checking dependencies. /health/ready is readiness:
     # 503 while the database is unavailable. Both sit outside the API contract.
@@ -83,7 +94,7 @@ def create_app(
         return JSONResponse({"status": "ready"})
 
     docs_paths: frozenset[str] = frozenset()
-    if docs:
+    if deps.docs:
         docs_paths = frozenset({"/api/openapi.yaml", "/api/docs"})
 
         @app.get("/api/openapi.yaml", include_in_schema=False)
@@ -102,13 +113,15 @@ def create_app(
     #   - AccessLogMiddleware logs every request once it ends, refused ones included;
     #   - SecurityHeadersMiddleware, on every response, problems included;
     #   - RecoverMiddleware turns an unexpected exception into a 500 problem inside the ones above;
+    #   - CrossOriginMiddleware refuses a state-changing request from another site (CSRF);
     #   - OriginGuardMiddleware refuses an /api request without the origin secret and a health check from outside;
     #   - ContractValidation, so an operation sees only requests the contract accepts.
     app.add_middleware(ContractValidation, contract=contract, skip=docs_paths)
-    app.add_middleware(OriginGuardMiddleware, policy=origin)
+    app.add_middleware(OriginGuardMiddleware, policy=deps.origin)
+    app.add_middleware(CrossOriginMiddleware, app_origin=deps.app_origin)
     app.add_middleware(RecoverMiddleware)
     app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(AccessLogMiddleware)
-    app.add_middleware(ClientMiddleware, policy=origin)
+    app.add_middleware(ClientMiddleware, policy=deps.origin)
     app.add_middleware(RequestIdMiddleware)
     return app

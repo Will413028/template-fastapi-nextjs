@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import uvicorn
 
-from app.main.factory import create_app
+from app.main.factory import Deps, create_app
 from app.main.logs import configure_logging
 from app.platform.config import ConfigError, Settings
 from app.platform.db import Database
@@ -37,11 +37,14 @@ def run(environ: Mapping[str, str] | None) -> int:
         return 1
     configure_logging(settings.mode)
     app = create_app(
-        Database.open(settings.database),
-        contract=contract,
-        origin=OriginPolicy(secrets=settings.origin_secrets, required=settings.mode == "prod"),
-        docs=settings.mode == "dev",
-        limiter=IPLimiter(settings.auth_rate_limit_per_min, time.monotonic),
+        Deps(
+            database=Database.open(settings.database),
+            contract=contract,
+            origin=OriginPolicy(secrets=settings.origin_secrets, required=settings.mode == "prod"),
+            app_origin=settings.app_origin,
+            docs=settings.mode == "dev",
+            limiter=IPLimiter(settings.auth_rate_limit_per_min, time.monotonic),
+        )
     )
     uvicorn.run(
         app,

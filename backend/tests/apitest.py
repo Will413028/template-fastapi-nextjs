@@ -7,6 +7,7 @@ validates only requests (docs/plans/2026-11-03-fastapi-template/spike.md (b)), s
 """
 
 import asyncio
+import dataclasses
 import functools
 import json
 from pathlib import Path
@@ -18,7 +19,7 @@ from fastapi.testclient import TestClient
 from openapi_core.templating.paths.exceptions import PathError
 from starlette.datastructures import Headers, QueryParams
 
-from app.main.factory import create_app
+from app.main.factory import Deps, create_app
 from app.web.contract import Contract, ContractRequest
 from app.web.origin import OriginPolicy
 from app.web.problems import PROBLEM_CONTENT_TYPE
@@ -40,6 +41,8 @@ DEV_ORIGIN = OriginPolicy(secrets=(), required=False)
 # is to the backend. Health checks answer only loopback (LOOPBACK).
 PEER = ("192.0.2.10", 50000)
 LOOPBACK = ("127.0.0.1", 50000)
+# APP_ORIGIN in tests that do not choose one
+APP_ORIGIN = "https://app.test"
 
 
 @functools.cache
@@ -117,16 +120,23 @@ class BoomError(Exception):
     """An unexpected failure inside an operation."""
 
 
-def bare_app(*, origin: OriginPolicy = DEV_ORIGIN, limiter: IPLimiter | None = None) -> FastAPI:
+def deps(contract: Contract) -> Deps:
+    """Deps over a FakeDatabase with the test defaults; dataclasses.replace changes a field."""
+    return Deps(database=FakeDatabase(), contract=contract, origin=DEV_ORIGIN, app_origin=APP_ORIGIN)
+
+
+def bare_app(
+    *, origin: OriginPolicy = DEV_ORIGIN, limiter: IPLimiter | None = None, app_origin: str = APP_ORIGIN
+) -> FastAPI:
     """The full app around tests/testdata/test-openapi.yaml without operations; a test adds the one it needs."""
-    return create_app(FakeDatabase(), contract=stub_contract(), origin=origin, limiter=limiter)
+    return create_app(dataclasses.replace(deps(stub_contract()), origin=origin, limiter=limiter, app_origin=app_origin))
 
 
 def stub_app(*, docs: bool = False, origin: OriginPolicy = DEV_ORIGIN) -> FastAPI:
     """The full app around tests/testdata/test-openapi.yaml with stub operations: POST /api/widgets echoes the body it
     receives with 201, PATCH /api/widgets/{id} echoes it with 200, GET /api/fail raises, the other operations answer
     200."""
-    app = create_app(FakeDatabase(), contract=stub_contract(), origin=origin, docs=docs)
+    app = create_app(dataclasses.replace(deps(stub_contract()), origin=origin, docs=docs))
 
     @app.post("/api/widgets")
     async def create_widget(request: Request) -> Response:

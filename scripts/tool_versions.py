@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""Keep the release binaries pinned in Makefiles (golangci-lint, hadolint, Atlas) current, with verified checksums.
+"""Keep the release binaries pinned in Makefiles (hadolint) current, with verified checksums.
 
 Dependabot reads manifests, not Makefiles, so these pins would otherwise age unnoticed. Tools that ship as packages
-are pinned where Dependabot looks instead (backend/tools: go.mod, package.json, requirements.txt).
+are pinned where Dependabot looks instead (the backend's dev tools in backend/pyproject.toml and backend/uv.lock).
 
 Usage (from the repository root):
-  python3 scripts/tool_versions.py verify          # offline: Atlas pins in backend/Makefile and backend/Dockerfile agree
+  python3 scripts/tool_versions.py verify          # offline: every pinned tool has a version and a checksum per platform
   python3 scripts/tool_versions.py check           # print pins older than the newest release past the cooldown;
                                                    # exit 10 when any is, 1 when a source cannot be read
   python3 scripts/tool_versions.py bump <tool> [--version V]
@@ -16,7 +16,6 @@ Releases younger than COOLDOWN_DAYS are ignored, the same cooldown as Dependabot
 
 import argparse
 import datetime as dt
-import email.utils
 import json
 import os
 import pathlib
@@ -28,10 +27,7 @@ import urllib.request
 COOLDOWN_DAYS = 7
 # check's exit status when a pin is behind, so a caller can tell it from a failure (1).
 OUTDATED = 10
-BACKEND_MAKEFILE = pathlib.Path("backend/Makefile")
 ROOT_MAKEFILE = pathlib.Path("Makefile")
-DOCKERFILE = pathlib.Path("backend/Dockerfile")
-ATLAS_CDN = "https://release.ariga.io/atlas"
 
 
 def http_get(url: str, method: str = "GET") -> tuple[int, dict[str, str], bytes]:
@@ -60,9 +56,7 @@ def set_make_var(text: str, name: str, value: str) -> str:
 
 
 # Each tool: where its version and checksums live, and how a release's checksums are published.
-GOLANGCI_PLATFORMS = ["darwin-arm64", "linux-amd64", "linux-arm64"]
 HADOLINT_PLATFORMS = ["macos-arm64", "linux-x86_64", "linux-arm64"]
-ATLAS_PLATFORMS = ["darwin-arm64", "linux-amd64", "linux-arm64"]
 
 
 def github_latest(repo: str, cooldown: dt.date) -> tuple[str, dt.date]:
@@ -93,33 +87,8 @@ def fetch_text(url: str) -> str:
     return body.decode()
 
 
-def atlas_released(version: str) -> dt.date | None:
-    """The CDN's Last-Modified for the linux-amd64 binary, or None when the version does not exist (403/404)."""
-    status, headers, _ = http_get(f"{ATLAS_CDN}/atlas-linux-amd64-v{version}", method="HEAD")
-    if status != 200:
-        return None
-    return email.utils.parsedate_to_datetime(headers["Last-Modified"]).date()
-
-
-def atlas_latest(current: str, cooldown: dt.date) -> tuple[str, dt.date]:
-    """Atlas tags GitHub releases only for minors; patch builds exist only on its CDN, so probe it: the next patches
-    of the current minor, then the next minor and major."""
-    major, minor, patch = (int(x) for x in current.split("."))
-    best = (current, atlas_released(current) or dt.date.min)
-    candidates = [(major, minor, patch + i) for i in range(1, 20)] + [(major, minor + 1, 0), (major + 1, 0, 0)]
-    for version in (".".join(map(str, c)) for c in candidates):
-        released = atlas_released(version)
-        if released is None:
-            continue
-        if released <= cooldown:
-            best = (version, released)
-    return best
-
-
 TOOLS = {
-    "golangci-lint": {"file": BACKEND_MAKEFILE, "version_var": "GOLANGCI_LINT_VERSION"},
     "hadolint": {"file": ROOT_MAKEFILE, "version_var": "HADOLINT_VERSION"},
-    "atlas": {"file": BACKEND_MAKEFILE, "version_var": "ATLAS_VERSION"},
 }
 
 
@@ -129,57 +98,39 @@ def pinned(tool: str) -> str:
 
 
 def latest(tool: str, cooldown: dt.date) -> tuple[str, dt.date]:
-    if tool == "golangci-lint":
-        return github_latest("golangci/golangci-lint", cooldown)
     if tool == "hadolint":
         return github_latest("hadolint/hadolint", cooldown)
-    return atlas_latest(pinned("atlas"), cooldown)
+    raise SystemExit(f"no release source for {tool}")
 
 
 def new_checksums(tool: str, version: str) -> dict[str, str]:
     """Makefile variable -> checksum for the version, from the release's published checksum files."""
-    if tool == "golangci-lint":
-        base = f"https://github.com/golangci/golangci-lint/releases/download/v{version}"
-        sums = checksum_lines(fetch_text(f"{base}/golangci-lint-{version}-checksums.txt"))
-        return {f"GOLANGCI_LINT_SHA256_{p}": sums[f"golangci-lint-{version}-{p}.tar.gz"] for p in GOLANGCI_PLATFORMS}
     if tool == "hadolint":
         sums = checksum_lines(
             fetch_text(f"https://github.com/hadolint/hadolint/releases/download/v{version}/checksums.sha256")
         )
         return {f"HADOLINT_SHA256_{p}": sums[f"hadolint-{p}"] for p in HADOLINT_PLATFORMS}
-    out = {}
-    for build, prefix in (("atlas", "ATLAS_SHA256"), ("atlas-community", "ATLAS_COMMUNITY_SHA256")):
-        for p in ATLAS_PLATFORMS:
-            out[f"{prefix}_{p}"] = fetch_text(f"{ATLAS_CDN}/{build}-{p}-v{version}.sha256").split()[0]
-    return out
+    raise SystemExit(f"no checksum source for {tool}")
 
 
-def rewrite_dockerfile_atlas(text: str, version: str, amd64: str, arm64: str) -> str:
-    text, n = re.subn(r"^(ARG ATLAS_VERSION=)v\S+", rf"\g<1>v{version}", text, flags=re.M)
-    text, a = re.subn(r"(amd64\) sum=)[0-9a-f]{64}", rf"\g<1>{amd64}", text)
-    text, b = re.subn(r"(arm64\) sum=)[0-9a-f]{64}", rf"\g<1>{arm64}", text)
-    if (n, a, b) != (1, 1, 1):
-        raise SystemExit("backend/Dockerfile: expected one ATLAS_VERSION ARG and one amd64/arm64 sum")
-    return text
+PLATFORMS = {"hadolint": ("HADOLINT_SHA256", HADOLINT_PLATFORMS)}
 
 
-def atlas_mismatches(makefile: str, dockerfile: str) -> list[str]:
-    """The image applies migrations with the community build that backend/Makefile pins for the tests."""
+def pin_problems(tool: str, text: str) -> list[str]:
+    """A pinned tool needs a version and one 64-hex checksum per platform, or `make` installs nothing verifiable."""
     problems = []
-    version = make_var(makefile, "ATLAS_VERSION")
-    arg = re.search(r"^ARG ATLAS_VERSION=(\S+)", dockerfile, re.M)
-    if not arg or arg.group(1) != version:
-        problems.append(f"ATLAS_VERSION: Makefile {version}, Dockerfile {arg.group(1) if arg else 'missing'}")
-    for arch in ("amd64", "arm64"):
-        want = make_var(makefile, f"ATLAS_COMMUNITY_SHA256_linux-{arch}")
-        got = re.search(rf"{arch}\) sum=([0-9a-f]{{64}})", dockerfile)
-        if not got or got.group(1) != want:
-            problems.append(f"Atlas community linux-{arch} checksum differs between Makefile and Dockerfile")
+    if not re.search(rf"^{TOOLS[tool]['version_var']}\s*:=\s*\d+\.\d+\.\d+\s*$", text, re.M):
+        problems.append(f"{tool}: {TOOLS[tool]['version_var']} is not a plain x.y.z version")
+    prefix, platforms = PLATFORMS[tool]
+    for p in platforms:
+        m = re.search(rf"^{prefix}_{re.escape(p)}\s*:=\s*(\S+)", text, re.M)
+        if not m or not re.fullmatch(r"[0-9a-f]{64}", m.group(1)):
+            problems.append(f"{tool}: {prefix}_{p} is missing or not a sha256")
     return problems
 
 
 def cmd_verify() -> int:
-    problems = atlas_mismatches(BACKEND_MAKEFILE.read_text(), DOCKERFILE.read_text())
+    problems = [p for tool in TOOLS for p in pin_problems(tool, TOOLS[tool]["file"].read_text())]
     for p in problems:
         print(p, file=sys.stderr)
     return 1 if problems else 0
@@ -201,24 +152,14 @@ def cmd_check() -> int:
 
 def cmd_bump(tool: str, version: str | None) -> int:
     cooldown = dt.date.today() - dt.timedelta(days=COOLDOWN_DAYS)
-    released = None
     if version is None:
-        version, released = latest(tool, cooldown)
+        version, _ = latest(tool, cooldown)
     spec = TOOLS[tool]
     sums = new_checksums(tool, version)
     text = spec["file"].read_text()
-    text = set_make_var(text, spec["version_var"], f"v{version}" if tool == "atlas" else version)
+    text = set_make_var(text, spec["version_var"], version)
     for var, value in sums.items():
         text = set_make_var(text, var, value)
-    if tool == "atlas":
-        released = released or atlas_released(version)
-        if released is None:
-            raise SystemExit(f"Atlas v{version} is not on {ATLAS_CDN}")
-        text = set_make_var(text, "ATLAS_RELEASED", released.isoformat())
-        DOCKERFILE.write_text(rewrite_dockerfile_atlas(
-            DOCKERFILE.read_text(), version,
-            sums["ATLAS_COMMUNITY_SHA256_linux-amd64"], sums["ATLAS_COMMUNITY_SHA256_linux-arm64"],
-        ))
     spec["file"].write_text(text)
     print(f"{tool} -> {version}; checksums from the release's published checksum files")
     return 0

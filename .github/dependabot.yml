@@ -14,7 +14,9 @@ updates:
       github-actions:
         patterns: ["*"]
 
-  - package-ecosystem: gomod
+  # backend/pyproject.toml and backend/uv.lock: runtime dependencies and the dev tools (ruff, pyright, import-linter,
+  # vulture, pytest). Versions are pinned exactly, so every release is a pull request.
+  - package-ecosystem: uv
     target-branch: dev
     directory: /backend
     schedule:
@@ -25,22 +27,7 @@ updates:
       backend-minor-patch:
         update-types: [minor, patch]
 
-  # the Go-built dev tools (backend/tools/go.mod, backend/Makefile). Every require there is marked indirect, which
-  # version updates skip by default, so allow all dependency types.
-  - package-ecosystem: gomod
-    target-branch: dev
-    directory: /backend/tools
-    schedule:
-      interval: weekly
-    cooldown:
-      default-days: 7
-    allow:
-      - dependency-type: all
-    groups:
-      backend-tools:
-        patterns: ["*"]
-
-  # the Go toolchain and distroless base images, pinned by digest in backend/Dockerfile
+  # the uv and Python base images, pinned by digest in backend/Dockerfile
   - package-ecosystem: docker
     target-branch: dev
     directory: /backend
@@ -58,7 +45,7 @@ updates:
     cooldown:
       default-days: 7
 
-  # postgres and caddy in docker-compose.yml, pinned by digest
+  # postgres and cloudflared in docker-compose.yml, pinned by digest
   - package-ecosystem: docker-compose
     target-branch: dev
     directory: /
@@ -67,21 +54,7 @@ updates:
     cooldown:
       default-days: 7
 
-  # CLIs the backend Makefile runs (squawk, diff-cover)
-  - package-ecosystem: npm
-    target-branch: dev
-    directory: /backend/tools
-    schedule:
-      interval: weekly
-    cooldown:
-      default-days: 7
-  - package-ecosystem: pip
-    target-branch: dev
-    directory: /backend/tools
-    schedule:
-      interval: weekly
-    cooldown:
-      default-days: 7
+
   - package-ecosystem: npm
     target-branch: dev
     directory: /frontend

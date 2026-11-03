@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Compare suppression comments and executed tests with the values locked in scripts/quality-locks.json.
 
-Usage: python3 scripts/check_locks.py [--vitest-report <file>] [--go-test-report <file>]
+Usage: python3 scripts/check_locks.py [--vitest-report <file>] [--pytest-report <file>]
 Run from the repository root. Suppressions are counted in tracked files on every run; a test count is checked when its
-report is given: vitest's json reporter for the frontend, `go test -json` (backend/test-report.json from `make test`)
+report is given: vitest's json reporter for the frontend, pytest's JUnit XML (backend/test-report.xml from `make test`)
 for the backend.
 
 Every count must equal its lock. Suppressions may only go down and executed tests only up: when a count moves the
@@ -17,18 +17,20 @@ import pathlib
 import re
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 
 LOCKS = pathlib.Path("scripts/quality-locks.json")
 # Every way to switch a check off, per language. A new spelling belongs here, or it would slip past the lock.
 SUPPRESSIONS = {
-    # gosec ignores #nosec (backend/.golangci.yml), but a count here still shows one being added
-    "go": (re.compile(r"//\s*nolint\b|#nosec\b"), (".go",)),
+    # ruff's line and file noqa (and `ruff: ignore`, Ruff 0.16+), and the type checkers' ignores
+    "python": (
+        re.compile(r"#\s*(?:noqa\b|ruff:\s*(?:noqa|ignore)\b|type:\s*ignore\b|pyright:\s*ignore\b)"),
+        (".py", ".pyi"),
+    ),
     "typescript": (
         re.compile(r"biome-ignore|@ts-expect-error|@ts-ignore|@ts-nocheck|eslint-disable"),
         (".ts", ".tsx", ".js", ".mjs", ".cjs"),
     ),
-    # migrations: squawk's per-statement ignore (an excluded rule belongs in backend/.squawk.toml, a gate file)
-    "sql": (re.compile(r"squawk-ignore"), (".sql",)),
 }
 
 
@@ -50,30 +52,25 @@ def count_vitest(report: pathlib.Path) -> int:
     return data["numPassedTests"] + data["numFailedTests"]
 
 
-def count_go(report: pathlib.Path) -> int:
-    # Tests and subtests that ran to a result, per package; skipped ones do not count.
-    ran = set()
-    for line in report.read_text(encoding="utf-8").splitlines():
-        if not line.startswith("{"):
-            continue
-        event = json.loads(line)
-        if event.get("Test") and event.get("Action") in ("pass", "fail"):
-            ran.add((event["Package"], event["Test"]))
-    return len(ran)
+def count_pytest(report: pathlib.Path) -> int:
+    # Test cases that ran to a result; skipped ones do not count. The report is pytest's own output, not input from
+    # outside the repository.
+    root = ET.parse(report).getroot()
+    return sum(1 for case in root.iter("testcase") if case.find("skipped") is None)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--vitest-report", type=pathlib.Path)
-    parser.add_argument("--go-test-report", type=pathlib.Path)
+    parser.add_argument("--pytest-report", type=pathlib.Path)
     args = parser.parse_args()
 
     locks = json.loads(LOCKS.read_text(encoding="utf-8"))
     counts = {f"suppressions.{lang}": count_suppressions(lang) for lang in SUPPRESSIONS}
     if args.vitest_report:
         counts["tests.frontend"] = count_vitest(args.vitest_report)
-    if args.go_test_report:
-        counts["tests.backend"] = count_go(args.go_test_report)
+    if args.pytest_report:
+        counts["tests.backend"] = count_pytest(args.pytest_report)
 
     failed = False
     for key, got in counts.items():

@@ -6,20 +6,31 @@ services:
         - action: rebuild
           path: ./backend
           ignore:
-            - bin/
+            - .venv/
+            - tests/
 
+  # Production serves the frontend from Vercel; locally `next dev` serves it, and its development rewrite
+  # (frontend/next.config.ts) forwards /api to the backend, so the browser still sees one origin:
+  # http://localhost:3000. Loopback only: ports Docker publishes bypass ufw.
   frontend:
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
     build:
       context: ./frontend
       target: dev
+    restart: unless-stopped
+    environment:
+      # server-side fetches and the development rewrite reach the backend by service name
+      API_URL: http://backend:8000
+    ports:
+      - "127.0.0.1:3000:3000"
     volumes:
       - ./frontend/src:/app/src
       - ./frontend/messages:/app/messages
       - ./frontend/public:/app/public
-
-  # The browser goes through caddy in dev too, the same /api routing as production: http://localhost:3000.
-  # Loopback only, and not port 80: Docker Desktop on macOS needs its privileged helper to bind a port below 1024
-  # on a specific address.
-  caddy:
-    ports: !override
-      - "127.0.0.1:3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy

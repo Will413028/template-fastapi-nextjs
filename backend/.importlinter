@@ -1,0 +1,81 @@
+# Architecture contracts (backend/AGENTS.md "Layers"). Editing this file needs a Quality-Gate trailer
+# (scripts/check_commit_policy.py). ignore_imports stays empty: move the code instead of adding an exception.
+[importlinter]
+root_package = app
+include_external_packages = True
+exclude_type_checking_imports = True
+
+[importlinter:contract:top-layers]
+name = main > modules > web > platform
+type = layers
+containers =
+    app
+layers =
+    main
+    modules
+    web
+    platform
+exhaustive = true
+broken_contract_guidance = A lower layer must not import a higher one: move the shared code down (HTTP helpers to app.web, the rest to app.platform), or pass it in from app.main. Do not add ignore_imports.
+
+[importlinter:contract:modules-independent]
+name = Modules do not import each other
+type = independence
+modules =
+    app.modules.*
+broken_contract_guidance = Modules talk only through app.platform (for example the Principal that auth's middleware sets) or through ids; reference another module's table with a string foreign key such as "users.id". Do not add ignore_imports.
+
+[importlinter:contract:module-layers]
+name = Inside a module: router > service > repository > models
+type = layers
+containers =
+    app.modules.*
+layers =
+    router : (schemas) : (dependencies)
+    service
+    (repository)
+    models
+exhaustive = true
+broken_contract_guidance = Every module file belongs to one layer: HTTP in router.py, schemas.py and dependencies.py; business rules and transactions in service.py; complex queries in repository.py; tables in models.py. Rename or split the file instead of adding a layer.
+
+[importlinter:contract:no-cycles]
+name = No import cycles between sibling packages
+type = acyclic_siblings
+ancestors =
+    app
+
+[importlinter:contract:http-stays-at-the-edge]
+name = Only routers, app.web and app.main use the web framework
+type = forbidden
+source_modules =
+    app.modules.*.service
+    app.modules.*.repository
+    app.modules.*.models
+    app.platform
+forbidden_modules =
+    fastapi
+    starlette
+broken_contract_guidance = Business logic and tables stay framework-free so they can be tested and reused without HTTP: raise a domain error and translate it to a problem response in the router or app.web.
+
+[importlinter:contract:sql-below-the-router]
+name = Routers do not run SQL
+type = forbidden
+source_modules =
+    app.modules.*.router
+    app.modules.*.schemas
+    app.modules.*.dependencies
+forbidden_modules =
+    sqlalchemy
+broken_contract_guidance = Routers call the module's service, which owns the transaction; put queries in service.py or repository.py.
+
+[importlinter:contract:light-healthcheck]
+name = The healthcheck does not load the web server
+type = forbidden
+source_modules =
+    app.main.healthcheck
+    app.main.cli
+forbidden_modules =
+    fastapi
+    starlette
+    uvicorn
+broken_contract_guidance = `app healthcheck` runs every few seconds under a timeout; importing the web stack took it to 6.7 s on a loaded host. Keep it on the standard library and app.platform.config; app.main.cli imports a command's module only when that command runs.

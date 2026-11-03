@@ -24,8 +24,10 @@ MAX_LINES = 1000
 LOCKS = "scripts/quality-locks.json"
 # Files whose edits can switch a check off or lower a bar. A new checker's configuration belongs here.
 GATE_FILES = {
-    "backend/.golangci.yml",
-    "backend/.squawk.toml",
+    "backend/.importlinter",
+    "backend/pyrightconfig.json",
+    "backend/pytest.ini",
+    "backend/ruff.toml",
     "frontend/.dependency-cruiser.cjs",
     "frontend/biome.json",
     "frontend/knip.config.ts",

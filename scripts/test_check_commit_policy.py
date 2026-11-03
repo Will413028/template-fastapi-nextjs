@@ -58,11 +58,11 @@ class CommitPolicyTest(unittest.TestCase):
         return self.run_script("--commit-msg", str(msg))
 
     def test_gate_file_edit_needs_trailer(self):
-        self.write("backend/.golangci.yml", "version: 2\n")
+        self.write("backend/ruff.toml", "line-length = 120\n")
         self.commit("ci: loosen lint")
         result = self.check_range()
         self.assertEqual(result.returncode, 1)
-        self.assertIn("edits backend/.golangci.yml", result.stderr)
+        self.assertIn("edits backend/ruff.toml", result.stderr)
 
     def test_gate_file_edit_with_trailer_passes(self):
         self.write("frontend/biome.json", "{}\n")

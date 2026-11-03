@@ -266,7 +266,7 @@ class AuthService:
         await self._reserve_attempt(key, client_key)
         user = await self._verify_credentials(key, password)
         async with self._engine.begin() as conn:
-            await repository.clear_login_throttle(conn, account_key=key, client_key=client_key)
+            await repository.clear_login_throttle(conn, account_key=key, client_key="none")
             if previous_token:
                 await repository.delete_session(conn, _hash_token(previous_token))
             session = await self._new_session(conn, user.id)

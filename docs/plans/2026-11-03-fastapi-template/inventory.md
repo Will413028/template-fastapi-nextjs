@@ -10,7 +10,7 @@
 | GET | `/users` | `listUsers` | 改寫 | 5 | 未開始 |
 | GET | `/users/me` | `getCurrentUser` | 改寫 | 3 | 未開始 |
 | DELETE | `/users/me` | `deleteCurrentUser` | 改寫 | 3 | 未開始 |
-| GET | `/users/{id}` | `getUser` | 改寫 | 5 | 未開始 |
+| GET | `/users/{id}` | `getUser` | 改寫 | 3（2026-11-03 從 5 移入：`createUser` 的 201 `Location` 指向它） | 未開始 |
 | PATCH | `/users/{id}` | `patchUser` | 改寫 | 5 | 未開始 |
 | DELETE | `/users/{id}` | `deleteUser` | 改寫 | 5 | 未開始 |
 | GET | `/users/{id}/sign-in-lock` | `getSignInLock` | 改寫 | 5 | 未開始 |

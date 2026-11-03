@@ -60,7 +60,7 @@
 | `frontend/src/lib/env.ts`、`frontend/src/features/auth/__tests__/server.test.ts` | 修改（D6）：加 `originSecret()`；加伺服器端帶密鑰的測試 | 3 | 未開始 |
 | `.github/workflows/ci.yml` stack job 的 secrets、request id、auth curl 流程 | 修改（D6）：backend secrets 加 `origin_secret`；request id 與 auth 流程改用 compose network 上的 curl 容器並帶密鑰 | 2、3 | 未開始 |
 | `frontend/vercel.json` | 新增：一條 `/api/(.*)` route，`dest` 取 `$BACKEND_ORIGIN`，`set` transform 設 `X-Origin-Secret` 為 `$ORIGIN_SECRET`；CI policy job 檢查它（D6） | 2 | 未開始 |
-| `frontend/next.config.ts` | 修改：第 7-9 行提到 Caddy 的註解改寫；只有步驟 0b 證明 `vercel.json` 的 `dest` 不能取環境變數時，才改成 production 也啟用 rewrite（D6） | 2 | 未開始 |
+| `frontend/next.config.ts` | 修改：第 7-9 行提到 Caddy 的註解改寫；rewrite 維持只在 development 啟用，production 的 `/api` 由 `vercel.json` 轉送（D6） | 2 | 未開始 |
 | `frontend/src/lib/api/client.ts`、`frontend/src/features/auth/server.ts` | 修改：伺服器端呼叫帶 `X-Origin-Secret`，值取自 `ORIGIN_SECRET`（不帶 `NEXT_PUBLIC_`），`client.ts:5-12` 的 Caddy 註解改寫；驗收：測試確認伺服器端請求帶密鑰，build 後瀏覽器 bundle 裡找不到密鑰的值（mutation：把變數改成 `NEXT_PUBLIC_ORIGIN_SECRET`，bundle 檢查要失敗）（D6） | 3 | 未開始 |
 | `frontend/.env.example` | 修改：`API_URL` 說明改成 backend 公開網址，加 `ORIGIN_SECRET`（D6） | 3 | 未開始 |
 | `scripts/init_env.py`、根目錄 `.env-example`、`backend/.env-example` | 修改（D6）：產生 `.secrets/origin_secret`；刪除 `TRUSTED_PROXIES`、`SITE_ADDRESS`，加 `APP_ORIGIN` | 2 | 未開始 |

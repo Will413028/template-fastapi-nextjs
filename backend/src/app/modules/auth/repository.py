@@ -6,7 +6,7 @@ SQLAlchemy Core expressions over the tables in models.py, never SQL assembled fr
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Integer, Interval, Row, case, delete, func, literal_column, or_, select, update
+from sqlalchemy import Integer, Row, case, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 
 from app.modules.auth.models import Session, SignInThrottle, User
@@ -25,7 +25,6 @@ SESSION_COLUMNS = (Session.id, Session.created_at, Session.last_used_at, Session
 # From the 5th consecutive failure on, the next attempt waits 2^(failures - 5) minutes, at most an hour.
 THROTTLE_FREE_ATTEMPTS = 5
 _MAX_WAIT_MINUTES = 60
-_ONE_MINUTE = literal_column("interval '1 minute'", Interval())
 
 
 async def insert_user_if_absent(
@@ -115,7 +114,11 @@ async def reserve_login_attempt(conn: AsyncConnection, *, account_key: str, clie
         set_={
             "failures": failures,
             "next_allowed_at": case(
-                (failures >= THROTTLE_FREE_ATTEMPTS, stmt.excluded.updated_at + _ONE_MINUTE * wait_minutes),
+                # make_interval(years, months, weeks, days, hours, mins): wait_minutes minutes
+                (
+                    failures >= THROTTLE_FREE_ATTEMPTS,
+                    stmt.excluded.updated_at + func.make_interval(0, 0, 0, 0, 0, wait_minutes),
+                ),
                 else_=None,
             ),
             "updated_at": stmt.excluded.updated_at,

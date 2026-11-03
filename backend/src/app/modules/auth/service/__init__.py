@@ -163,7 +163,7 @@ class AuthService:
     async def start(self) -> None:
         """Makes the dummy hash before the first request, so the first sign-in for an unknown account costs one hash
         like every other (the Go version makes it in New); the app's lifespan calls this."""
-        await self._dummy()
+        return  # MUTATION: the dummy hash waits for the first unknown account
 
     def close(self) -> None:
         self._hasher.close()

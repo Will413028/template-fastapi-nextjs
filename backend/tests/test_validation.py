@@ -9,6 +9,8 @@ from fastapi import Path, Response
 
 from apitest import (
     CONTRACT_PATH,
+    DEV_ORIGIN,
+    LOOPBACK,
     FakeDatabase,
     assert_problem,
     bare_app,
@@ -211,7 +213,7 @@ def test_binding_failure_after_validation_is_a_validation_problem() -> None:
 def test_secured_operation_without_a_session_is_unauthenticated() -> None:
     # The contract's default security is the session cookie; security is checked before parameters and body, so an
     # anonymous caller learns nothing about the request it would have to send.
-    app = create_app(FakeDatabase(), contract=contract())
+    app = create_app(FakeDatabase(), contract=contract(), origin=DEV_ORIGIN)
     with checked_client(app, against=contract()) as client:
         response = client.get("/api/users/me")
     problem = assert_problem(response, 401, "/problems/unauthenticated")
@@ -219,7 +221,7 @@ def test_secured_operation_without_a_session_is_unauthenticated() -> None:
 
 
 def test_health_is_outside_validation() -> None:
-    with checked_client(stub_app()) as client:
+    with checked_client(stub_app(), peer=LOOPBACK) as client:
         assert client.get("/health").json() == {"status": "ok"}
         assert client.get("/health/ready").json() == {"status": "ready"}
 
@@ -238,7 +240,7 @@ def test_docs_only_in_dev() -> None:
 
 
 def test_docs_serve_the_contract_file() -> None:
-    app = create_app(FakeDatabase(), contract=contract(), docs=True)
+    app = create_app(FakeDatabase(), contract=contract(), origin=DEV_ORIGIN, docs=True)
     with checked_client(app, against=contract()) as client:
         assert client.get("/api/openapi.yaml").content == CONTRACT_PATH.read_bytes()
 

@@ -75,7 +75,14 @@ SERVE_ENV = {
     "DATABASE_URL": "postgres://app@127.0.0.1:1/app",
     "DATABASE_PASSWORD": "x",
     "DATABASE_PLAINTEXT": "same-host",
+    "ORIGIN_SECRET": "s" * 43,
 }
+
+
+def test_serve_in_prod_without_the_origin_secret_does_not_start(capsys: pytest.CaptureFixture[str]) -> None:
+    env = {k: v for k, v in SERVE_ENV.items() if k != "ORIGIN_SECRET"}
+    assert cli.main(["serve"], environ=env) == 1
+    assert "ORIGIN_SECRET is required when MODE=prod" in capsys.readouterr().err
 
 
 def test_serve_without_the_contract_fails_cleanly(
@@ -83,7 +90,7 @@ def test_serve_without_the_contract_fails_cleanly(
 ) -> None:
     monkeypatch.chdir(tmp_path)  # no api/openapi.yaml here
     assert cli.main(["serve"], environ=SERVE_ENV) == 1
-    assert "serve: " in capsys.readouterr().err
+    assert "serve: load the contract" in capsys.readouterr().err
 
 
 def test_serve_with_an_invalid_contract_fails_cleanly(
@@ -93,4 +100,4 @@ def test_serve_with_an_invalid_contract_fails_cleanly(
     (tmp_path / "api" / "openapi.yaml").write_text("openapi: 3.0.3\npaths: nope\n")
     monkeypatch.chdir(tmp_path)
     assert cli.main(["serve"], environ=SERVE_ENV) == 1
-    assert "serve: " in capsys.readouterr().err
+    assert "serve: load the contract" in capsys.readouterr().err

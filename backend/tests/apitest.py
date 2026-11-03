@@ -20,6 +20,7 @@ from starlette.datastructures import Headers, QueryParams
 
 from app.main.factory import create_app
 from app.web.contract import Contract, ContractRequest
+from app.web.origin import OriginPolicy
 from app.web.problems import PROBLEM_CONTENT_TYPE
 
 if TYPE_CHECKING:
@@ -30,6 +31,13 @@ if TYPE_CHECKING:
 
 CONTRACT_PATH = Path(__file__).parents[1] / "api" / "openapi.yaml"
 TEST_CONTRACT_PATH = Path(__file__).parent / "testdata" / "test-openapi.yaml"
+
+# MODE=dev without ORIGIN_SECRET: a request without X-Origin-Secret is let through (app.web.origin).
+DEV_ORIGIN = OriginPolicy(secrets=(), required=False)
+# The connection's other end in tests that do not choose one: a public address, as cloudflared's container address
+# is to the backend. Health checks answer only loopback (LOOPBACK).
+PEER = ("192.0.2.10", 50000)
+LOOPBACK = ("127.0.0.1", 50000)
 
 
 @functools.cache
@@ -107,16 +115,16 @@ class BoomError(Exception):
     """An unexpected failure inside an operation."""
 
 
-def bare_app() -> FastAPI:
+def bare_app(*, origin: OriginPolicy = DEV_ORIGIN, rate_limit_per_min: int = 5) -> FastAPI:
     """The full app around tests/testdata/test-openapi.yaml without operations; a test adds the one it needs."""
-    return create_app(FakeDatabase(), contract=stub_contract())
+    return create_app(FakeDatabase(), contract=stub_contract(), origin=origin, rate_limit_per_min=rate_limit_per_min)
 
 
-def stub_app(*, docs: bool = False) -> FastAPI:
+def stub_app(*, docs: bool = False, origin: OriginPolicy = DEV_ORIGIN) -> FastAPI:
     """The full app around tests/testdata/test-openapi.yaml with stub operations: POST /api/widgets echoes the body it
     receives with 201, PATCH /api/widgets/{id} echoes it with 200, GET /api/fail raises, the other operations answer
     200."""
-    app = create_app(FakeDatabase(), contract=stub_contract(), docs=docs)
+    app = create_app(FakeDatabase(), contract=stub_contract(), origin=origin, docs=docs)
 
     @app.post("/api/widgets")
     async def create_widget(request: Request) -> Response:
@@ -156,11 +164,12 @@ def stream_then_fail(app: FastAPI, path: str) -> None:
         return StreamingResponse(failing_stream(), media_type="application/json")
 
 
-def checked_client(app: FastAPI, against: Contract | None = None) -> TestClient:
+def checked_client(app: FastAPI, against: Contract | None = None, *, peer: tuple[str, int] = PEER) -> TestClient:
     """A test client that fails the test when a problem uses values outside the contract's enums, or when a response
-    to an operation of `against` (the test contract by default) does not match it."""
+    to an operation of `against` (the test contract by default) does not match it. peer is the address the app sees
+    the connection come from."""
     spec = against or stub_contract()
-    client = TestClient(app)
+    client = TestClient(app, client=peer)
 
     def check(response: httpx2.Response) -> None:
         response.read()

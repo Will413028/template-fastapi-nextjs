@@ -11,6 +11,7 @@ from fastapi.responses import StreamingResponse
 
 from apitest import (
     EMPTY_BODY,
+    LOOPBACK,
     BoomError,
     assert_problem,
     bare_app,
@@ -111,7 +112,7 @@ def test_failure_after_the_response_started_aborts_it() -> None:
 
 
 def test_unknown_path_outside_the_api_is_a_problem() -> None:
-    with checked_client(stub_app()) as client:
+    with checked_client(stub_app(), peer=LOOPBACK) as client:
         assert_problem(client.get("/nothing-here"), 404, "/problems/not-found")
         assert_problem(client.post("/health"), 405, "/problems/method-not-allowed")
 
@@ -146,7 +147,7 @@ def test_other_http_errors_keep_their_status_and_headers() -> None:
         response = client.get("/api/widgets")
     assert_problem(response, 401, "/problems/unauthenticated")
     assert response.headers["www-authenticate"] == "Cookie"
-    with checked_client(stub_app()) as client:
+    with checked_client(stub_app(), peer=LOOPBACK) as client:
         assert client.post("/health").headers["allow"] == "GET"
 
 

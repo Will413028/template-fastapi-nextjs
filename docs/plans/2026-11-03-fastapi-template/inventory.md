@@ -6,21 +6,21 @@
 
 | 方法 | 路徑 | operationId | 去向 | 步驟 | 狀態 |
 |---|---|---|---|---|---|
-| POST | `/users` | `createUser` | 改寫 | 3 | 未開始 |
+| POST | `/users` | `createUser` | 改寫 | 3 | 完成（3b） |
 | GET | `/users` | `listUsers` | 改寫 | 5 | 未開始 |
-| GET | `/users/me` | `getCurrentUser` | 改寫 | 3 | 未開始 |
+| GET | `/users/me` | `getCurrentUser` | 改寫 | 3 | 完成（3b） |
 | DELETE | `/users/me` | `deleteCurrentUser` | 改寫 | 3 | 未開始 |
-| GET | `/users/{id}` | `getUser` | 改寫 | 3（2026-11-03 從 5 移入：`createUser` 的 201 `Location` 指向它） | 未開始 |
+| GET | `/users/{id}` | `getUser` | 改寫 | 3（2026-11-03 從 5 移入：`createUser` 的 201 `Location` 指向它） | 完成（3b） |
 | PATCH | `/users/{id}` | `patchUser` | 改寫 | 5 | 未開始 |
 | DELETE | `/users/{id}` | `deleteUser` | 改寫 | 5 | 未開始 |
 | GET | `/users/{id}/sign-in-lock` | `getSignInLock` | 改寫 | 5 | 未開始 |
 | DELETE | `/users/{id}/sign-in-lock` | `deleteSignInLock` | 改寫 | 5 | 未開始 |
-| POST | `/sessions` | `createSession` | 改寫 | 3 | 未開始 |
+| POST | `/sessions` | `createSession` | 改寫 | 3 | 完成（3b） |
 | GET | `/sessions` | `listSessions` | 改寫 | 3 | 未開始 |
 | DELETE | `/sessions` | `deleteAllSessions` | 改寫 | 3 | 未開始 |
-| GET | `/sessions/current` | `getCurrentSession` | 改寫 | 3 | 未開始 |
-| DELETE | `/sessions/current` | `deleteCurrentSession` | 改寫 | 3 | 未開始 |
-| GET | `/sessions/{id}` | `getSession` | 改寫 | 3 | 未開始 |
+| GET | `/sessions/current` | `getCurrentSession` | 改寫 | 3 | 完成（3b） |
+| DELETE | `/sessions/current` | `deleteCurrentSession` | 改寫 | 3 | 完成（3b） |
+| GET | `/sessions/{id}` | `getSession` | 改寫 | 3 | 完成（3b） |
 | DELETE | `/sessions/{id}` | `deleteSession` | 改寫 | 3 | 未開始 |
 | POST | `/items` | `createItem` | 改寫 | 4 | 未開始 |
 | GET | `/items` | `listItems` | 改寫 | 4 | 未開始 |
@@ -58,7 +58,7 @@
 | 根目錄 `Makefile` 的 `up`、`logs-frontend` | 修改（D6）：`up` 不再印 `http://localhost`，`logs-frontend` 改用 dev compose；新增 `up-prod` | 1 | 完成 |
 | `.github/workflows/ci.yml` frontend job、`scripts/check_vercel_config.py` | 修改／新增（D6）：bundle 哨兵檢查；`vercel.json` 的 policy 檢查 | 2、3 | 完成（2c：兩項都做；`ORIGIN_SECRET` 的 bundle 哨兵在 frontend job 的 build） |
 | `frontend/src/lib/env.ts`、`frontend/src/features/auth/__tests__/server.test.ts` | 修改（D6）：加 `originSecret()`；加伺服器端帶密鑰的測試 | 3 | 完成（2c 提前做：`315d07c`；2026-11-03 核對） |
-| `.github/workflows/ci.yml` stack job 的 secrets、request id、auth curl 流程 | 修改（D6）：backend secrets 加 `origin_secret`；request id 與 auth 流程改用 compose network 上的 curl 容器並帶密鑰 | 2、3 | 進行中（2c 完成 backend secrets 加 `origin_secret`；curl 容器的 request id 與 auth 流程在步驟 3） |
+| `.github/workflows/ci.yml` stack job 的 secrets、request id、auth curl 流程 | 修改（D6）：backend secrets 加 `origin_secret`；request id 與 auth 流程在 compose network 上的另一個容器裡跑並帶密鑰 | 2、3 | 完成（2c：backend secrets 加 `origin_secret`；3b：backend image 的一次性容器跑 `scripts/stack_auth_smoke.py`，不用 curl 容器，理由見計畫 3b 的偏離段） |
 | `frontend/vercel.json` | 新增：一條 `/api/(.*)` route，`dest` 取 `$BACKEND_ORIGIN`，`set` transform 設 `X-Origin-Secret` 為 `$ORIGIN_SECRET`；CI policy job 檢查它（D6） | 2 | 完成 |
 | `frontend/next.config.ts` | 修改：第 7-9 行提到 Caddy 的註解改寫；rewrite 維持只在 development 啟用，production 的 `/api` 由 `vercel.json` 轉送（D6） | 2 | 完成 |
 | `frontend/src/lib/api/client.ts`、`frontend/src/features/auth/server.ts` | 修改：伺服器端呼叫帶 `X-Origin-Secret`，值取自 `ORIGIN_SECRET`（不帶 `NEXT_PUBLIC_`），`client.ts:5-12` 的 Caddy 註解改寫；驗收：測試確認伺服器端請求帶密鑰，build 後瀏覽器 bundle 裡找不到密鑰的值（mutation：把變數改成 `NEXT_PUBLIC_ORIGIN_SECRET`，bundle 檢查要失敗）（D6） | 3 | 完成（2c 提前做：`315d07c`、bundle 哨兵 `8ac82fa`；`server.ts` 經 `client.ts` 的共用 middleware 帶上，不必改；2026-11-03 核對） |
@@ -73,7 +73,7 @@
 | `scripts/check_commit_policy.py`、`check_locks.py`、`quality-locks.json` | 保留；`check_locks.py` 加 Python 的 suppression 與 pytest 報告 | 1 | 完成 |
 | `scripts/rename.py` | 改寫 module path 部分（Python 沒有 module path） | 6 | 未開始 |
 | `scripts/tool_versions.py` | 改寫 Go 工具清單為 Python 工具 | 1 | 完成 |
-| `docs/rules/`、`docs/security/`、`docs/privacy/`、`docs/deploy-vps.md` | 保留，Go 專屬段改寫 | 2、3、7 | 進行中（2a 改寫 `database-design.md` 的 schema、Migration、連線、角色；2b 改寫 `api-design.md` 的契約驗證、錯誤、分頁 cursor 與 service 回報錯誤；2c 改寫威脅建模的信任邊界、偽造位址、request id、access log 與個資盤點的 client IP、user agent、日誌段；查詢與 Transaction、handler 分層、認證在步驟 3） |
+| `docs/rules/`、`docs/security/`、`docs/privacy/`、`docs/deploy-vps.md` | 保留，Go 專屬段改寫 | 2、3、7 | 進行中（2a 改寫 `database-design.md` 的 schema、Migration、連線、角色；2b 改寫 `api-design.md` 的契約驗證、錯誤、分頁 cursor 與 service 回報錯誤；2c 改寫威脅建模的信任邊界、偽造位址、request id、access log 與個資盤點的 client IP、user agent、日誌段；查詢與 Transaction、handler 分層、認證、授權、限流與威脅建模的 3b 機制在 3b 改寫；3c、5、7 的部分仍是 Go 版） |
 | `docs/adr/2026-10-22-account-abuse-and-lifecycle.md` | 保留（與語言無關的決定） | 1 | 完成 |
 | `docs/adr/2026-10-18-api-and-auth-baseline.md` | 保留；D1、D6（IP 來源）、D8 的決定與 Rationale，以及約束、Expected Outcome、Revocation Triggers 中的 Caddy 部分，由本 repo 的 D6 ADR 取代並標修訂；第 13 行與 Related 段指向 `2026-10-18-go-backend.md` 的連結改指本 repo 的 ADR | 1、7 | 進行中 |
 | `docs/adr/2026-10-18-go-backend.md` | 刪除（Go 專屬；以本計畫的 D1–D3 ADR 取代） | 7 | 未開始 |

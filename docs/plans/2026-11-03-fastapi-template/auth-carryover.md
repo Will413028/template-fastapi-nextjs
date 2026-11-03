@@ -8,16 +8,16 @@
 
 依據：Go 版這部分的程式約 1,500 行、測試約 1,700 行；除了密碼雜湊與 CSRF，幾乎每個測試都要資料庫，本機不跑（只在 CI），每輪驗證都要推到 CI，一個 session 做不完 11 個操作加 seed-admin。
 
-- **3b 帳號與登入**：設定、密碼、session 核心、認證 middleware 與 principal、CSRF、存取標記與契約／路由一致檢查，以及 6 個操作：`createUser`、`createSession`、`getCurrentUser`、`deleteCurrentSession`、`getUser`、`getSession`。`getUser`、`getSession` 放進來，是因為 `createUser`、`createSession` 回的 201 `Location` 指向它們（ADR api-and-auth-baseline D9：201 的 `Location` 要能 GET；Go 測試的 `followLocation` 對每個 201 都這樣檢查）；`getUser` 原本在 inventory 標步驟 5，改到 3b。CI stack job 的 curl 流程只用到這 6 個操作，也放 3b。
-- **3c session 資源、刪帳號與 seed-admin**：`listSessions`、`deleteAllSessions`、`getCurrentSession`、`deleteSession`、`deleteCurrentUser`、`seed-admin`（含根目錄 `make seed`）、每小時的清理。
+- **3b 帳號與登入**：設定、密碼、session 核心、認證 middleware 與 principal、CSRF、存取標記與契約／路由一致檢查，以及 7 個操作：`createUser`、`createSession`、`getCurrentUser`、`deleteCurrentSession`、`getUser`、`getSession`、`getCurrentSession`（最後一個 2026-11-04 從 3c 移入：`/sessions/{id}` 先上線時會吃掉 `/sessions/current`）。`getUser`、`getSession` 放進來，是因為 `createUser`、`createSession` 回的 201 `Location` 指向它們（ADR api-and-auth-baseline D9：201 的 `Location` 要能 GET；Go 測試的 `followLocation` 對每個 201 都這樣檢查）；`getUser` 原本在 inventory 標步驟 5，改到 3b。CI stack job 的 curl 流程只用到這 6 個操作，也放 3b。
+- **3c session 資源、刪帳號與 seed-admin**：`listSessions`、`deleteAllSessions`、`deleteSession`、`deleteCurrentUser`、`seed-admin`（含根目錄 `make seed`）、每小時的清理。
 
 ## 資料存取與組裝（3b 開工時定，design review 2026-11-03）
 
 - 查詢：SQLAlchemy Core 的運算式，欄位取自 `models.py` 的 ORM 類別（`select(User.id, …)`、`insert(…).returning(…)`、`postgresql.insert(…).on_conflict_do_update(…)`），在 `AsyncConnection` 上執行；不用 ORM `Session` 的 unit of work 與 identity map：每個呼叫就是一句明確的 SQL，與 Go 的 sqlc 對得上，async 下也沒有 lazy load。不用 `text()` 拼 SQL：ruff 的 S608 會擋字串拼接的 SQL，威脅建模的 SQL injection 列改用這兩項當證據。
 - 交易：service 的方法用 `async with engine.begin()`（要交易的）或 `engine.connect()`（只讀）；雜湊在交易外（#12）。複雜的查詢（節流 upsert、session 與 user 的 join）放 `repository.py`，接受呼叫端給的連線，交易仍由 service 決定。
 - 組裝：`app.main.server`（composition root）建立 `AuthService`（engine、`Settings` 的期限、時鐘、hasher），交給 `create_app(auth=…)`；router 經 `dependencies.py` 的依賴從 `request.app.state` 取得；認證 middleware 在建構時收到。
-- principal：認證 middleware 把 principal（`id`、`role`）放進 `app.platform` 的 ContextVar，只給 openapi-core 的 security provider 用（它只拿得到 `RequestParameters`）；router 用依賴取得目前的使用者，再**顯式**傳給 service（FastAPI 文件「Get Current User」的做法，pyright strict 擋漏傳），service 不讀 ContextVar（取代 #17 原本的寫法）。
-- import-linter：`sql-below-the-router` 改成只擋直接 import（`allow_indirect_imports = True`）。原設定連間接 import 一起擋，而 router → service → sqlalchemy 是 D7 要的分層，第一個呼叫 service 的 router 就會讓合約失敗（審查者在 scratchpad 實測：`Routers do not run SQL BROKEN … router -> service -> sqlalchemy`）；合約要守的是「router 不跑 SQL」，直接 import 就足以涵蓋。`http-stays-at-the-edge` 仍檢查間接 import（service 經 `app.web` 碰到 starlette 也要擋）。改 `.importlinter` 的 commit 帶 `Quality-Gate`。
+- principal：認證 middleware 把 principal（`id`、`role`）放進 `app.platform` 的 ContextVar，給 openapi-core 的 security provider（它只拿得到 `RequestParameters`）與 `app.web.access` 的 `SIGNED_IN` 標記用（各模組共用，模組之間不能互相 import）；`session_invalid` 也定義在 `app.platform.principal`，只有一份；router 用依賴取得目前的使用者，再**顯式**傳給 service（FastAPI 文件「Get Current User」的做法，pyright strict 擋漏傳），service 不讀 ContextVar（取代 #17 原本的寫法）。
+- import-linter：`sql-below-the-router` 改成只擋直接 import（`allow_indirect_imports = True`），並把 `app.modules.*.repository`、`app.modules.*.models`、`app.platform.db` 列為禁止（完成前 design review：只禁 sqlalchemy 時 router 可以經它們跑 SQL）。原設定連間接 import 一起擋，而 router → service → sqlalchemy 是 D7 要的分層，第一個呼叫 service 的 router 就會讓合約失敗（審查者在 scratchpad 實測：`Routers do not run SQL BROKEN … router -> service -> sqlalchemy`）；合約要守的是「router 不跑 SQL」，直接 import 就足以涵蓋。`http-stays-at-the-edge` 仍檢查間接 import（service 經 `app.web` 碰到 starlette 也要擋）。改 `.importlinter` 的 commit 帶 `Quality-Gate`。
 - middleware 順序（外到內）：`RequestId → Client → AccessLog → SecurityHeaders → Recover → CrossOrigin（CSRF）→ OriginGuard → Authenticate（只 `/api`）→ ContractValidation`。CSRF 與 OriginGuard 只看 header，放在查 DB 的認證外面：密鑰不符的請求帶 cookie 也不會碰 DB；認證在 Recover 裡面，DB 例外變成帶 request id 與安全 header 的 500（Go 版 `authenticate` 也在 `recoverPanics`、`CrossOriginProtection` 裡面）。
 - 認證 middleware 放 `app.modules.auth.dependencies`（模組的 HTTP 層；module-layers 合約只認 router／schemas／dependencies／service／repository／models），`AGENTS.md` 的分層表寫明 `dependencies.py` 也放 app factory 掛上的 ASGI middleware。
 
@@ -41,7 +41,7 @@
 | 4 | `Config` 檢查（`auth.go:124`）：期限為正、idle 不超過 absolute、`Now` 必填 | 改寫：期限規則只在 `Settings.from_env` 檢查一次（和其他設定一起收集後回報）；service 收 `Settings` 的值與時鐘，不重驗 | 3b |
 | 5 | `Argon2Hasher`（`password.go:45`）：argon2id，OWASP 下限 m=19 MiB、t=2、p=1，PHC 字串，用雜湊裡的參數驗證，無法解析的雜湊判為不符 | 改寫成 `argon2-cffi`（`PasswordHasher(time_cost=2, memory_cost=19456, parallelism=1, hash_len=32, salt_len=16)`，`verify` 讀雜湊裡的參數；不是 `$argon2id$` 開頭、`VerifyMismatchError`、`InvalidHashError`、`VerificationError` 都判為不符）。依賴已核准（2026-11-03 Will），見計畫步驟 3 的依賴段 | 3b |
 | 6 | 雜湊並行上限（`password.go:53`，最多 `NumCPU` 個，等待時隨 context 取消） | 改寫：專用的 `ThreadPoolExecutor(max_workers=os.process_cpu_count())`，以 `loop.run_in_executor` 執行（argon2-cffi 經 cffi 呼叫時釋放 GIL）。上限由 worker 數保證：等待者被取消時，還沒開始的工作一起取消，已開始的跑完才釋放 worker，所以並行數不會超過上限（`Semaphore` 包 `to_thread` 的寫法在等待者被取消時會先釋放名額，design review 2026-11-03）。uvicorn 在 client 斷線時不取消 app 的 task，所以「client 走了就不再排隊」不成立：Go 版靠 net/http 的 context 取消，這裡接受排隊的請求照樣算完（觸發條件：出現雜湊排隊造成的延遲時，加排隊上限並回 503） | 3b |
-| 7 | `dummyHash`（`auth.go:119`）：不存在的帳號也算一次雜湊 | 保留：service 建立時算一次 | 3b |
+| 7 | `dummyHash`（`auth.go:119`）：不存在的帳號也算一次雜湊 | 保留：app 啟動時（lifespan 呼叫 `AuthService.start`）算一次；沒經過 lifespan 的呼叫在第一次用到時算 | 3b |
 | 8 | `normalizePassword` NFKC（`password.go:19`） | 保留（`unicodedata.normalize("NFKC", …)`）；契約的長度限制算原始輸入 | 3b |
 | 9 | `accountKey` 轉小寫（`auth.go:148`） | 保留（契約 pattern 限 ASCII，`str.lower` 與 Go `ToLower` 結果相同） | 3b |
 | 10 | `blocklist`（SecLists 常見密碼 5,406 行與 MIT 授權檔）；載入時每一行先 NFKC 正規化 | 保留：照搬資料檔與授權檔到 `app/modules/auth/`，第一次用到時逐行 NFKC 後載入成 `frozenset`；wheel 要包含 `.txt`（CI stack job 的註冊流程會用到） | 3b |
@@ -62,7 +62,7 @@
 | 25 | `newSession`、`Authenticate`（`sessions.go:43-84`）：讀 session 與 user、absolute 與 idle 期限、停用的帳號、touch | 保留 | 3b |
 | 26 | `SignIn` 的 per-client 節流（`reserveAttempt`，client key 是 `ip:` 加上 `limitKey`：IPv4（IPv4-mapped 先轉回 IPv4）或 IPv6 的 /64，沒有位址時是 `unknown`，`users.go:86-91`；ADR account-abuse D4）。key 的規則與 2c 的 `IPLimiter` 共用：`app.web.ratelimit._limit_key` 改成公開的函式，router 算好 client key 再傳給 service；`verifyCredentials`（dummy hash、停用與密碼錯誤同一個回應、`signInFailed` 記原因）、成功時清節流、刪掉請求帶的舊 session、發新 session | 保留 | 3b |
 | 27 | `SignIn` 的 trusted device（`device:<id>` client key、發 device cookie）與帳號層級的 untrusted 計數與鎖定（`devices.go` 全部） | 步驟 5 | 5 |
-| 28 | `ReserveLoginAttempt` SQL（一句 upsert：第 5 次起等 2^(n-5) 分鐘、最多 1 小時，被擋的嘗試不計）、`GetLoginThrottle`、`ClearLoginThrottles` | 保留（同一句 SQL 的語意；用 SQLAlchemy Core 的 `insert().on_conflict_do_update(where=…)` 或 `text()`，實作時定，行為由 Go 的 schedule 與並行測試守住） | 3b |
+| 28 | `ReserveLoginAttempt` SQL（一句 upsert：第 5 次起等 2^(n-5) 分鐘、最多 1 小時，被擋的嘗試不計）、`GetLoginThrottle`、`ClearLoginThrottles` | 保留（同一句 SQL 的語意；用 SQLAlchemy Core 的 `insert().on_conflict_do_update(where=…)`，等待時間用 `make_interval`（`Interval` 乘整數在 SQLAlchemy 2.1 是 deprecated），行為由 Go 的 schedule 與並行測試守住；成功時清掉該帳號所有來源的列照 Go 版，是否改成只清這次的來源交 Will 決定（計畫 3b 的偏離段）） | 3b |
 | 29 | `SignOut`（`sessions.go:222`）：空或未知的 token 不是錯誤，記 `auth.sign_out` | 保留 | 3b |
 | 30 | `endEverywhere`（刪 sessions 與 trusted devices）、`SignOutAll` | 保留刪 sessions 的部分（3c）；刪 trusted devices 的那句在步驟 5 與 devices 一起加（3c 時沒有任何 device 會被建立） | 3c、5 |
 | 31 | `Sessions`、`Session`、`RevokeSession`（`sessions.go:264-325`）：只看本人、只看未過期的 | `Session`（`getSession`）3b；其餘 3c | 3b、3c |
@@ -81,7 +81,7 @@
 | 39 | `requireRole`、`insufficient_role`、`authz.denied` 記錄（`authz.go:109-130`） | 步驟 5（3b、3c 沒有 admin 操作） | 5 |
 | 40 | `methodName`、`operations()`（Go 的 strict middleware 以產生的方法名稱辨識操作） | 刪除：Go 專屬；Python 的限流與存取標記直接掛在 route 上，沒有名稱查表 | — |
 | 41 | handler：`toUser`、`toSession`（時間轉 UTC）、201 的 `Location`、`createSession` 回 `Session` 並標 `current`（`users.go`） | 保留，用 3a 產生的 `app.web.contract_models`（D8） | 3b、3c |
-| 42 | `getCurrentSession`：session 在 authenticate 之後被撤銷時回 401 `session_invalid`（`users.go:205`） | 保留 | 3c |
+| 42 | `getCurrentSession`：session 在 authenticate 之後被撤銷時回 401 `session_invalid`（`users.go:205`） | 保留（2026-11-04 從 3c 移入 3b） | 3b |
 | 43 | `deleteSession` 撤銷目前的 session 時清 cookie（`users.go:221`） | 保留 | 3c |
 | 44 | 限流掛在 `CreateUser`、`CreateSession`（`server.go:97`） | 保留：兩個 route 加 2c 的 `RATE_LIMITED` | 3b |
 | 45 | CSRF（位置見「資料存取與組裝」的 middleware 順序；`Sec-Fetch-Site` 與 `Origin` 能原樣穿過 Vercel 與 Cloudflare 是未驗證的前提，列入計畫前提段「未驗證」與步驟 7 的檢查清單）：`http.CrossOriginProtection`（`server.go:189`）：非 GET／HEAD／OPTIONS 的請求，`Sec-Fetch-Site` 不是 `same-origin`／`none` 就 403；沒有 `Sec-Fetch-Site` 時比對 `Origin` 與 `Host`；兩個 header 都沒有就放行（非瀏覽器）；403 problem 帶 `cross_origin_request` | 改寫成 `app.web` 的 ASGI middleware；後備的 `Origin` 改比對設定的 `APP_ORIGIN`（D6：backend 收到的 `Host` 不是瀏覽器看到的網域）。`APP_ORIGIN` 在 `Settings` 必填，必須是 `scheme://host[:port]`、沒有路徑 | 3b |
@@ -118,7 +118,9 @@
 | `TestArgon2Hash`、`TestArgonConcurrencyBounded` | 3b | 不需資料庫，本機跑；加「等待者被取消後並行數仍不超過上限」 |
 | （新增）認證 middleware 的位置 | 3b | 密鑰不符但帶 cookie 的請求回 403，且沒有查 DB |
 | `TestCrossOriginPostRejected` | 3b | 不需資料庫；加一案：`Origin` 等於 `APP_ORIGIN` 時放行 |
-| `TestGetCurrentSession`、`TestListSessions`、`TestListSessionsExcludesExpired`、`TestDeleteSession`、`TestDeleteOtherUsersSession`、`TestDeleteAllSessions` | 3c | |
+| `TestGetCurrentSession` | 3b | 2026-11-04 從 3c 移入 |
+| `spec_test.go` `TestEveryWritablePathHasGet` | 3b | 契約檢查，原本漏列 |
+| `TestListSessions`、`TestListSessionsExcludesExpired`、`TestDeleteSession`、`TestDeleteOtherUsersSession`、`TestDeleteAllSessions` | 3c | |
 | `TestDeleteCurrentUser`、`TestDeleteCurrentUserLastAdmin` | 3c | Go 用 `mustCreateItem`（步驟 4）；改成 SQL 直接插一筆 item 驗 cascade |
 | `TestSeedAdminCreatesAdmin`、`TestSeedAdminRejectsShortPassword`、`TestSeedAdminExistingAccountUnchanged`、`TestCleanup` | 3c | |
 | `TestAdminDisablesUserRevokesSessions`、`TestLastAdminCannotBeDisabled`、`TestConcurrentAdminDisableLeavesOne`、`TestNonAdminCannotPatchUser`、`TestListUsers`、`TestNonAdminCannotListUsers`、`TestAdminDeletesUser`、`TestAdminChangesAreAudited`、`TestRecoverAdmin`、`throttle_test.go` 其餘 | 5 | |

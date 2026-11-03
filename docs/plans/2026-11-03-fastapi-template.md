@@ -181,9 +181,19 @@
   - 範圍：inventory 標步驟 4 的 5 個操作，含 owner 權限與分頁。
   - 消費端：`rg -n 'items' frontend/src`。
   - 驗收：對照 Go 版 `items_test.go`、`authz_test.go`；mutation：拿掉 owner 檢查，跨使用者讀取的測試要失敗；`backend/src/app/modules/items/router.py`、`service.py` 不再只有 docstring。
-- [ ] **5. 帳號濫用與管理**（被擋於：步驟 3）
+- [ ] **5. 帳號濫用與管理**（被擋於：步驟 3）：一個 session 做不完（Go 版對應約 1,000 行加測試），2026-11-04 拆成 5a、5b、5c，依序做，各自有驗收；下面「範圍」「驗收」是整步的總表，各子步驟分走。
   - 範圍：inventory 標步驟 5 的 5 個 admin 操作、`recover-admin`、trusted devices、登入鎖定、稽核紀錄、HIBP 密碼檢查（ADR account-abuse-and-lifecycle），以及附件 `auth-carryover.md` 標 5 的列：`ADMIN` 存取標記與 `insufficient_role`、`authz.denied`；登出全部、停用與 recover 也刪 trusted devices；清理也刪過期的 devices；「尚未實作」集合刪除；加回清整個帳號節流的 `clear_login_throttles`（3c 刪掉，附件第 28 列）；`recover-admin` 與 `seed-admin` 共用建 `AuthService` 的組裝，不再各自塞用不到的 session 期限（3c design review）。
   - 驗收：對照 Go 版 `backend/internal/httpapi/throttle_test.go`、`users.go` 對應的 `authz_test.go` 案例、`backend/internal/modules/auth/service_test.go` 的 devices 與鎖定案例；mutation：把鎖定門檻加大，鎖定測試要失敗。
+- [ ] **5a. ADMIN 標記與 admin 操作**（被擋於：無）
+  - 範圍：`ADMIN` 存取標記、`insufficient_role`、`authz.denied` 記錄；`listUsers`、`patchUser`（停用、最後一個 admin 不能停用、並行停用留一個）、`deleteUser`；對應的 audit action；`TestOperationAccessEnforced` 的 admin 部分。
+  - 消費端：`rg -n 'users|disabled|insufficient_role' frontend/src`、`rg -n 'UNIMPLEMENTED|SIGNED_IN' backend/src`。
+  - 驗收：對照 `authz_test.go` 的 `TestAdminDisablesUserRevokesSessions`、`TestLastAdminCannotBeDisabled`、`TestConcurrentAdminDisableLeavesOne`、`TestNonAdminCannotPatchUser`、`TestListUsers`、`TestNonAdminCannotListUsers`、`TestAdminDeletesUser`、`TestAdminChangesAreAudited`；mutation：把 `ADMIN` 換成 `SIGNED_IN`，非 admin 的測試要失敗；拿掉最後一個 admin 的檢查，對應測試要失敗（db 測試的 mutation 推分支給 CI）。
+- [ ] **5b. trusted devices 與帳號鎖定**（被擋於：5a）
+  - 範圍：附件第 27、30（刪 devices）、32（清過期 devices）、34 列；`getSignInLock`、`deleteSignInLock`；加回 `clear_login_throttles`（第 28 列，D10）。
+  - 驗收：對照 `throttle_test.go` 其餘與 `service_test.go` 的 devices 與鎖定案例；mutation：把鎖定門檻加大，鎖定測試要失敗。
+- [ ] **5c. recover-admin、HIBP 與收掉「尚未實作」集合**（被擋於：5b）
+  - 範圍：`recover-admin` 與 `make recover-admin`（附件第 14、50 列），和 `seed-admin` 共用建 `AuthService` 的組裝；HIBP 與 `PASSWORD_HIBP_CHECK`（第 11、48 列；用標準庫 HTTP，不加依賴；要加依賴就停下問）；刪掉 `UNIMPLEMENTED`；補回 `TestCredentialsNeverLogged`、`TestSecurityEventsLogged` 的 HIBP 與 `authz.denied` 部分。
+  - 驗收：對照 `TestRecoverAdmin`、`TestCreateUserBreachedPassword`；mutation：HIBP 失敗改成拒絕，失敗放行的測試要失敗。
 - [ ] **6. rename 腳本與 smoke test**（被擋於：步驟 1）
   - 範圍：恢復步驟 1 拿掉的根目錄 `make rename` target 與 CI rename job（步驟 1 時 rename 腳本還是 Go 版，先移除）；`scripts/rename.py` 改成 Python 版（套件名、DB 與角色名、image、品牌字，沒有 module path）；CI rename job。（2a 起 `backend/tests/dbtest.py` 寫著角色與資料庫的佔位名稱，要納入替換或改成從設定讀取。）
   - 驗收：CI 跑 `make rename NAME=ci-probe` 後 `rg` 找不到佔位名稱、pytest 通過；mutation：刪掉一個替換規則，smoke job 要失敗。

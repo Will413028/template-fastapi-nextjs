@@ -39,6 +39,25 @@ services:
       timeout: 3s
       retries: 5
 
+  # applies the Alembic revisions as the owner role and grants the app role (app migrate); backend starts after it
+  # exits. Same image as backend, built once by the backend service.
+  migrate:
+    logging: *logging
+    image: template-fastapi-nextjs-backend
+    pull_policy: never
+    command: ["migrate"]
+    environment:
+      MIGRATE_DATABASE_URL: postgres://${DB_OWNER_USER:-template_fastapi_nextjs_owner}@postgres:5432/${POSTGRES_DB:-template_fastapi_nextjs}?sslmode=disable
+      # plaintext only because postgres is on this host's compose network (backend config, DATABASE_PLAINTEXT)
+      DATABASE_PLAINTEXT: same-host
+      MIGRATE_DATABASE_PASSWORD_FILE: /run/secrets/db_owner_password
+      DB_APP_USER: ${DB_APP_USER:-template_fastapi_nextjs_app}
+    secrets: [db_owner_password]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
   backend:
     logging: *logging
     build: ./backend
@@ -61,8 +80,8 @@ services:
       PASSWORD_HIBP_CHECK: ${PASSWORD_HIBP_CHECK:-}
     secrets: [db_app_password]
     depends_on:
-      postgres:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     # Each check starts a Python interpreter: measured 1.7 s for `python -c pass` alone on a heavily loaded Docker
     # host (load average 70+), so the timeout leaves room that a compiled healthcheck would not need.
     healthcheck:

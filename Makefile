@@ -34,6 +34,21 @@ build:
 restart:
 	$(COMPOSE) restart
 
+# --- Database ---
+
+# Applies the revisions to the stack's database (app migrate in the migrate service). make up and make dev run it
+# before the backend starts; run it by hand after generating a revision while the stack is up.
+.PHONY: migration
+migration:
+	$(COMPOSE) build backend
+	$(COMPOSE) run --rm migrate
+
+# Generates backend/src/app/main/migrations/versions/r<timestamp>_<MSG>.py from the models (needs Docker and uv):
+#   make generate-migration MSG=add_widgets
+.PHONY: generate-migration
+generate-migration:
+	$(MAKE) -C backend migration MSG="$(MSG)"
+
 # --- Logs ---
 
 .PHONY: logs

@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   backend:
-    name: Backend (lint + types + architecture + test)
+    name: Backend (lint + types + architecture + test + database)
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -24,16 +24,32 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          # migrations-immutable compares revisions with the merge-base of HEAD and origin/main
+          fetch-depth: 0
           persist-credentials: false
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
         with:
           version-file: backend/pyproject.toml
           enable-cache: false
-      # uv.lock in sync, format, ruff, import-linter contracts, pyright strict, vulture, pytest
-      - run: make sync check
+      # uv.lock in sync, format, ruff, import-linter contracts, pyright strict, vulture, pytest without the db tests,
+      # revisions on main unchanged
+      - run: make sync check BASE=origin/main
+      # The db tests start PostgreSQL with testcontainers; they run only here, never on a developer's machine by default
+      # (schema equals the Go version's, models equal the revisions, grants, append-only, readiness)
+      - run: make test-db
       # suppression comments may only go down and executed tests only up (scripts/quality-locks.json)
-      - run: python3 scripts/check_locks.py --pytest-report backend/test-report.xml
+      - run: python3 scripts/check_locks.py --pytest-report backend/test-report.xml --pytest-db-report backend/test-db-report.xml
         working-directory: .
+      # make migration generates a revision; with the models and revisions in agreement it holds no operation
+      - name: make migration generates an empty revision when nothing changed
+        run: |
+          make migration MSG=ci_probe
+          new="$(git status --porcelain --untracked-files=all -- src/app/main/migrations/versions)"
+          echo "$new"
+          test "$(wc -l <<< "$new")" -eq 1
+          file="$(sed 's/^?? backend\///' <<< "$new")"
+          grep -q '^def upgrade() -> None:$' "$file"
+          test "$(sed -n '/^def upgrade/,$p' "$file" | sed 1d | tr -d ' \n')" = pass
 
   # Every commit that edits a checker's configuration or moves a lock the bad way names why in a Quality-Gate trailer
   # (scripts/check_commit_policy.py; lefthook checks it at commit time too).
@@ -60,7 +76,7 @@ jobs:
 
   # Builds the production backend image and starts the stack the VM runs (no tunnel: CI has no token).
   stack:
-    name: Compose stack (image + health)
+    name: Compose stack (image + migrate + health)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -75,6 +91,7 @@ jobs:
           touch .secrets/tunnel_token
           docker compose --profile tunnel config --format json > /tmp/compose.json
           test "$(jq -c '.services.backend.secrets | map(.source)' /tmp/compose.json)" = '["db_app_password"]'
+          test "$(jq -c '.services.migrate.secrets | map(.source)' /tmp/compose.json)" = '["db_owner_password"]'
           test "$(jq -c '.services.cloudflared.secrets | map(.source)' /tmp/compose.json)" = '["tunnel_token"]'
           docker compose -f docker-compose.yml -f docker-compose.dev.yml config --format json > /tmp/compose-dev.json
           test "$(jq -c '.services.frontend.secrets // []' /tmp/compose-dev.json)" = '[]'
@@ -89,8 +106,11 @@ jobs:
       - name: No service publishes ports
         run: test "$(jq -c '[.services | to_entries[] | select(.value.ports) | .key]' /tmp/compose.json)" = '[]'
       - run: docker compose up -d --build --wait
-      - name: Backend is healthy
-        run: docker compose exec -T backend app healthcheck
+      - name: Migrate exited cleanly and backend is ready
+        run: |
+          test "$(docker compose ps -a migrate --format '{{.ExitCode}}')" = 0
+          docker compose logs migrate | grep -q 'at revision baseline'
+          docker compose exec -T backend app healthcheck
       - name: The app role cannot change the schema
         run: |
           out="$(docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U template_fastapi_nextjs_app -d template_fastapi_nextjs -c 'CREATE TABLE public.intruder (id int)' 2>&1)" && exit 1

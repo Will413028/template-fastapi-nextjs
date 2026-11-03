@@ -31,8 +31,12 @@ jobs:
         with:
           version-file: backend/pyproject.toml
           enable-cache: false
+      # squawk installs from backend/tools/package-lock.json with npm
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
       # uv.lock in sync, format, ruff, import-linter contracts, pyright strict, vulture, pytest without the db tests,
-      # and no revision that already reached the base changed: a pull request's base branch, or for a push the branch's
+      # squawk on every revision's SQL, and no revision that already reached the base changed: a pull request's base branch, or for a push the branch's
       # previous tip, so a revision pushed to dev is frozen too (the Go version's rule)
       - name: make check
         env:

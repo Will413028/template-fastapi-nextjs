@@ -6,5 +6,7 @@
 .pytest_cache
 .ruff_cache
 tests
+tools
+.revision-sql
 test-report.xml
 *.md

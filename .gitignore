@@ -8,6 +8,8 @@ __pycache__/
 .venv/
 backend/test-report.xml
 backend/test-db-report.xml
+backend/tools/node_modules/
+backend/.revision-sql/
 .pytest_cache/
 .ruff_cache/
 AGENTS.local.md

@@ -31,6 +31,15 @@ updates:
       backend-minor-patch:
         update-types: [minor, patch]
 
+  # squawk-cli in backend/tools/package.json, the CLI make squawk runs
+  - package-ecosystem: npm
+    target-branch: dev
+    directory: /backend/tools
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+
   # the uv and Python base images, pinned by digest in backend/Dockerfile. A new Python minor needs
   # requires-python in backend/pyproject.toml changed with it, and a new uv minor needs required-version there, so
   # those are upgraded by hand; patches and digests come through here.

@@ -9,6 +9,7 @@ import pytest
 from alembic.script import ScriptDirectory
 
 import dbtest
+import revision_sql
 from app.main.migrate import alembic_config
 from app.main.schema import MODEL_MODULES, metadata
 
@@ -78,3 +79,15 @@ def test_waiting_for_postgres_gives_up_after_the_timeout() -> None:
 
     with pytest.raises(ConnectionRefusedError):
         asyncio.run(dbtest.wait_until_accepting(connect, within=0, interval=0))
+
+
+def test_each_revision_renders_to_its_own_sql_file_for_squawk(tmp_path: pathlib.Path) -> None:
+    (baseline,) = revision_sql.write(tmp_path)
+    sql = baseline.read_text(encoding="utf-8")
+    assert baseline.name == "r20261103_baseline.sql"
+    assert sql.startswith("BEGIN;")
+    assert sql.rstrip().endswith("COMMIT;")
+    assert "CREATE TABLE users" in sql
+    # Alembic's own bookkeeping table is cut out; recording the revision stays
+    assert "CREATE TABLE alembic.alembic_version" not in sql
+    assert "INSERT INTO alembic.alembic_version" in sql

@@ -8,7 +8,7 @@ older than N days on every run, as the owner role.
 import asyncio
 import re
 import sys
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TextIO
 
 import sqlalchemy as sa
 from alembic import command
@@ -36,9 +36,12 @@ class MigrateError(RuntimeError):
     """The schema or the grants could not be brought up to date."""
 
 
-def alembic_config(connection: Connection | None = None) -> Config:
-    """Alembic's configuration, for a run on `connection` (migrations/env.py reads it from the attributes)."""
-    config = Config()
+def alembic_config(connection: Connection | None = None, output: TextIO | None = None) -> Config:
+    """Alembic's configuration, for a run on `connection` (migrations/env.py reads it from the attributes).
+
+    `output` receives what Alembic prints, such as the SQL of an offline (`sql=True`) run.
+    """
+    config = Config(output_buffer=output)
     config.set_main_option("script_location", "app.main:migrations")
     config.set_main_option(
         "file_template", "r%%(year)d%%(month).2d%%(day).2d%%(hour).2d%%(minute).2d%%(second).2d_%%(slug)s"

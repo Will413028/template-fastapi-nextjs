@@ -22,9 +22,10 @@ import xml.etree.ElementTree as ET
 LOCKS = pathlib.Path("scripts/quality-locks.json")
 # Every way to switch a check off, per language. A new spelling belongs here, or it would slip past the lock.
 SUPPRESSIONS = {
-    # ruff's line and file noqa (and `ruff: ignore`, Ruff 0.16+), and the type checkers' ignores
+    # ruff's line and file noqa (and `ruff: ignore`, Ruff 0.16+), the type checkers' ignores, and squawk's, which a
+    # revision can only carry inside an op.execute() string
     "python": (
-        re.compile(r"#\s*(?:noqa\b|ruff:\s*(?:noqa|ignore)\b|type:\s*ignore\b|pyright:\s*ignore\b)"),
+        re.compile(r"#\s*(?:noqa\b|ruff:\s*(?:noqa|ignore)\b|type:\s*ignore\b|pyright:\s*ignore\b)|squawk-ignore"),
         (".py", ".pyi"),
     ),
     "typescript": (

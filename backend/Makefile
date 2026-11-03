@@ -57,6 +57,21 @@ migration: ## Needs Docker: generate a revision from the models, make migration 
 	$(UV) ruff format src/app/main/migrations/versions
 	$(UV) ruff check --fix src/app/main/migrations/versions
 
+# squawk is pinned in tools/package.json (Dependabot reads it). --ignore-scripts: squawk-cli ships its binary as a
+# platform package and runs no install script.
+SQUAWK := tools/node_modules/.bin/squawk
+REVISION_SQL := .revision-sql
+
+$(SQUAWK): tools/package-lock.json
+	npm ci --prefix tools --ignore-scripts --no-audit --no-fund
+	@touch $@
+
+.PHONY: squawk
+squawk: $(SQUAWK) ## Lock and compatibility checks on every revision's SQL (.squawk.toml; needs Node, no database)
+	@rm -rf $(REVISION_SQL)
+	$(UV) python tests/revision_sql.py $(REVISION_SQL)
+	$(SQUAWK) --config .squawk.toml $(REVISION_SQL)/*.sql
+
 .PHONY: migrations-immutable
 migrations-immutable: ## Revisions already on BASE (default origin/main) must not change
 	python3 ../scripts/check_migrations_immutable.py $(BASE)
@@ -68,4 +83,4 @@ lock-check: ## uv.lock matches pyproject.toml
 BASE ?= origin/main
 
 .PHONY: check
-check: lock-check fmt-check lint typecheck deadcode test migrations-immutable ## CI's backend job, minus test-db
+check: lock-check fmt-check lint typecheck deadcode test squawk migrations-immutable ## CI's backend job, minus test-db

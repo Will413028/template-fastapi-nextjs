@@ -31,15 +31,15 @@
 | 不變量 | 依賴它的機制 |
 |---|---|
 | API 契約與 Go 版相同（路徑、方法、request／response schema、problem code） | `frontend/src/lib/api/`、前端生成型別、步驟 1–5 的契約測試 |
-| 錯誤一律 RFC 9457 problem 加機器可讀的 `code` | 前端錯誤處理、`docs/rules/api-design.md`、步驟 2 的 exception handler |
+| 錯誤一律 RFC 9457 problem 加機器可讀的 `code` | 前端錯誤處理、`docs/rules/api-design.md`、步驟 2b 的 exception handler |
 | DB 分 owner 與 app 兩個角色，app 角色只有 DML | `deploy/postgres/initdb/10-roles.sh`、compose 的 `MIGRATE_DATABASE_URL`／`DATABASE_URL`、CI stack job 的 `intruder` 檢查 |
 | 同源：瀏覽器看到前端與 `/api` 同一個網域，由 Vercel rewrite 轉送 `/api/*`（D6） | `frontend/vercel.json` 的 `/api/` route、CI policy job 的 `vercel.json` 檢查、cookie 的 `__Host-` 前綴、CSRF 防護（`Sec-Fetch-Site`）、前端 `src/proxy.ts` 的 CSP `connect-src 'self'` |
 | backend 只信任帶正確來源密鑰的請求所附的 `X-Real-IP`（D6，取代 Go 版的 `TRUSTED_PROXIES`） | `vercel.json` 設定 `X-Origin-Secret` 的 transform、前端伺服器端呼叫帶的 `X-Origin-Secret`、backend 的來源密鑰 middleware、per-IP 限流的 key、access log 的 `client_ip` |
 | 來源密鑰只存在 Vercel 環境變數與 VM 的 compose secret（`.secrets/origin_secret`），不進 git | `scripts/init_env.py`、compose 的 `origin_secret` secret、`vercel.json` 以 `$ORIGIN_SECRET` 引用 |
 | backend 不發佈任何 port，只經 Cloudflare Tunnel 對外 | compose 的 `cloudflared` 服務（`profiles: [tunnel]`、`--token-file`）、backend 服務沒有 `ports`、CI stack job 的「沒有服務發佈 port」檢查（用 `--profile tunnel` 的 config） |
-| health 端點不對外：`/health`、`/health/ready` 只接受 loopback 來源 | backend 的 health 路由、步驟 2 的 loopback 測試；Cloudflare 後台的 `/api/*` 路由規則是第二層，寫進部署文件的檢查清單 |
+| health 端點不對外：`/health`、`/health/ready` 只接受 loopback 來源 | backend 的 health 路由、步驟 2c 的 loopback 測試；Cloudflare 後台的 `/api/*` 路由規則是第二層，寫進部署文件的檢查清單 |
 | 契約檔固定在 `backend/api/openapi.yaml` | `frontend/scripts/gen-api.mjs:15`、CI `pnpm gen:api:check`（`ci.yml:171`）、`lefthook.yml:44` |
-| DB schema 與 Go 版等價（表、欄位、nullable、約束、外鍵；D2 選 Alembic，所以靠測試守住，不是共用檔案） | 步驟 2 的 Alembic baseline revision、SQLAlchemy 模型、對照 Go 版 `backend/migrations/` 的 schema 比對測試 |
+| DB schema 與 Go 版等價（表、欄位、nullable、約束、外鍵；D2 選 Alembic，所以靠測試守住，不是共用檔案） | 步驟 2a 的 Alembic baseline revision、SQLAlchemy 模型、對照 Go 版 `backend/migrations/` 的 schema 比對測試 |
 | 佔位名稱 `template-fastapi-nextjs`／`template_fastapi_nextjs` 只出現在 rename 腳本認得的檔案 | `scripts/rename.py` 的 `STACK_FILES`、`BRAND_FILES`、CI rename smoke job |
 
 ## 規模
@@ -68,19 +68,34 @@
   - 不能動：`frontend/` 程式。
   - 驗收：`make -C backend check` 在本機綠燈；CI 的 backend、frontend、policy、stack job 綠燈，stack job 用 `docker compose exec` 跑 healthcheck 成功（不帶 `--profile tunnel`，因為 CI 沒有 tunnel token）；mutation：讓 `/health` 回 500，stack job 要失敗；mutation：給 backend 加一個 `ports`，「沒有服務發佈 port」檢查要失敗；mutation：給 cloudflared 加一個 `ports`，同一個檢查也要失敗。未涵蓋：`cloudflared` 在 CI 不會啟動，正式路徑由部署文件的第一次部署檢查清單涵蓋；dev 走 `next dev` rewrite、正式走 Vercel，兩者不是同一套 proxy（D6 已接受的代價）。
   - 需要人做的事：無（建 repo 是可逆的）。
-- [ ] **2. 共用平台**（被擋於：步驟 1、D2、D3）
-  - 資料庫測試（testcontainers）標成 pytest marker `db`；本機的 `make check` 與 lefthook pre-push 跑 `-m "not db"`，CI 的 backend job 跑全部，並檢查 `db` 測試真的有執行（`check_locks.py` 的測試數）。原因：本機不起 Postgres 容器（2026-11-03 Will，本機負載高）。
-  - D6 新增的範圍：
+- [ ] **2. 共用平台**（被擋於：步驟 1、D2、D3）：一個 session 做不完，2026-11-03 Will 同意拆成 2a、2b、2c，依序做，各自有驗收。
+  - 依賴套件（2026-11-03 Will 核准；PyPI 發佈日都超過 7 天）：`sqlalchemy[asyncio]==2.1.6`、`alembic==1.20.1`、`asyncpg==0.32.0`、`openapi-core==0.23.1`、`testcontainers==4.15.0`（dev）。`openapi-core` 不帶 `[starlette]`：那個 extra 限制 `starlette<1.1.0`，實測會把 starlette 從 1.10.0 降到 1.0.1，而 1.0.1 在 OSV 有 8 筆漏洞（例如 GHSA-jp82-jpqv-5vv3），osv-scanner 會擋；改在 `app.web` 寫一個實作 openapi-core Request 協定的 adapter。`pydantic-settings==2.16.1` 核准了但不裝，理由見 2a 的設定。
+  - 消費端（三個子步驟共用）：`rg -n 'problem|cursor|ratelimit' backend/` 與前端 `rg -n 'code' frontend/src/lib/api`。
+  - 不能動：problem 的 `type`／`code` 值必須和 Go 版 `backend/internal/httpapi/problem.go` 相同。
+- [ ] **2a. 資料庫**（被擋於：步驟 1、D2、D3）
+  - 範圍：
+    - 設定：`app.platform.config` 照 Go 版 `config.go` 加上 serve 的 `DATABASE_URL`、`DATABASE_PASSWORD`、`DATABASE_PLAINTEXT`、`DB_MAX_CONNS`、`DB_STATEMENT_TIMEOUT`，與 migrate 的 `MIGRATE_DATABASE_URL`、`MIGRATE_DATABASE_PASSWORD`、`DB_APP_USER`：任何 `KEY` 都可以改給 `KEY_FILE`，兩者都設是錯誤；URL 不得含密碼、不得帶 driver 後綴；不是 `sslmode=verify-full` 時必須有 `DATABASE_PLAINTEXT=same-host`；所有問題收集後一次回報。session、cookie、限流的設定在用到它們的步驟才加。繼續用標準函式庫、不用 pydantic-settings：上面這些規則它都不提供，要自己寫，它只省掉型別轉換；但它會讓每幾秒跑一次的 `app healthcheck` 多載入 pydantic（`.importlinter` 的 `light-healthcheck` 合約就是為了避免這種事）。
+    - DB 連線：`app.platform.db`，SQLAlchemy async engine 加 asyncpg，密碼不進 URL；每條連線設 `statement_timeout`、`lock_timeout` 3s、`idle_in_transaction_session_timeout` 30s、`TimeZone=UTC`（Go 版 `db.go`）；`sslmode=verify-full` 時驗證伺服器憑證。共用的 `Base` 也放這裡。
+    - 模型：`app.modules.auth.models`（users、sessions、sign_in_throttles、trusted_devices、audit_events）與 `app.modules.items.models`（items），router 與 service 在步驟 3、4 才加。
+    - Alembic：環境放在 `backend/src/app/main/migrations/`，加一個 baseline revision，內容等價於 Go 版 6 個 migration 套用後的結果（沒有 `login_throttles`）。`app migrate` 用 owner 角色跑 `alembic upgrade head`，再照 Go 版 `migrate.go` 給 app 角色 DML，並套用 append-only 規則（`audit_events` 的表註解）。
+    - 檢查：`alembic check`（模型和 revision 一致）寫成 `db` 測試；新增 `scripts/check_migrations_immutable.py`：base 上已有的 revision 檔不能修改、刪除或改名，backend `make check` 呼叫它（取代 Go 版的 `check-migrations-immutable.sh`）。squawk 與 `atlas-age` 不移植：前者檢查的是 SQL 檔，後者檢查的是 Atlas 版本，Alembic 的 revision 用不到。
+    - `/health/ready`：DB ping，失敗回 503 `/problems/unavailable`；`app healthcheck` 改打 `/health/ready`（Go 版 `main.go:208`）。problem 型別表與回應寫成 `app.web` 的最小版本，exception handler 與 request id 在 2b 加。
+    - compose 與 Makefile：恢復 `migrate` 服務（owner 角色、只掛 `db_owner_password`），backend 改成 `depends_on: migrate: service_completed_successfully`；根目錄 Makefile 加 `migration`（跑 migrate）與 `generate-migration MSG=<名稱>`（在 migrate 容器裡跑 `alembic revision --autogenerate`，掛進 revision 目錄）。
+    - 資料庫測試（testcontainers）標成 pytest marker `db`；本機的 `make check` 與 lefthook pre-push 跑 `-m "not db"`，CI 的 backend job 跑全部，並檢查 `db` 測試真的有執行（`check_locks.py` 的測試數）。原因：本機不起 Postgres 容器（2026-11-03 Will，本機負載高）。
+    - CI stack job：migrate 只拿到 `db_owner_password`；migrate 的 exit code 是 0；backend ready。
+  - 驗收：schema 比對測試：一個資料庫依序執行 Go 版 `560106d` 的 6 個 migration SQL（複製到測試 fixture），另一個用 Alembic 套本 repo 的 revision，比對兩邊 catalog 的表、欄位（型別、nullable、default）、約束（`pg_get_constraintdef`）、索引（`pg_get_indexdef`）與表註解，結果要一致。改成直接執行 SQL、不跑 Atlas，因為這 6 個檔沒有 Atlas 指令（`rg 'atlas:'` 沒有輸出，2026-11-03），兩種跑法結果相同，CI 也不必下載 Atlas。mutation：在 revision 拿掉一個 CHECK，比對要失敗。`alembic check` 的 mutation：改模型但不加 revision，它要失敗。migrate 測試：app 角色可以對一般表做 DML，對 `audit_events` 不能 UPDATE 或 DELETE；超過保留期的列被刪掉；重跑結果相同；mutation：拿掉 append-only 的 REVOKE，測試要失敗。設定測試涵蓋每一種錯誤。`/health/ready` 在 DB 可用時回 200、不可用時回 503 problem。`check_migrations_immutable.py` 有單元測試，mutation：改一個已在 base 的 revision，它要失敗。CI stack job 的 app 角色 `CREATE TABLE intruder` 要失敗；mutation：把 app 角色改成 owner，那個檢查要轉紅。
+  - 停止條件：baseline revision 和 Go 版 schema 對不上，而且差異來自 Alembic 或 SQLAlchemy 表達不了的東西時，停下回報。
+- [ ] **2b. HTTP 共用層**（被擋於：2a）
+  - 範圍：problem+json exception handler（`type`、`title`、`code` 與 Go 版 `problem.go` 相同，含 `request_id`）；request id 一律由 backend 產生、不信任傳入值；安全 header，含 `Cache-Control: no-store`（Go 版 `securityHeaders`，`middleware.go:99`）；用 openapi-core 依 `backend/api/openapi.yaml` 驗證 request（自寫 adapter，見上面的依賴說明；正式環境只驗 request，response 驗證放在測試裡，`spike.md` (b)），錯誤轉成 `/problems/validation`；cursor 分頁工具。
+  - 驗收：Go 版 `problem_test.go`、`problem_contract_test.go`、`validate_test.go` 的同名案例；mutation：讓驗證失敗時回 openapi-core 原本的 `{"errors": [...]}`，契約測試要失敗；mutation：信任傳入的 `X-Request-ID`，request id 測試要失敗。
+- [ ] **2c. D6 邊界與限流**（被擋於：2b）
+  - 範圍：per-IP 限流（Go 版 `ratelimit`），以及以下 D6 新增的範圍：
     - 來源密鑰 middleware：`/api/*` 請求的 `X-Origin-Secret` 不符就回 403 problem，`type` 用既有的 `/problems/forbidden`、不帶 `code`（契約的 code 清單不變）；先轉成 bytes 再用 `hmac.compare_digest` 比對，非 ASCII 的 header 直接視為不符；`ORIGIN_SECRET` 可以放兩個值（逗號分隔，目前值與上一個值），輪換時新舊並存，啟動時有空項目就拒絕啟動；`MODE=prod` 沒設定就拒絕啟動。`MODE=dev` 時，沒帶 header 的請求放行（client IP 用連線來源位址，不採信 `X-Real-IP`），帶了但不符一律 403（2026-11-03 Will，因為 `next dev` 的 rewrite 帶不上 header）。`/health`、`/health/ready` 不檢查密鑰，但只接受來自 loopback 的請求（容器內的 `app healthcheck`），其他來源回 404，不依賴 tunnel 的路由規則（2026-11-03 Will）。
     - client IP 只在密鑰相符時取 `X-Real-IP`，否則用連線來源位址；request id 一律由 backend 產生，不信任傳入值；`Cache-Control: no-store` 沿用 Go 版 `securityHeaders`（`middleware.go:99`），external rewrite 的快取預設因此不會生效。
     - 設定與 secret：`scripts/init_env.py` 產生 `.secrets/origin_secret`；compose 給 backend 掛 `origin_secret` secret，加 `APP_ORIGIN` 環境變數（步驟 3 的 CSRF 用）；根目錄 `.env-example` 刪掉 `TRUSTED_PROXIES`、`SITE_ADDRESS`，加上 `APP_ORIGIN`；`backend/.env-example` 同步；CI stack job 的 secrets 檢查改成 `.services.backend.secrets | map(.source) == ["db_app_password","origin_secret"]`（和 Go 版 `ci.yml` 同寫法，`docker compose config` 輸出的 secrets 是物件陣列）。
     - `frontend/vercel.json`：一條 `/api/(.*)` route，`"dest": "${BACKEND_ORIGIN}/api/$1"`，route 的 `env` 含 `BACKEND_ORIGIN`；transform 用 `set` 設 `X-Origin-Secret`，`args` 為 `$ORIGIN_SECRET`、`env` 含 `ORIGIN_SECRET`（寫法照 Vercel 文件「Restricting your origin to Vercel traffic」與 vercel.json `routes` 的 `env` 說明）。新增 `scripts/check_vercel_config.py` 與它的 `scripts/test_check_vercel_config.py`，CI policy job 跑它：route 存在、route `env` 含 `BACKEND_ORIGIN`、`dest` 以 `/api/$1` 結尾、transform 的 `args` 剛好等於 `$ORIGIN_SECRET` 並帶 `env`、檔案裡沒有其他看起來像密鑰的字串。
-    - 驗收：缺密鑰回 403（`/problems/forbidden`）；密鑰相符時限流 key 是 `X-Real-IP`；密鑰不符時自帶的 `X-Real-IP` 被忽略；舊密鑰在輪換期間仍可用；非 ASCII header 回 403；`MODE=prod` 缺密鑰啟動失敗；設定有空項目啟動失敗；`MODE=prod` 下沒帶 header 回 403、`MODE=dev` 下沒帶 header 放行且限流 key 是連線位址、`MODE=dev` 下帶錯 header 回 403；非 loopback 來源打 `/health` 回 404；mutation：把放行判斷改成不看 `MODE`，`MODE=prod` 的缺 header 測試要失敗；mutation：拿掉 `/health` 的 loopback 判斷，非 loopback 的測試要失敗；mutation：拿掉密鑰比對，缺密鑰的測試要失敗；mutation：密鑰不符時仍信任 `X-Real-IP`，偽造 IP 的測試要失敗；mutation：刪掉 `vercel.json` 的 transform，或拿掉 route 的 `env`，policy 檢查要失敗。
-  - 範圍：恢復步驟 1 拿掉的 compose `migrate` 服務、backend 對它的 `depends_on`，以及根目錄 Makefile 的 `migration`、`generate-migration`（步驟 1 還沒有 `app migrate`）；設定、DB 連線池（SQLAlchemy 2.0 async）；Alembic 設定與一個 baseline revision，內容等價於 Go 版 6 個 migration 套用後的結果；migrate 子命令用 owner 角色跑 Alembic；Atlas 專屬的 CI 檢查（squawk、`migrations-immutable`、`atlas-age`、`drift`）換成 Alembic 對應做法（`alembic check` 驗模型和 migration 一致；已提交的 revision 不可修改）；兩個角色、`/health/ready`、problem+json exception handler、request id、per-IP 限流、安全 header、cursor 分頁工具。
-  - 消費端：`rg -n 'problem|cursor|ratelimit' backend/` 與前端 `rg -n 'code' frontend/src/lib/api`。
-  - 不能動：problem 的 `type`／`code` 值必須和 Go 版 `backend/internal/httpapi/problem.go` 相同。
-  - 驗收：schema 比對測試：用 Atlas 套 Go 版 migration 和用 Alembic 套本 repo revision 各建一個資料庫，reflect 後表、欄位、nullable、約束、外鍵一致（做法見 `spike.md` (c)），mutation：在 revision 拿掉一個 CHECK，比對要失敗；`alembic check` 在 CI 跑，mutation：改模型不加 revision，它要失敗；測試覆蓋 Go 版 `problem_test.go`、`problem_contract_test.go`、`ratelimit` 測試的同名案例；CI stack job 的 app 角色 `CREATE TABLE intruder` 要失敗；mutation：把 app 角色改成 owner，那個檢查要轉紅。
-- [ ] **3. auth**（被擋於：步驟 2）
+  - 驗收：Go 版 `ratelimit` 測試的同名案例，加上：缺密鑰回 403（`/problems/forbidden`）；密鑰相符時限流 key 是 `X-Real-IP`；密鑰不符時自帶的 `X-Real-IP` 被忽略；舊密鑰在輪換期間仍可用；非 ASCII header 回 403；`MODE=prod` 缺密鑰啟動失敗；設定有空項目啟動失敗；`MODE=prod` 下沒帶 header 回 403、`MODE=dev` 下沒帶 header 放行且限流 key 是連線位址、`MODE=dev` 下帶錯 header 回 403；非 loopback 來源打 `/health` 回 404；mutation：把放行判斷改成不看 `MODE`，`MODE=prod` 的缺 header 測試要失敗；mutation：拿掉 `/health` 的 loopback 判斷，非 loopback 的測試要失敗；mutation：拿掉密鑰比對，缺密鑰的測試要失敗；mutation：密鑰不符時仍信任 `X-Real-IP`，偽造 IP 的測試要失敗；mutation：刪掉 `vercel.json` 的 transform，或拿掉 route 的 `env`，policy 檢查要失敗。
+- [ ] **3. auth**（被擋於：步驟 2c）
   - 範圍：inventory 標步驟 3 的 10 個操作（註冊、登入登出、session 列表與撤銷、`users/me`）、`seed-admin`、CSRF 防護、依帳號節流。CSRF 照 Go 版先看 `Sec-Fetch-Site`；後備的 Origin 比對改成比對設定的公開網址（`APP_ORIGIN`），因為 backend 收到的 `Host` 不是瀏覽器看到的網域（D6）。
   - 消費端：`rg -n 'sessions|users/me' frontend/src`。
   - 不能動：cookie 名稱與屬性、session 期限、錯誤 code。
@@ -157,7 +172,9 @@
 | 0 spike | 完成 | (a)(b)(c) 三項實測，輸出與重跑方式在 `2026-11-03-fastapi-template/spike.md` | 無 | 未提交（repo 在步驟 1 才 `git init`） |
 | 0b 部署 spike | 取消 | | template 不實際部署（2026-11-03 Will），改成部署文件的檢查清單 | |
 | 1 walking skeleton | 完成 | 本機：`make -C backend check`（14 測試、7 條 import-linter 合約、pyright strict 0 錯誤）、scripts 單元測試、actionlint／zizmor／gitleaks／osv-scanner；mutation：`/health` 回 500 時 `up --wait` 與 `app healthcheck` 失敗、加 `ports` 時 ports 檢查失敗、加 `# noqa` 時 suppression 鎖失敗、Action 改 tag 時 zizmor 失敗、8 種違反分層的 import 都被合約擋下。CI：run `41579063830` 五個 job 全綠、Security run `41579063799` 全綠 | stack job 的 `/health` 500 mutation 只在本機跑過（同一組 compose 指令），沒有推到 CI；之後本機不再起 compose（Will 2026-11-03） | `3643a05`、`ec63840` |
-| 2 共用平台 | 未開始 | | | |
+| 2a 資料庫 | 進行中 | | | |
+| 2b HTTP 共用層 | 未開始 | | | |
+| 2c D6 邊界與限流 | 未開始 | | | |
 | 3 auth | 未開始 | | | |
 | 4 items | 未開始 | | | |
 | 5 帳號濫用與管理 | 未開始 | | | |

@@ -71,6 +71,10 @@ services:
       # plaintext only because postgres is on this host's compose network (backend config, DATABASE_PLAINTEXT)
       DATABASE_PLAINTEXT: same-host
       DATABASE_PASSWORD_FILE: /run/secrets/db_app_password
+      # the X-Origin-Secret Vercel's rewrite adds (backend app.web.origin); to rotate, put "new,old" in the file
+      ORIGIN_SECRET_FILE: /run/secrets/origin_secret
+      # the site's origin as browsers see it (https://example.com), for the CSRF check of the auth step
+      APP_ORIGIN: ${APP_ORIGIN:-}
       SESSION_ABSOLUTE: ${SESSION_ABSOLUTE:-}
       SESSION_IDLE: ${SESSION_IDLE:-}
       COOKIE_SECURE: ${COOKIE_SECURE:-}
@@ -78,7 +82,7 @@ services:
       DB_STATEMENT_TIMEOUT: ${DB_STATEMENT_TIMEOUT:-}
       AUTH_RATE_LIMIT_PER_MIN: ${AUTH_RATE_LIMIT_PER_MIN:-}
       PASSWORD_HIBP_CHECK: ${PASSWORD_HIBP_CHECK:-}
-    secrets: [db_app_password]
+    secrets: [db_app_password, origin_secret]
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -112,6 +116,8 @@ secrets:
     file: .secrets/db_owner_password
   db_app_password:
     file: .secrets/db_app_password
+  origin_secret:
+    file: .secrets/origin_secret
   # the token from the Cloudflare dashboard, saved by hand; only the tunnel profile needs it
   tunnel_token:
     file: .secrets/tunnel_token

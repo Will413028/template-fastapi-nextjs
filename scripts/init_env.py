@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create .env from .env-example and the database password files compose mounts as secrets.
+"""Create .env from .env-example and the secret files compose mounts: the database passwords and the origin secret.
 
 Existing files are never overwritten, so re-running cannot rotate a password the database volume already uses.
 """
@@ -11,8 +11,9 @@ import shutil
 ENV_PATH = ".env"
 ENV_EXAMPLE_PATH = ".env-example"
 SECRETS_DIR = ".secrets"
-# docker-compose.yml `secrets:`
-SECRET_NAMES = ("postgres_password", "db_owner_password", "db_app_password")
+# docker-compose.yml `secrets:`. origin_secret is the backend's ORIGIN_SECRET; the same value goes into Vercel's
+# ORIGIN_SECRET environment variable (frontend/vercel.json).
+SECRET_NAMES = ("postgres_password", "db_owner_password", "db_app_password", "origin_secret")
 
 
 def write_secret(path: str) -> bool:

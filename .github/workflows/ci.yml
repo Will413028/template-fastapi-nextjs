@@ -77,6 +77,8 @@ jobs:
       - run: python3 -m unittest discover -s scripts -p 'test_*.py'
       # every release binary pinned in a Makefile has a version and a checksum per platform
       - run: python3 scripts/tool_versions.py verify
+      # Vercel's /api rewrite adds the origin secret from its environment, and the file holds no secret
+      - run: python3 scripts/check_vercel_config.py
       - name: Check the commits being added
         env:
           BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
@@ -103,7 +105,7 @@ jobs:
         run: |
           touch .secrets/tunnel_token
           docker compose --profile tunnel config --format json > /tmp/compose.json
-          test "$(jq -c '.services.backend.secrets | map(.source)' /tmp/compose.json)" = '["db_app_password"]'
+          test "$(jq -c '.services.backend.secrets | map(.source)' /tmp/compose.json)" = '["db_app_password","origin_secret"]'
           test "$(jq -c '.services.migrate.secrets | map(.source)' /tmp/compose.json)" = '["db_owner_password"]'
           test "$(jq -c '.services.cloudflared.secrets | map(.source)' /tmp/compose.json)" = '["tunnel_token"]'
           docker compose -f docker-compose.yml -f docker-compose.dev.yml config --format json > /tmp/compose-dev.json

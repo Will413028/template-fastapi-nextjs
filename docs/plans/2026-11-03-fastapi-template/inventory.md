@@ -73,7 +73,7 @@
 | `scripts/check_commit_policy.py`、`check_locks.py`、`quality-locks.json` | 保留；`check_locks.py` 加 Python 的 suppression 與 pytest 報告 | 1 | 完成 |
 | `scripts/rename.py` | 改寫 module path 部分（Python 沒有 module path） | 6 | 未開始 |
 | `scripts/tool_versions.py` | 改寫 Go 工具清單為 Python 工具 | 1 | 完成 |
-| `docs/rules/`、`docs/security/`、`docs/privacy/`、`docs/deploy-vps.md` | 保留，Go 專屬段改寫 | 2、3、7 | 進行中（2a 改寫 `database-design.md` 的 schema、Migration、連線、角色；查詢與 Transaction 在步驟 3） |
+| `docs/rules/`、`docs/security/`、`docs/privacy/`、`docs/deploy-vps.md` | 保留，Go 專屬段改寫 | 2、3、7 | 進行中（2a 改寫 `database-design.md` 的 schema、Migration、連線、角色；2b 改寫 `api-design.md` 的契約驗證、錯誤、分頁 cursor 與 service 回報錯誤；查詢與 Transaction、handler 分層、認證在步驟 3） |
 | `docs/adr/2026-10-22-account-abuse-and-lifecycle.md` | 保留（與語言無關的決定） | 1 | 完成 |
 | `docs/adr/2026-10-18-api-and-auth-baseline.md` | 保留；D1、D6（IP 來源）、D8 的決定與 Rationale，以及約束、Expected Outcome、Revocation Triggers 中的 Caddy 部分，由本 repo 的 D6 ADR 取代並標修訂；第 13 行與 Related 段指向 `2026-10-18-go-backend.md` 的連結改指本 repo 的 ADR | 1、7 | 進行中 |
 | `docs/adr/2026-10-18-go-backend.md` | 刪除（Go 專屬；以本計畫的 D1–D3 ADR 取代） | 7 | 未開始 |

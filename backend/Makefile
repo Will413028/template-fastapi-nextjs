@@ -32,14 +32,15 @@ typecheck: ## pyright in strict mode (pyrightconfig.json)
 	$(UV) pyright
 
 # Called by name, so they look unused: FastAPI route decorators, pytest fixtures, hooks and pytestmark, http.server's
-# do_<METHOD> handlers, each CLI command module's run(), which app.main.cli imports when its command runs, and what
-# Alembic reads from a revision file. models.py is left out: a column is part of the schema (tests/test_schema_db.py
+# do_<METHOD> handlers, each CLI command module's run(), which app.main.cli imports when its command runs, what
+# Alembic reads from a revision file, and the attributes openapi-core reads through its Request and Response protocols
+# (app.web.contract, tests/apitest.py). models.py is left out: a column is part of the schema (tests/test_schema_db.py
 # compares it with the migrations) whether or not code reads it.
 .PHONY: deadcode
 deadcode:
 	$(UV) vulture src tests --min-confidence 60 --exclude '*/models.py' \
 		--ignore-decorators '@*.get,@*.post,@*.put,@*.patch,@*.delete,@pytest.fixture' \
-		--ignore-names 'do_GET,run,pytest_*,pytestmark,revision,down_revision,upgrade'
+		--ignore-names 'do_GET,run,pytest_*,pytestmark,revision,down_revision,upgrade,host_url,parameters,data'
 
 .PHONY: test
 test: ## pytest without the db tests; writes test-report.xml for scripts/check_locks.py

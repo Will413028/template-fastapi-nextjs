@@ -5,8 +5,8 @@
 ## 契約是唯一來源
 
 - 新增或修改 API 一律先改 `backend/api/openapi.yaml`，再重新生成：後端 `make -C backend gen`（`internal/httpapi/gen`），前端 `pnpm gen:api`（`frontend/src/lib/api/schema.d.ts`）。CI 以 `make -C backend gen-check` 與 `pnpm gen:api:check` 擋下沒有重新生成的變更（ADR api-and-auth D2）。
-- 長度、格式、pattern、enum 只寫在契約裡。後端由 validator（`validate.go` 的 `validateRequests`）執行，前端取用生成的型別。**NEVER** 在 handler、service 或 zod schema 再寫一次相同的限制（ADR api-and-auth D6）。
-- 契約表達不了的規則（例如密碼在常見密碼清單內、帳號已被使用）才由 service 檢查，以 `apperr` 回報。
+- 長度、格式、pattern、enum 只寫在契約裡。後端由 validator（`backend/src/app/web/validation.py` 的 `ContractValidation`，openapi-core 依契約檢查每個 `/api/` request）執行，前端取用生成的型別。正式環境只驗 request；response 由測試對照契約（`backend/tests/apitest.py` 的 `checked_client`）。**NEVER** 在 handler、service 或 zod schema 再寫一次相同的限制（ADR api-and-auth D6）。
+- 契約表達不了的規則（例如密碼在常見密碼清單內、帳號已被使用）才由 service 檢查，以 `AppError` 回報。
 - request body 的 schema 加 `additionalProperties: false`，多送的欄位回 422 `additional_property`。
 - DB 的 CHECK 是第二道防線，數值必須和契約一致（見 `database-design.md`）。
 
@@ -70,8 +70,8 @@ return gen.CreateItem201JSONResponse{Body: toItem(it), Headers: gen.CreateItem20
 ## 分頁
 
 - 集合一律用 keyset 分頁：query 參數 `limit`（1–100，預設 20）與 `cursor`，引用契約的 `#/components/parameters/Limit`、`Cursor`（ADR api-and-auth D2）。
-- `cursor` 是 opaque 字串，由 `httpx.EncodeCursor` 產生（最後一筆 id 的 base64url），client 原樣傳回，**NEVER** 自行組或解析。不合法的 cursor 回 422。
-- 不提供總數（不跑 `COUNT(*)`）。排序以 UUIDv7 的 `id DESC`（等於建立時間新到舊），查詢多取一筆判斷是否有下一頁：`httpx.PageRows`、`httpx.TrimPage`。
+- `cursor` 是 opaque 字串，由 `app.platform.pagination.encode_cursor` 產生（最後一筆 id 的 base64url），client 原樣傳回，**NEVER** 自行組或解析。不合法的 cursor 回 422。
+- 不提供總數（不跑 `COUNT(*)`）。排序以 UUIDv7 的 `id DESC`（等於建立時間新到舊），查詢多取一筆判斷是否有下一頁：`page_rows`、`trim_page`（`app.platform.pagination`）。
 - 需要頁碼的後台表格才另外用 offset 實作，且只限該 endpoint（ADR api-and-auth D2 Rationale）。
 - 契約的 `default` 不會被 validator 填入，handler 的預設值要和契約一致並有測試（`TestDefaultPageSizeMatchesContract`）。
 
@@ -96,25 +96,25 @@ SET title       = coalesce(sqlc.narg('title'), title),
 ## 錯誤（RFC 9457）
 
 - 所有錯誤回 `application/problem+json`，欄位 `type`、`title`、`status`，選填 `detail`、`code`、`request_id`（ADR api-and-auth D3）。
-- `type` 是固定的相對 URI `/problems/<slug>`，每種 problem 一個（`problem.go` 的 `problemType`）。`code` 是細分 `type` 的穩定機器碼，例如 `account_taken`、`insufficient_role`。
+- `type` 是固定的相對 URI `/problems/<slug>`，每種 problem 一個（`backend/src/app/web/problems.py` 的 `ProblemType`）。`request_id` 與 response header `X-Request-ID` 相同，一律由 backend 產生，不採信外來的值。`code` 是細分 `type` 的穩定機器碼，例如 `account_taken`、`insufficient_role`。
 - 驗證錯誤是 422 `/problems/validation`，附 `errors: [{pointer, code, detail}]`；`pointer` 是 JSON Pointer（query 或 path 參數為 `/<name>`），`code` 是 `FieldError.code` 的值，例如 `too_short`、`password_too_common`。
-- `Problem.type`、`Problem.code`、`FieldError.code` 的可用值在契約裡用 `x-extensible-enum` 列出：清單會增加，新增不算 breaking change，用戶端翻譯認得的值、其餘退回 `type` 的訊息。不要改回 `enum`（封閉清單，新增會被 `make api-breaking` 擋下）。後端由 `TestProblemValuesInContract` 與 `checkProblems`（`problem_contract_test.go`）檢查送出的值都在清單內；前端由 `messages.test.ts` 在編譯期檢查 `frontend/messages/*.json` 的 `problems.types`、`problems.codes`、`problems.fields` 涵蓋每個值（ADR api-and-auth D3）。
+- `Problem.type`、`Problem.code`、`FieldError.code` 的可用值在契約裡用 `x-extensible-enum` 列出：清單會增加，新增不算 breaking change，用戶端翻譯認得的值、其餘退回 `type` 的訊息。不要改回 `enum`（封閉清單，新增會被 `make api-breaking` 擋下）。後端由 `test_problem_values_are_in_the_contract` 與 `checked_client`（`backend/tests/apitest.py`，每個測試收到的 problem 都檢查）檢查送出的值都在清單內；前端由 `messages.test.ts` 在編譯期檢查 `frontend/messages/*.json` 的 `problems.types`、`problems.codes`、`problems.fields` 涵蓋每個值（ADR api-and-auth D3）。
 - 新增 code 的順序：契約的 `x-extensible-enum` → `make -C backend gen` 與 `pnpm gen:api` → 每個語系的 `problems.*` 翻譯 → 後端送出。
 - 前端依 `code`、再依 `type` 選訊息（`errors.ts` 的 `problemMessage`、`fieldMessage`），**NEVER** 解析或顯示 `detail`。
 - 改 slug 或 code 是 breaking change。
 
 ### Service 回報錯誤
 
-- Service 只回傳 `*apperr.Error`（`apperr.New(kind, code, detail)`、欄位錯誤用 `apperr.Invalid(pointer, code, detail)`），kind 有 `NotFound`、`Conflict`、`Unauthenticated`、`Forbidden`、`Validation`、`RateLimited`。
-- 轉成 problem 只在 `internal/httpapi` 一處（`problem.go` 的 `writeError` 與 `kindProblems`）。其他 error 一律是 500 `/problems/internal`，內容只寫進 log，**NEVER** 送給 client。
+- Service 只 raise `AppError`（`app.platform.errors`：`AppError(kind, code, detail)`、欄位錯誤用 `AppError.invalid(pointer, code, detail)`），kind 有 `NOT_FOUND`、`CONFLICT`、`UNAUTHENTICATED`、`FORBIDDEN`、`VALIDATION`、`RATE_LIMITED`。
+- 轉成 problem 只在 `app.web` 一處（`errors.py` 的 exception handler 與 `problems.py` 的 `KIND_PROBLEMS`）。其他 exception 一律是 500 `/problems/internal`（`RecoverMiddleware`），內容只寫進 log，**NEVER** 送給 client。
 - `detail` 會送給 client：不得含 SQL、主機名稱、secret 或其他使用者的資料。
 
-```go
-// 正確：service 回報預期中的失敗
-return apperr.New(apperr.Conflict, CodeAccountTaken, "account is taken")
+```python
+# 正確：service 回報預期中的失敗
+raise AppError(Kind.CONFLICT, CODE_ACCOUNT_TAKEN, "account is taken")
 
-// 錯誤：service 決定 HTTP 狀態碼（modules 也不能 import net/http，depguard 會擋）
-http.Error(w, "conflict", http.StatusConflict)
+# 錯誤：service 決定 HTTP 狀態碼（service 也不能 import fastapi，import-linter 的 http-stays-at-the-edge 會擋）
+raise HTTPException(status_code=409)
 ```
 
 ## 分層
@@ -122,7 +122,7 @@ http.Error(w, "conflict", http.StatusConflict)
 - Handler 放在 `internal/httpapi`，實作生成的 `gen.StrictServerInterface`：解 request、呼叫 service、轉成生成的 response 型別，不寫業務邏輯，不直接碰 DB。
 - `internal/modules/<m>` 只放 service、store 與 sqlc 生成碼，不 import `net/http`、`internal/httpapi`、`cmd`，也不 import 其他模組。`.golangci.yml` 的 depguard 與 `internal/archtest` 檢查（ADR go-backend Invariants）。
 - 目前使用者經由 `internal/platform/authctx` 從 `context.Context` 傳給 service。
-- 模組之間共用、但不碰 HTTP 的 helper（分頁 cursor）放在 `internal/platform/httpx`。
+- 模組之間共用、但不碰 HTTP 的 helper（分頁 cursor）放在 `app.platform`（`pagination.py`）。
 
 ## 認證
 
@@ -149,7 +149,7 @@ http.Error(w, "conflict", http.StatusConflict)
 ## 限流
 
 - per-IP 限流以 operation 套用：把 operation 加到 `NewHandler` 的 `limitOperations(limiter, limited...)` 清單，次數由 `AUTH_RATE_LIMIT_PER_MIN` 設定。清單用生成的方法名稱（`operationId: createUser` → `CreateUser`），經 `operations(...)` 檢查名稱存在。
-- 超限回 429 `/problems/rate-limited` 加 `Retry-After`（`apperr.RateLimited` 的 `RetryAfter`）。
+- 超限回 429 `/problems/rate-limited` 加 `Retry-After`（`Kind.RATE_LIMITED` 的 `retry_after`）。
 - 登入另有依「帳號＋來源」的節流與帳號層級的上限（`sign_in_throttles`），不論帳號是否存在都記錄（ADR api-and-auth D6、ADR account-abuse-and-lifecycle D4）。
 
 ## Query 參數
@@ -205,8 +205,8 @@ await fetch("/api/users", { method: "POST", body: JSON.stringify(credentials) })
 - **NEVER** 在 handler、service 或前端重寫契約已有的長度、格式、enum 限制
 - **NEVER** 回應外殼（`{data}`、`{detail}`）或 offset + 總數的分頁（後台頁碼表格除外）
 - **NEVER** 回傳指向沒有 GET 的路徑的 `Location`；**NEVER** 新增有寫入端卻沒有 GET 的 path
-- **NEVER** 在 service 決定 HTTP 狀態碼或寫 response；service 只回 `apperr`
-- **NEVER** 把非 `apperr` 的錯誤內容送給 client；**NEVER** 讓前端解析 `detail`
+- **NEVER** 在 service 決定 HTTP 狀態碼或寫 response；service 只 raise `AppError`
+- **NEVER** 把非 `AppError` 的錯誤內容送給 client；**NEVER** 讓前端解析 `detail`
 - **NEVER** 送出契約清單沒有列的 `type` 或 `code`
 - **NEVER** 在 URL 用動詞、用角色切路徑或帶版本
 - **NEVER** 查詢使用者擁有的資源而不帶 owner 條件；**NEVER** 對別人的資源回 403

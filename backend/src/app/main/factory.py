@@ -6,12 +6,19 @@ import logging
 from typing import TYPE_CHECKING, Protocol
 
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse, Response
 
+from app.web.docs import DOCS_HTML
+from app.web.errors import RecoverMiddleware, install_exception_handlers
+from app.web.headers import SecurityHeadersMiddleware
 from app.web.problems import UNAVAILABLE, problem_response
+from app.web.request_id import RequestIdMiddleware
+from app.web.validation import ContractValidation
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
+
+    from app.web.contract import Contract
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +34,10 @@ class Database(Protocol):
     async def close(self) -> None: ...
 
 
-def create_app(database: Database) -> FastAPI:
+def create_app(database: Database, *, contract: Contract, docs: bool = False) -> FastAPI:
+    """The API under /api, checked against contract, and the health checks. docs (MODE=dev only) serves the contract
+    at /api/openapi.yaml and Swagger UI at /api/docs; without it those paths are undefined routes like any other."""
+
     @contextlib.asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
         try:
@@ -55,4 +65,26 @@ def create_app(database: Database) -> FastAPI:
             return problem_response(UNAVAILABLE)
         return JSONResponse({"status": "ready"})
 
+    docs_paths: frozenset[str] = frozenset()
+    if docs:
+        docs_paths = frozenset({"/api/openapi.yaml", "/api/docs"})
+
+        @app.get("/api/openapi.yaml", include_in_schema=False)
+        async def contract_file() -> Response:
+            return Response(contract.raw, media_type="application/yaml")
+
+        @app.get("/api/docs", include_in_schema=False)
+        async def swagger_ui() -> HTMLResponse:
+            return HTMLResponse(DOCS_HTML)
+
+    install_exception_handlers(app)
+    # Outermost first (add_middleware puts each one outside the ones before it):
+    #   - RequestIdMiddleware, so every response and every log line, the error log included, has the request id;
+    #   - SecurityHeadersMiddleware, on every response, problems included;
+    #   - RecoverMiddleware turns an unexpected exception into a 500 problem inside the two above;
+    #   - ContractValidation, so an operation sees only requests the contract accepts.
+    app.add_middleware(ContractValidation, contract=contract, skip=docs_paths)
+    app.add_middleware(RecoverMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(RequestIdMiddleware)
     return app

@@ -5,6 +5,7 @@ description = "FastAPI backend; the HTTP contract is api/openapi.yaml"
 requires-python = ">=3.14,<3.15"
 dependencies = [
     "alembic==1.20.1",
+    "argon2-cffi==25.1.0",
     "asyncpg==0.32.0",
     "fastapi==0.162.0",
     # app.web.validation reads its ValidationError directly; also what openapi-core uses

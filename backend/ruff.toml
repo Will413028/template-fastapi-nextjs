@@ -44,3 +44,15 @@ max-statements = 50
 # SQLAlchemy reads Mapped[...] annotations and Pydantic reads field annotations at runtime, so the types a model names
 # must be imported for real.
 runtime-evaluated-base-classes = ["app.platform.db.Base", "pydantic.BaseModel"]
+# FastAPI reads a route's parameter annotations (Annotated[..., Depends(...)]) when the route is declared.
+runtime-evaluated-decorators = [
+    "fastapi.APIRouter.get",
+    "fastapi.APIRouter.post",
+    "fastapi.APIRouter.put",
+    "fastapi.APIRouter.patch",
+    "fastapi.APIRouter.delete",
+]
+
+[lint.flake8-builtins]
+# The contract names its path parameters id (/users/{id}), and FastAPI binds a path parameter by its name.
+ignorelist = ["id"]

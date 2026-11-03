@@ -47,7 +47,7 @@ account: z.string().min(3).max(50).regex(/^[A-Za-z0-9_.-]+$/),
 
 - 建立回 201 加 `Location`，刪除回 204（RFC 9110；ADR api-and-auth D2）。
 - `Location` 指向契約裡**有 GET** 的正式網址（`/api/items/{id}`），建立者用同一組 cookie GET 得到 200。不可指向別名（例如 `/users/me`）或只有寫入端的路徑（ADR api-and-auth D9）。
-- 有 PATCH、PUT 或 DELETE 的 path 一定也有 GET。`TestEveryWritablePathHasGet`（`internal/httpapi/spec_test.go`）檢查契約；整合測試的 `followLocation`（`internal/httpapi/auth_test.go`）對每個 201 GET 它的 `Location`。
+- 有 PATCH、PUT 或 DELETE 的 path 一定也有 GET。`test_every_writable_path_has_a_get`（`backend/tests/test_routes.py`）檢查契約；資料庫測試的 `AuthAPI.follow_location`（`backend/tests/authtest.py`）對每個 201 GET 它的 `Location`。
 
 ```go
 // 正確：internal/httpapi/items.go
@@ -119,38 +119,38 @@ raise HTTPException(status_code=409)
 
 ## 分層
 
-- Handler 放在 `internal/httpapi`，實作生成的 `gen.StrictServerInterface`：解 request、呼叫 service、轉成生成的 response 型別，不寫業務邏輯，不直接碰 DB。
-- `internal/modules/<m>` 只放 service、store 與 sqlc 生成碼，不 import `net/http`、`internal/httpapi`、`cmd`，也不 import 其他模組。`.golangci.yml` 的 depguard 與 `internal/archtest` 檢查（ADR go-backend Invariants）。
-- 目前使用者經由 `internal/platform/authctx` 從 `context.Context` 傳給 service。
+- 每個模組的 route 在 `app/modules/<m>/router.py`（`APIRouter(prefix="/api")`，由 `app.main.factory` 掛上）：解 request、呼叫 service、轉成 `app.web.contract_models` 的契約模型，不寫業務邏輯，不 import sqlalchemy（`.importlinter` 的 `sql-below-the-router`）。route 的路徑與方法必須和契約的 operation 一一對應，路徑參數同名（契約寫 `{id}`，參數就叫 `id`）；`app/main/routes.py` 在啟動時檢查，還沒實作的 operation 列在它的 `UNIMPLEMENTED`（`test_routes.py`）。
+- service 不 import fastapi、starlette（`http-stays-at-the-edge`），也不 import 其他模組（`modules-independent`）；分層由 `backend/.importlinter` 檢查，見 `AGENTS.md`「Backend layers」。
+- 目前使用者由 route 的依賴取得（`app.web.access` 的 `SignedIn`，或 auth 模組的 `Current`），再**顯式**當參數傳給 service；service 不讀 request 或 context。
 - 模組之間共用、但不碰 HTTP 的 helper（分頁 cursor）放在 `app.platform`（`pagination.py`）。
 
 ## 認證
 
 - Session 是 opaque token，只放在 `HttpOnly; Secure; SameSite=Lax` 的 `__Host-session` cookie（不帶 Domain；`COOKIE_SECURE=false` 的本機 http 開發改名為 `session`），DB 只存 SHA-256（ADR api-and-auth D4）。
 - 不接受 Bearer token，也不把 token 放進 response body 或 JS 讀得到的地方（ADR api-and-auth D4）。
-- 整個 mux 外層包 `http.CrossOriginProtection`（`server.go` 的 `protect`），跨來源的狀態變更請求回 403 `cross_origin_request`（ADR api-and-auth D5）。
-- 需要登入的 operation 由契約的 `security: sessionCookie` 宣告；未登入由 validator 回 401。只有登入、註冊、登出這類操作在契約寫 `security: []`。
+- 整個 app 外層包 `app.web.cross_origin.CrossOriginMiddleware`，跨來源的狀態變更請求回 403 `cross_origin_request`：看 `Sec-Fetch-Site`，沒有時比對 `Origin` 與 `APP_ORIGIN`（ADR api-and-auth D5；比對 `APP_ORIGIN` 而不是 `Host` 是因為 D6 的 Vercel rewrite）。
+- 需要登入的 operation 由契約的 `security: sessionCookie` 宣告；未登入由 validator 在檢查參數與 body 之前回 401。「登入」指 `app.modules.auth.dependencies.AuthenticateMiddleware` 驗過 session，不是 cookie 存在（`app.web.contract` 的 security provider）。只有登入、註冊、登出這類操作在契約寫 `security: []`。
 - 登入一律發新 token。
 
 ### Session 撤銷（新增功能必須遵守）
 
-- 停用帳號時，在同一個 transaction 撤銷該使用者的所有 session（`auth.Service.SetDisabled` 呼叫 `DeleteUserSessions`）。
+- 停用帳號時，在同一個 transaction 撤銷該使用者的所有 session（Go 版 `auth.Service.SetDisabled` 呼叫 `DeleteUserSessions`；步驟 5 移植停用功能時照做）。
 - **之後新增任何會改變使用者 role 或密碼的功能，必須在同一個 transaction 撤銷該使用者的所有 session**（ADR api-and-auth D4）。範本目前沒有這兩個功能，這條規則是給之後新增時遵守的，並且要有測試：改完後該使用者原有的 cookie 都回 401（寫法比照 `TestAdminDisablesUserRevokesSessions`）。
 
 ## 授權
 
-- role 只有 `admin` 和 `user`（`auth.RoleAdmin`、`auth.RoleUser`），註冊預設 `user`，admin 只能用 `seed-admin` 建立（ADR api-and-auth D7）。
+- role 只有 `admin` 和 `user`（`app.modules.auth.service` 的 `ROLE_ADMIN`、`ROLE_USER`），註冊預設 `user`，admin 只能用 `seed-admin` 建立（ADR api-and-auth D7）。
 - 使用者擁有的資源，**每個查詢**都帶 owner 條件（`WHERE id = @id AND owner_id = @owner_id`）；別人的資源回 404，不回 403，不透露它存在（`TestGetOtherUsersItem`）。
 - UPDATE 與 DELETE 用 `:one` 或 `:execrows` 回報影響的列，0 列回 404，不可靜默成功。
-- 每個 operation 都要在 `internal/httpapi/authz.go` 的 `operationAccess` 寫明誰能呼叫（公開、登入者、admin）；漏列或與契約的 `security: []` 不一致時 server 不會啟動（`TestAdminOperationsChecksTable`）。admin 的 operation 由 `requireRole` 在 handler 執行前回 403 `insufficient_role`（`TestOperationAccessEnforced`）。
-- 授權分三處，依「判斷需要什麼」選一處：只看是否登入的寫在契約的 `security`；只看 role 的寫在 `requireRole` 清單；要看呼叫者與資源的關係的（例如 `GET /api/users/{id}` 的「本人或 admin」）寫在 service 或查詢條件，非授權者回 404（`auth.Service.User`、`TestGetOtherUserNotFound`）。
+- 每個 route 都要剛好帶一個 `app.web.access` 的存取標記，寫明誰能呼叫：`dependencies=[PUBLIC]`，或用 `SIGNED_IN`／`SignedIn` 參數（步驟 5 加 admin 的標記）；缺標記、多標記、或「公開」與契約的 `security: []` 不一致時 server 不會啟動（`app/main/routes.py`、`test_routes.py`）。admin 的 operation 在 route 執行前回 403 `insufficient_role`（Go 版 `requireRole`，步驟 5 移植）。
+- 授權分三處，依「判斷需要什麼」選一處：只看是否登入的寫在契約的 `security`；只看 role 的寫在 route 的存取標記（步驟 5）；要看呼叫者與資源的關係的（例如 `GET /api/users/{id}` 的「本人或 admin」）寫在 service 或查詢條件，非授權者回 404（`AuthService.user`、`test_another_users_account_is_not_found_like_a_missing_one`）。
 - **NEVER** 先查出資源再在 handler 比對 owner：條件必須在 SQL 裡。
 
 ## 限流
 
-- per-IP 限流以 operation 套用：把 operation 加到 `NewHandler` 的 `limitOperations(limiter, limited...)` 清單，次數由 `AUTH_RATE_LIMIT_PER_MIN` 設定。清單用生成的方法名稱（`operationId: createUser` → `CreateUser`），經 `operations(...)` 檢查名稱存在。
+- per-IP 限流以 route 套用：在 route 的 `dependencies` 加 `app.web.ratelimit.RATE_LIMITED`（目前是 `createUser`、`createSession`），次數由 `AUTH_RATE_LIMIT_PER_MIN` 設定。它在契約驗證之後才執行，被驗證擋下的請求不扣額度。
 - 超限回 429 `/problems/rate-limited` 加 `Retry-After`（`Kind.RATE_LIMITED` 的 `retry_after`）。
-- 登入另有依「帳號＋來源」的節流與帳號層級的上限（`sign_in_throttles`），不論帳號是否存在都記錄（ADR api-and-auth D6、ADR account-abuse-and-lifecycle D4）。
+- 登入另有依「帳號＋來源」的節流（`sign_in_throttles`，來源是 `limit_key` 的位址），不論帳號是否存在都記錄（ADR api-and-auth D6、ADR account-abuse-and-lifecycle D4）；帳號層級的上限在步驟 5 移植。
 
 ## Query 參數
 

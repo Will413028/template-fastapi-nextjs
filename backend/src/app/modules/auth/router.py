@@ -1,1 +1,95 @@
-"""HTTP routes for the auth module; the operations arrive in step 3 of docs/plans/2026-11-03-fastapi-template.md."""
+"""The auth operations of backend/api/openapi.yaml: accounts (/users) and sessions (/sessions) (Go version:
+internal/httpapi/users.go). Request and response shapes are the contract's generated models (D8).
+
+A 201 carries a Location whose GET answers 200 for the creator (docs/adr/2026-10-18-api-and-auth-baseline.md D9).
+Sign-up and sign-in are limited per client address (RATE_LIMITED, D6 of the same ADR); sign-in is also throttled per
+account and client in the service.
+"""
+
+import uuid
+from typing import TYPE_CHECKING
+
+from fastapi import APIRouter, Response, status
+
+from app.modules.auth.dependencies import Current, CurrentSession, Service
+from app.web import contract_models as api
+from app.web.access import PUBLIC, SIGNED_IN, SignedIn
+from app.web.origin import current_client
+from app.web.ratelimit import RATE_LIMITED, limit_key
+
+if TYPE_CHECKING:
+    from app.modules.auth.service import SessionInfo, User
+
+router = APIRouter(prefix="/api")
+
+
+def _user(user: User) -> api.User:
+    return api.User(
+        id=user.id, account=user.account, role=user.role, is_disabled=user.is_disabled, created_at=user.created_at
+    )
+
+
+def _session(session: SessionInfo, user: User, current: uuid.UUID | None) -> api.Session:
+    return api.Session(
+        id=session.id,
+        user=_user(user),
+        created_at=session.created_at,
+        last_used_at=session.last_used_at,
+        expires_at=session.expires_at,
+        current=session.id == current,
+    )
+
+
+def _issued(response: Response, location: str, cookie: str) -> None:
+    response.headers["Location"] = location
+    response.headers.append("Set-Cookie", cookie)
+
+
+def _client_key() -> str:
+    """Where a sign-in comes from, for its throttle: the address the rate limit uses (IPv4, or the IPv6 /64). The
+    connection always has one over TCP; without one every client would share the "unknown" bucket."""
+    client = current_client()
+    address = limit_key(client.address if client else None)
+    return f"ip:{address if address is not None else 'unknown'}"
+
+
+@router.post("/users", status_code=status.HTTP_201_CREATED, dependencies=[PUBLIC, RATE_LIMITED])
+async def create_user(
+    body: api.CreateUserRequest, service: Service, session: CurrentSession, response: Response
+) -> api.User:
+    user, new = await service.create_user(body.account, body.password)
+    _issued(response, f"/api/users/{user.id}", session.cookie.set(new.token, new.max_age))
+    return _user(user)
+
+
+@router.post("/sessions", status_code=status.HTTP_201_CREATED, dependencies=[PUBLIC, RATE_LIMITED])
+async def create_session(
+    body: api.CreateSessionRequest, service: Service, session: CurrentSession, response: Response
+) -> api.Session:
+    user, new = await service.sign_in(
+        body.account, body.password, previous_token=session.token, client_key=_client_key()
+    )
+    _issued(response, f"/api/sessions/{new.info.id}", session.cookie.set(new.token, new.max_age))
+    return _session(new.info, user, new.info.id)
+
+
+@router.delete("/sessions/current", status_code=status.HTTP_204_NO_CONTENT, dependencies=[PUBLIC])
+async def delete_current_session(service: Service, session: CurrentSession) -> Response:
+    authenticated = session.authenticated
+    await service.sign_out(session.token, user_id=authenticated.user.id if authenticated else None)
+    return Response(status_code=status.HTTP_204_NO_CONTENT, headers={"Set-Cookie": session.cookie.clear()})
+
+
+@router.get("/users/me", dependencies=[SIGNED_IN])
+async def get_current_user(current: Current) -> api.User:
+    return _user(current.user)
+
+
+@router.get("/users/{id}")
+async def get_user(id: uuid.UUID, service: Service, principal: SignedIn) -> api.User:
+    return _user(await service.user(principal, id))
+
+
+@router.get("/sessions/{id}")
+async def get_session(id: uuid.UUID, service: Service, principal: SignedIn, current: Current) -> api.Session:
+    return _session(await service.session(principal, id), current.user, current.session_id)

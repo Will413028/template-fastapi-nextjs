@@ -2,7 +2,7 @@
 
 用 STRIDE 逐項檢查帳號、密碼、session 與角色在目前程式碼裡的做法。每個緩解措施都寫出程式碼或證明它的測試；找不到程式碼的威脅列為 Open。設計的決定在 [API 與認證基準](../adr/2026-10-18-api-and-auth-baseline.md)（D4 session、D5 CSRF、D6 密碼與節流、D7 授權）與 [Go 後端](../adr/2026-10-18-go-backend.md)（D5 資料庫角色）。
 
-路徑相對於 repo 根目錄；`httpapi/` 指 `backend/internal/httpapi/`，`auth/` 指 `backend/internal/modules/auth/`。
+路徑相對於 repo 根目錄；`auth/` 指 `backend/src/app/modules/auth/`，`web/` 指 `backend/src/app/web/`，測試在 `backend/tests/`（`*_db.py` 需要資料庫，只在 CI 跑）。還沒移植的機制（trusted devices、帳號鎖定、HIBP、admin 操作、刪帳號與 session 撤銷）那幾列仍指 Go 版 `template-go-nextjs@560106d` 的檔案（`httpapi/` 是它的 `backend/internal/httpapi/`，Go 的 `auth/*.go` 是它的 `backend/internal/modules/auth/`），由步驟 3c 與 5（`docs/plans/2026-11-03-fastapi-template.md`）改寫。
 
 ## 範圍
 
@@ -11,8 +11,8 @@
 | 資產 | 存放位置 |
 |---|---|
 | 帳號 | `users` 表：`account`（小寫、唯一）、`role`、`is_disabled`（`auth/schema.sql`） |
-| 密碼雜湊 | `users.password_hash`，argon2id PHC 字串（`auth/password.go`） |
-| Session token | cookie 裡的 32 個隨機 byte；資料庫只存它的 SHA-256（`sessions.token_hash`，`auth/sessions.go`） |
+| 密碼雜湊 | `users.password_hash`，argon2id PHC 字串（`auth/service/passwords.py`） |
+| Session token | cookie 裡的 32 個隨機 byte；資料庫只存它的 SHA-256（`sessions.token_hash`，`auth/service/__init__.py`） |
 | 角色 | `users.role`，`admin` 或 `user`；admin 只能由 `app seed-admin` 建立（`backend/cmd/app/seed.go`） |
 | 節流狀態 | `sign_in_throttles`（`auth/schema.sql`） |
 
@@ -24,7 +24,7 @@
 4. backend → PostgreSQL：用 app 角色，只有 DML 權限（`deploy/postgres/initdb/10-roles.sh`、`backend/internal/platform/migrate/migrate.go`）。
 5. backend → Have I Been Pwned range API：只在 `PASSWORD_HIBP_CHECK=true` 時（`backend/internal/platform/hibp/hibp.go`）。
 
-**入口**（`backend/api/openapi.yaml` 的 operation；誰能呼叫由 `httpapi/authz.go` 的 `operationAccess` 決定，啟動時與契約比對）
+**入口**（`backend/api/openapi.yaml` 的 operation；每個 route 用 `web/access.py` 的 `PUBLIC` 或 `SIGNED_IN` 標出誰能呼叫，`backend/src/app/main/routes.py` 在啟動時與契約比對）
 
 | operationId | Route | 誰能呼叫 |
 |---|---|---|
@@ -42,13 +42,13 @@
 
 | 威脅 | 程式碼裡的緩解 | 狀態 |
 |---|---|---|
-| 對單一帳號線上猜密碼 | 每個「帳號＋來源」（位址，IPv6 以 /64；或信任的裝置）各自節流，在比對密碼之前計數，第 5 次失敗起等待時間加倍、上限 1 小時；沒有該帳號裝置 cookie 的來源另外合計，連續失敗 100 次（NIST SP 800-63B 3.2.2）起全部拒絕，直到登入成功、admin 解鎖或 24 小時沒有嘗試（`auth/devices.go`、`auth/queries/sign_in_throttles.sql`）。測試：`TestSignInThrottlePerClient`、`TestUntrustedClientsLockedTrustedDeviceNot`、`TestLoginThrottlePerAccount`、`TestLoginThrottleConcurrent`、`TestLoginThrottleSchedule` | 已緩解 |
-| 從同一位址對多個帳號噴灑密碼 | `CreateUser`、`CreateSession` 的每 IP token bucket，預設每分鐘 5 次，IPv6 以 /64 為鍵（`httpapi/ratelimit.go`）。測試：`TestRateLimitAuthOperations`、`TestIPLimiterKeysIPv6By64` | 單一副本內已緩解；見「已接受的風險」 |
-| 弱密碼或外洩過的密碼 | 15 到 128 字元（契約）、NFKC 正規化、內建常見密碼清單、可選的 HIBP 檢查（`auth/auth.go`、`auth/password.go`）。測試：`TestCreateUserPasswordTooShort`、`TestCreateUserCommonPassword`、`TestCreateUserBreachedPassword`、`TestPasswordNormalized` | 已緩解。HIBP 預設關閉，查詢失敗時放行：接受，外部服務故障不該擋住註冊 |
-| 猜 session token | `crypto/rand` 產生的 256-bit token（`auth/sessions.go`）。測試：`TestCreateUserSetsSessionCookie` | 已緩解 |
+| 對單一帳號線上猜密碼 | 每個「帳號＋來源」（位址，IPv6 以 /64，與限流同一個 `web/ratelimit.py` `limit_key`；或信任的裝置）各自節流，在比對密碼之前計數，第 5 次失敗起等待時間加倍、上限 1 小時（`auth/repository.py` `reserve_login_attempt`、`auth/router.py` `_client_key`）。測試：`test_one_clients_failures_do_not_slow_another`、`test_ipv6_addresses_in_one_64_are_one_client`、`test_sign_in_is_throttled_per_account_name_whether_or_not_it_exists`、`test_attempts_sent_at_once_cannot_exceed_the_allowance`、`test_the_wait_doubles_from_the_fifth_failure_up_to_an_hour`（`test_auth_db.py`）。沒有該帳號裝置 cookie 的來源另外合計，連續失敗 100 次（NIST SP 800-63B 3.2.2）起全部拒絕，直到登入成功、admin 解鎖或 24 小時沒有嘗試：仍是 Go 版（`auth/devices.go`、`TestUntrustedClientsLockedTrustedDeviceNot`），步驟 5 移植 | 每個來源的節流已緩解；帳號層級的鎖定與信任裝置在步驟 5 之前是 Open |
+| 從同一位址對多個帳號噴灑密碼 | `createUser`、`createSession` 的 route 掛 `RATE_LIMITED`（`auth/router.py`）：每 IP token bucket，預設每分鐘 5 次，IPv6 以 /64 為鍵（`web/ratelimit.py`）。測試：`test_sign_up_and_sign_in_are_limited_per_address`（`test_auth_db.py`）、`test_ratelimit.py` | 單一副本內已緩解；見「已接受的風險」 |
+| 弱密碼或外洩過的密碼 | 15 到 128 字元（契約）、NFKC 正規化、內建常見密碼清單（`auth/service/passwords.py`、`auth/service/__init__.py`）。測試：`test_create_user_password_too_short`、`test_create_user_common_password`、`test_passwords_are_compared_after_nfkc`（`test_auth_db.py`）、`test_common_password_list`（`test_passwords.py`）。可選的 HIBP 檢查仍是 Go 版（`TestCreateUserBreachedPassword`），步驟 5 移植 | 已緩解（HIBP 除外）。HIBP 預設關閉，查詢失敗時放行：接受，外部服務故障不該擋住註冊 |
+| 猜 session token | `secrets.token_urlsafe(32)` 產生的 256-bit token（`auth/service/__init__.py`）。測試：`test_create_user_sets_the_session_cookie` | 已緩解 |
 | Session fixation | 每次登入都發新 token，並刪掉請求帶來的舊 token。測試：`TestCreateSessionIssuesNewToken` | 已緩解 |
 | 登出、停用或過期後重用 token | 每個請求都重讀 session 與使用者；idle 預設 1 天、絕對期限 7 天；停用會刪掉該使用者所有 session。測試：`TestSessionIdleExpiry`、`TestSessionAbsoluteExpiry`、`TestDeleteCurrentSessionRevokes`、`TestDeleteAllSessions`、`TestAdminDisablesUserRevokesSessions`、`TestMeDisabledAccount`、`TestMeAfterUserDeleted` | 已緩解 |
-| 用 header 代替 cookie 送 token | 只讀 cookie（`httpapi/auth.go`）。測試：`TestMeIgnoresBearer` | 已緩解 |
+| 用 header 代替 cookie 送 token | 只讀 cookie（`auth/dependencies.py` `AuthenticateMiddleware`）；契約 security 的檢查看這個 middleware 驗過的 principal，不看 cookie 存不存在（`web/contract.py`）。測試：`test_only_the_cookie_authenticates`、`test_an_invalid_cookie_with_an_invalid_body_is_unauthenticated_not_invalid`（`test_auth_http.py`） | 已緩解 |
 | Client 偽造位址規避每 IP 限流 | 只在請求帶相符的 `X-Origin-Secret` 時採信 `X-Real-IP`，其他一律用連線來源位址；`X-Forwarded-For` 從不採信（`backend/src/app/web/origin.py`）。測試：`test_rate_limit_ignores_x_real_ip_without_the_secret`、`test_rate_limit_per_ip_behind_a_verified_origin` | 來源密鑰沒外洩時已緩解；正式路徑上 `X-Real-IP` 是否真是使用者位址列在部署文件的第一次部署檢查清單 |
 | 被停用的帳號登入 | 回應與密碼錯誤相同的 `invalid_credentials`。測試：`TestCreateSessionDisabledAccount` | 已緩解 |
 
@@ -56,12 +56,12 @@
 
 | 威脅 | 程式碼裡的緩解 | 狀態 |
 |---|---|---|
-| 跨站請求偽造（CSRF） | `http.CrossOriginProtection` 包住整個 mux；cookie 是 `SameSite=Lax`（`httpapi/server.go`、`httpapi/auth.go`）。測試：`TestCrossOriginPostRejected`、`TestCreateItemCrossSite` | 已緩解。`Sec-Fetch-Site` 與 `Origin` 都沒帶的請求會放行；瀏覽器在會改變狀態的請求上都會帶 |
+| 跨站請求偽造（CSRF） | `web/cross_origin.py` 包住整個 app：`Sec-Fetch-Site` 不是 `same-origin`／`none` 就 403；沒有它時 `Origin` 必須等於 `APP_ORIGIN`（D6：backend 收到的 `Host` 不是瀏覽器看到的網域）；cookie 是 `SameSite=Lax`（`auth/dependencies.py` `SessionCookie`）。測試：`test_cross_origin_post_rejected`、`test_same_origin_or_non_browser_post_allowed`（`test_cross_origin.py`） | 已緩解。`Sec-Fetch-Site` 與 `Origin` 都沒帶的請求會放行；瀏覽器在會改變狀態的請求上都會帶。兩個 header 經 Vercel 與 Cloudflare 能否原樣到達 backend 未驗證，列在部署文件的第一次部署檢查清單（計畫前提段） |
 | 註冊時自己指定角色 | 請求 schema 拒絕未定義的欄位；service 一律寫入 `user`。測試：`TestValidationCodes`（`additional_property`）、`TestCreateUserSetsSessionCookie`（角色是 `user`） | 已緩解 |
 | 同一帳號名稱同時註冊 | 由唯一索引決定，恰好一個成功，其餘 409。測試：`TestCreateUserConcurrentSameAccount` | 已緩解 |
 | Token 走明文 http | 除非 `COOKIE_SECURE=false`，cookie 帶 `Secure` 與 `__Host-` 前綴；Caddy 送 HSTS。測試：`TestCookieNameFollowsSecure`、`TestConfigDefaults` | `SITE_ADDRESS` 是網域時已緩解；`:80` 只供本機使用 |
 | 在日誌裡偽造 request id | backend 一律自己產生 UUIDv7，不採信傳入的 `X-Request-ID`；文字日誌的值含空白、引號或換行時加引號（`backend/src/app/main/logs.py`）。測試：`test_request_id_from_the_client_is_replaced`、`test_text_log_values_cannot_forge_a_line` | 已緩解 |
-| SQL injection | 查詢只經過 sqlc 產生的程式碼；手寫 pgx `Query` 會被 lint 擋（`backend/.golangci.yml` forbidigo） | 已緩解 |
+| SQL injection | 查詢是 SQLAlchemy Core 的運算式，值一律是 bound parameter（`auth/repository.py`）；字串拼接的 SQL 會被 ruff S608 擋（`backend/ruff.toml` 的 `select = ["ALL"]`）；router 不能 import sqlalchemy（`backend/.importlinter` `sql-below-the-router`） | 已緩解 |
 | 登入後被導向外站 | `callbackUrl` 用 URL 解析後必須與本站同源，`/\evil.example`、`/\t/evil.example` 這類看起來像本站路徑的值也會被擋（`frontend/src/features/auth/callback.ts`）。測試：`callback.test.ts` | 已緩解 |
 
 ## Repudiation（否認）
@@ -76,12 +76,12 @@
 | 威脅 | 程式碼裡的緩解 | 狀態 |
 |---|---|---|
 | 資料庫外洩導致 session 被盜用 | 只存 token 的 SHA-256，schema 用 CHECK 限制 32 byte。測試：`TestSchemaChecks` | 已緩解 |
-| 資料庫外洩導致密碼外洩 | argon2id m=19 MiB、t=2、p=1、16 byte salt，比對用 constant time（`auth/password.go`）。測試：`TestArgon2Hash` | 已緩解 |
+| 資料庫外洩導致密碼外洩 | argon2id m=19 MiB、t=2、p=1、16 byte salt，argon2-cffi 比對（`auth/service/passwords.py`）。測試：`test_hash_uses_owasp_argon2id_and_verifies` | 已緩解 |
 | 密碼或 token 寫進日誌 | 註冊、登入成功與失敗、驗證錯誤、格式錯誤的 body、未知的 token、登出、HIBP 查詢失敗，全部跑一遍後檢查日誌（含 debug 級）。測試：`TestCredentialsNeverLogged` | 已緩解 |
 | Script 讀到 token（XSS） | cookie 是 `HttpOnly`；頁面有 nonce 型 CSP，`connect-src 'self'`、`frame-ancestors 'none'`（`frontend/src/proxy.ts`）。測試：`TestCreateUserSetsSessionCookie`、前端 `proxy.test.ts` | build 出來的版本已緩解；`next dev` 不設 CSP |
 | 登入時從回應或時間差列舉帳號 | 不存在的帳號也跑一次 dummy hash，回同樣的 problem；節流也套用在不存在的帳號名。測試：`TestCreateSessionUnknownAccountRunsHash`、`TestLoginThrottlePerAccount` | 已緩解 |
 | 註冊時列舉帳號 | 帳號已存在回 `409 account_taken`。測試：`TestCreateUserDuplicate` | 接受：用帳號名而不是 email，無法隱藏名稱已被使用（ADR D6）；註冊有每 IP 限流 |
-| 讀到別人的使用者資料或 session | 非擁有者一律 404（`auth/auth.go`、`auth/queries/sessions.sql`）。測試：`TestGetOtherUserNotFound`、`TestDeleteOtherUsersSession`、`TestNonAdminCannotListUsers` | 已緩解 |
+| 讀到別人的使用者資料或 session | 非擁有者一律 404，與不存在的一樣（`auth/service/__init__.py` `user`、`session`，`auth/repository.py` `get_user_session`）。測試：`test_another_users_account_is_not_found_like_a_missing_one`、`test_get_session`（`test_auth_db.py`）；撤銷別人的 session 與列使用者仍是 Go 版（`TestDeleteOtherUsersSession`、`TestNonAdminCannotListUsers`），步驟 3c、5 移植 | 讀取已緩解 |
 | 內部錯誤洩漏細節 | 非預期錯誤變成不帶細節的 500，細節只進日誌（`httpapi/problem.go`）。測試：`TestUnhandledErrorHidden` | 已緩解 |
 | 密碼送到 HIBP | 只送 SHA-1 的前 5 個 hex 字元，帶 `Add-Padding`（`hibp.go`）。測試：`TestBreached` | 已緩解。HIBP 網路錯誤的訊息含請求網址，也就是同樣的 5 個字元，會寫進本機日誌（推論自 `net/http` 的 `*url.Error`）：接受，內容與送出去的相同 |
 | API 契約與 Swagger UI 外露 | 只在 `MODE=dev` 提供，預設 `prod`。測試：`TestDocs` | 已緩解 |
@@ -91,7 +91,7 @@
 
 | 威脅 | 程式碼裡的緩解 | 狀態 |
 |---|---|---|
-| 大量雜湊耗盡記憶體或 CPU | 同時最多 `runtime.NumCPU()` 個 argon2id 雜湊，等待者隨 context 結束（`auth/password.go`）。測試：`TestArgonConcurrencyBounded` | 已緩解 |
+| 大量雜湊耗盡記憶體或 CPU | 雜湊在專用的執行緒池跑，同時最多 `os.process_cpu_count()` 個；等待中的請求被取消時，還沒開始的雜湊一起取消，已開始的跑完才釋放名額（`auth/service/passwords.py`）。測試：`test_concurrent_hashes_are_bounded`、`test_a_cancelled_waiter_does_not_free_a_running_slot` | 已緩解。uvicorn 在 client 斷線時不取消請求，所以排隊中的雜湊照樣會算：接受；出現雜湊排隊造成的延遲時，加排隊上限並回 503 |
 | 過大或過慢的請求 | body 上限 1 MiB；header、讀、寫逾時（`httpapi/server.go`）。測試：`TestBodyTooLarge`、`TestSlowHeaderClosed` | 已緩解 |
 | 故意登入失敗把受害者鎖在門外 | 節流以「帳號＋來源」為單位，攻擊者的失敗只讓自己的來源等待；帳號層級的鎖只擋沒有該帳號裝置 cookie 的來源，本人曾登入過的瀏覽器照常登入（OWASP「Slow Down Online Guessing Attacks with Device Cookies」）；admin 可查看與解鎖（`GET`／`DELETE /api/users/{id}/sign-in-lock`，寫入稽核）。全部登出、停用、救援時忘掉該帳號的裝置。測試：`TestUntrustedClientsLockedTrustedDeviceNot`、`TestDeviceCookieIsPerAccount`、`TestSignOutEverywhereForgetsDevices`、`TestAdminUnlocksSignIn` | 已緩解。本人在新裝置上仍可能被鎖，要等 admin 解鎖；加了 email 之後改成鎖定期間可用重設密碼解鎖（ADR api-and-auth D6 的重新評估條件） |
 | 用亂數帳號名塞滿 `sign_in_throttles` | 不存在的帳號名也會建立紀錄（每次嘗試最多兩列：來源一列、帳號合計一列）；每 IP 限流限制速率，閒置 24 小時的紀錄每小時清掉。測試：`TestCleanup` | 單一副本內已緩解 |
@@ -102,7 +102,7 @@
 
 | 威脅 | 程式碼裡的緩解 | 狀態 |
 |---|---|---|
-| 一般使用者呼叫 admin 操作 | `operationAccess` 列出每個 operation 誰能呼叫；漏列的 operation、列了不存在的 operation、或「公開」與契約的 `security: []` 不一致，server 啟動就失敗（`adminOperations`）。`requireRole` 在 handler 之前以 403 拒絕。測試：`TestAdminOperationsChecksTable`、`TestOperationAccessEnforced`（逐一呼叫契約裡每個 operation：沒登入要 401，一般使用者呼叫 admin 操作要 403） | 已緩解 |
+| 一般使用者呼叫 admin 操作 | 每個 `/api` route 剛好一個存取標記（`web/access.py`）；缺標記、多標記、「公開」與契約的 `security: []` 不一致、route 與契約的 operation 對不上（含路徑參數名稱），server 啟動就失敗（`backend/src/app/main/routes.py`）。契約 security 在驗證 body 之前就拒絕沒登入的請求。測試：`test_routes.py`、`test_every_operation_needs_a_session_unless_the_contract_says_public`（`test_auth_http.py`，逐一呼叫契約裡每個 operation，沒登入要 401）。admin 角色的標記與 403（Go 版 `requireRole`、`TestOperationAccessEnforced` 的 admin 部分）在步驟 5 移植；在那之前沒有 admin 操作的 route | 存取標記已緩解；角色檢查在步驟 5 之前沒有需要保護的 route |
 | 角色變更後仍用舊角色 | 每個請求都從資料庫讀角色。目前沒有改角色或改密碼的 operation；後端規則 8 要求這類功能撤銷該使用者所有 session（`backend/AGENTS.md`） | 已緩解 |
 | 匿名請求到達受保護的 handler | 契約宣告 security，validator 在參數與 body 之前檢查。測試：`TestUnauthenticatedBeforeValidation`、`TestOperationAccessEnforced` | 已緩解 |
 | backend 被入侵後改 schema | app 角色只有 DML。測試：`TestAppRoleCannotDDL` | 已緩解；所有表的資料仍可寫入，見「已接受的風險」 |
@@ -113,7 +113,7 @@
 
 | 風險 | 為什麼接受 | 何時重新評估 |
 |---|---|---|
-| 每 IP 限流的狀態在程式記憶體裡，每個 backend 副本各有一份額度（`httpapi/ratelimit.go`） | 範本只跑一個 backend 副本 | 跑超過一個 backend 副本，或改用 Kamal、Swarm 部署：把限流移到資料庫或 proxy（ADR 基準的 Revocation Triggers） |
+| 每 IP 限流的狀態在程式記憶體裡，每個 backend 副本各有一份額度（`web/ratelimit.py`） | 範本只跑一個 backend 副本 | 跑超過一個 backend 副本，或改用 Kamal、Swarm 部署：把限流移到資料庫或 proxy（ADR 基準的 Revocation Triggers） |
 | 所有模組共用一個 app 角色與 `public` schema，app 角色能寫每張表（`migrate.go`） | 單一程序的模組化單體；分層由程式碼檢查（`backend/AGENTS.md` 規則 2、`internal/archtest`） | 某個模組拆成獨立服務，或需要自己的資料庫帳密 |
 | 外洩密碼檢查查詢失敗時放行，且預設關閉 | 外部服務故障不該擋住註冊；內建清單一律檢查 | 產品要求外洩檢查是硬性規則 |
 | 註冊會透露帳號名稱已被使用 | 用帳號名而不是 email，沒有 email 服務（ADR D6） | 加入 email 驗證或密碼找回 |
@@ -121,7 +121,7 @@
 
 ## 何時更新這份文件
 
-- `backend/api/openapi.yaml` 新增與認證有關的 operation，或 `operationAccess`、限流清單（`httpapi/server.go`）有增減。
+- `backend/api/openapi.yaml` 新增與認證有關的 operation，或 route 的存取標記（`web/access.py`）、掛 `RATE_LIMITED` 的 route 有增減。
 - 新增角色，或改變授予角色的方式。
 - Session 期限、cookie 名稱或屬性、token 格式改變。
 - 新增外部身分提供者、MFA、Bearer token 或任何非瀏覽器的 client。

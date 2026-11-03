@@ -56,7 +56,7 @@ class IPLimiter:
         now = self._now()
         with self._lock:
             self._sweep(now)
-            key = _limit_key(address)
+            key = limit_key(address)
             bucket = self._buckets.get(key)
             if bucket is None:
                 bucket = self._buckets[key] = _Bucket(tokens=self._burst, updated=now, last_seen=now)
@@ -71,7 +71,7 @@ class IPLimiter:
     def tracks(self, address: IPAddress | None) -> bool:
         """Whether address has a bucket (one it used within the last refill, or since the last sweep)."""
         with self._lock:
-            return _limit_key(address) in self._buckets
+            return limit_key(address) in self._buckets
 
     def _sweep(self, now: float) -> None:
         """Drops buckets idle for a refill or longer: they are full again, the same as a new one, so dropping them
@@ -84,7 +84,9 @@ class IPLimiter:
             del self._buckets[key]
 
 
-def _limit_key(address: IPAddress | None) -> IPAddress | None:
+def limit_key(address: IPAddress | None) -> IPAddress | None:
+    """The key a client address is limited by, here and in sign-in throttling: an IPv4 address (IPv4-mapped IPv6
+    ones included) or the IPv6 /64 (ADR account-abuse-and-lifecycle D4)."""
     if isinstance(address, ipaddress.IPv6Address):
         if address.ipv4_mapped is not None:
             return address.ipv4_mapped

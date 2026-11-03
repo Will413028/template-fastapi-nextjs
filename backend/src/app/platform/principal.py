@@ -1,0 +1,36 @@
+"""The signed-in user of the request being served (D7: what modules need from auth goes through app.platform).
+
+The auth module's middleware (app.modules.auth.dependencies) sets it from the session cookie before the contract is
+checked, so the contract's security check (app.web.contract) and the routes' access markers (app.web.access) see it.
+Services do not read it: a router passes the principal to a service explicitly.
+"""
+
+import contextvars
+from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import uuid
+
+
+@dataclass(frozen=True, slots=True)
+class Principal:
+    id: uuid.UUID
+    # read from the database on every request, so a role change takes effect on the next one
+    role: str
+
+
+_principal: contextvars.ContextVar[Principal | None] = contextvars.ContextVar("principal", default=None)
+
+
+def current_principal() -> Principal | None:
+    """The signed-in user of the request being served; None for an anonymous request or outside one."""
+    return _principal.get()
+
+
+def set_principal(principal: Principal | None) -> contextvars.Token[Principal | None]:
+    return _principal.set(principal)
+
+
+def reset_principal(token: contextvars.Token[Principal | None]) -> None:
+    _principal.reset(token)

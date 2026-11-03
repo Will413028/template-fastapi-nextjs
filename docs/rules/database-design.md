@@ -2,17 +2,15 @@
 
 本專案使用 PostgreSQL 18、SQLAlchemy 2.0 async 加 asyncpg，schema 由 Alembic 管理（`docs/plans/2026-11-03-fastapi-template.md` 的 D2、D3）。命名、型別、FK、角色等 schema 規則沿用 Go 版（[ADR go-backend](../adr/2026-10-18-go-backend.md)），兩版的 schema 相同，由測試守住（`backend/tests/test_schema_db.py`）。
 
-> 「查詢」相關的規則（下面提到 sqlc、`queries/*.sql`、`pgx` 的段落，以及 Transaction 一節）還是 Go 版的內容，FastAPI 版的寫法在計畫步驟 3 寫第一批查詢時改寫。
-
 ## Schema 與查詢的位置
 
 - 每個模組擁有自己的表，宣告在 `backend/src/app/modules/<m>/models.py`（共用 `app.platform.db.Base`）：模型描述表的**目標狀態**，revision 必須和它一致（見 Migration）。
 - `backend/src/app/main/schema.py` 的 `MODEL_MODULES` 列出所有有表的模組；新模組的 `models.py` 沒列進去時 `tests/test_schema.py` 會失敗。
 - 跨模組的 FK 用字串（`ForeignKey("users.id")`），不建 ORM relationship（AGENTS.md「Backend layers」）。
 - 所有表都在 `public` schema，DDL 不寫 schema 前綴。
-- 查詢只寫在 `internal/modules/<m>/queries/*.sql`，由該模組的 `sqlc.yaml` 生成到 `internal/modules/<m>/internal/store`（`make -C backend sqlc`）。生成碼不手改；`make -C backend sqlc-diff` 擋下過期的生成碼。
-- ~~**NEVER** 在 Go 裡組 SQL 字串或用 ORM；每個查詢都經 sqlc 生成（ADR go-backend D2）。~~（Go 版規則，已失效：FastAPI 版用 SQLAlchemy，D3；步驟 3 改寫）
-- sqlc 的 uuid 一律 override 成 `github.com/google/uuid.UUID`，`timestamptz` 成 `time.Time`，nullable 欄位生成指標（`emit_pointers_for_null_types: true`）。
+- 查詢是 SQLAlchemy Core 的運算式，欄位取自 `models.py` 的類別（`select(User.id, ...)`、`insert(Session).values(...).returning(...)`、`sqlalchemy.dialects.postgresql.insert(...).on_conflict_do_update(...)`），在 `AsyncConnection` 上執行；值一律是 bound parameter。不用 ORM `Session` 的 unit of work 與 identity map：每個呼叫就是一句明確的 SQL，async 下也沒有 lazy load（`docs/plans/2026-11-03-fastapi-template/auth-carryover.md`「資料存取與組裝」）。
+- 模組的查詢寫在 `service`（簡單的）或 `repository.py`（複雜的，例如 upsert 與 join），repository 的函式接受呼叫端給的連線、只跑一句，transaction 由 service 決定（範例：`app/modules/auth/repository.py`）。
+- **NEVER** 用字串拼 SQL（f-string、`%`、`+`）：ruff 的 S608 會擋；固定的 SQL 片段用 `literal_column`（例：`interval '1 minute'`），值一律經 bound parameter。
 
 ## 命名規範
 
@@ -46,7 +44,7 @@ Index("sessions_id_key", "id", unique=True)
 ## 模組邊界
 
 - 跨模組只允許 FK 指向 `users`（ADR go-backend Invariants）。
-- 模組的查詢**NEVER** `SELECT` 或 `JOIN` 其他模組的表。需要別的模組的 schema 才能解析 FK 時，`sqlc.yaml` 的 `schema` 可以列出它（items 列出 `../auth/schema.sql`），並設 `omit_unused_structs: true`，但查詢仍不讀那些表。
+- 模組的查詢**NEVER** `SELECT` 或 `JOIN` 其他模組的表，也不 import 其他模組的 `models.py`（import-linter 的 `modules-independent` 會擋）；FK 用字串，不需要對方的模型。
 - 需要別的模組的資料時，經由該模組的 service 取得。
 
 ## 型別選擇
@@ -98,16 +96,13 @@ class User(Base):
 ## 時間戳記
 
 - 對外的資源表（API 回傳 `updated_at` 的）都有 `created_at`、`updated_at timestamptz NOT NULL DEFAULT now()`。
-- **這些表的每個 UPDATE 查詢都明寫 `updated_at = now()`**，不靠 trigger，也不由 Go 傳值；並有測試覆蓋（`TestUpdatedAtChanges`）（ADR go-backend D3）。
-- 例外：內部的狀態表可以由 service 傳入時間，讓測試控制時鐘（`sign_in_throttles.updated_at` 與 `sessions.last_used_at` 由 `@now` 傳入，限流與 idle 期限的測試因此不用等真實時間）。
+- **這些表的每個 UPDATE 查詢都明寫 `updated_at = now()`**（SQLAlchemy：`.values(..., updated_at=func.now())`），不靠 trigger，也不由 Python 傳值；並有測試覆蓋（Go 版 `TestUpdatedAtChanges`，步驟 4 移植）（ADR go-backend D3）。
+- 例外：內部的狀態表可以由 service 傳入時間，讓測試控制時鐘（`sign_in_throttles.updated_at` 與 `sessions.last_used_at`、`created_at`、`expires_at` 由 service 的 `now` 傳入，限流與期限的測試因此不用等真實時間；`app/modules/auth/repository.py`）。
 - 連線的 `TimeZone` 固定為 UTC。
 
-```sql
--- 正確：internal/modules/auth/queries/users.sql
-UPDATE users
-SET is_disabled = @is_disabled, updated_at = now()
-WHERE id = @id
-RETURNING ...;
+```python
+# 正確：對外的資源表，updated_at 由資料庫的 now() 寫
+update(User).where(User.id == user_id).values(is_disabled=disabled, updated_at=func.now()).returning(*USER_COLUMNS)
 ```
 
 ## Migration
@@ -177,37 +172,30 @@ Alembic（ADR go-backend D2 在 FastAPI 版改選 Alembic，見 `docs/plans/2026
 
 ## Transaction
 
-- 需要多個語句原子完成的 service 方法，自己用 `pgx.BeginFunc` 開 transaction，並以 `store.New(tx)` 取得查詢。單一語句不用 transaction。
+- 需要多個語句原子完成的 service 方法，自己用 `async with engine.begin() as conn:` 開 transaction，把 `conn` 傳給 repository 的函式；區塊正常結束就 commit，丟出例外就 rollback（包括 `AppError`）。只讀的用 `engine.connect()`。
 - **NEVER** 在 transaction 內呼叫外部服務（HTTP、HIBP、第三方 API）或做耗時的 CPU 工作（密碼雜湊）：transaction 持有連線與鎖，回應時間不可控會耗盡 pool，也會撞上 `idle_in_transaction_session_timeout`。先在 transaction 外做完，再開 transaction 寫入。
-- 需要在 commit 之後才做的事（通知、webhook），放在 `BeginFunc` 回傳成功之後。
+- 需要在 commit 之後才做的事（通知、webhook、安全事件的 log），放在 `async with` 區塊之後。
 
-```go
-// 正確：internal/modules/auth/auth.go 的 CreateUser，雜湊在 transaction 外
-hash, err := s.newPasswordHash(ctx, password)
-if err != nil {
-	return User{}, Session{}, err
-}
-err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-	q := store.New(tx)
-	row, err := q.CreateUser(ctx, store.CreateUserParams{Account: accountKey(account), PasswordHash: hash, Role: RoleUser})
-	// ...
-	sess, err = s.newSession(ctx, q, u.ID)
-	return err
-})
+```python
+# 正確：app/modules/auth/service/__init__.py 的 create_user，雜湊在 transaction 外
+password_hash = await self._new_password_hash(password)
+async with self._engine.begin() as conn:
+    row = await repository.insert_user_if_absent(conn, account=account_key(account), password_hash=password_hash, role=ROLE_USER)
+    if row is None:
+        raise AppError(Kind.CONFLICT, CODE_ACCOUNT_TAKEN, "account is taken")
+    session = await self._new_session(conn, row[0])
+logger.info("signed up", extra={"event": "auth.sign_up", "user_id": str(row[0])})
 
-// 錯誤：transaction 內呼叫外部服務
-err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
-	if _, err := store.New(tx).CreateOrder(ctx, params); err != nil {
-		return err
-	}
-	return s.notifier.Send(ctx, userID, "order created") // 禁止
-})
+# 錯誤：transaction 內呼叫外部服務
+async with self._engine.begin() as conn:
+    await repository.insert_order(conn, params)
+    await self._notifier.send(user_id, "order created")  # 禁止
 ```
 
 ## 禁止事項
 
 - **NEVER** 手寫 DDL revision（不鎖表的改寫與 backfill 例外），或修改、刪除、改名已合併進 `main` 的 revision
-- ~~**NEVER** 繞過 sqlc：在 Go 裡組 SQL 字串、用 ORM、手改生成碼~~（Go 版規則，已失效：FastAPI 版用 SQLAlchemy，D3；查詢規則在步驟 3 改寫）
+- **NEVER** 用字串拼 SQL，或在 router 裡跑 SQL（router 不 import sqlalchemy：`.importlinter` 的 `sql-below-the-router`）
 - **NEVER** 在模組的查詢讀其他模組的表；**NEVER** 新增指向 `users` 以外的跨模組 FK
 - **NEVER** 用 `serial` 或 `int` 自增當主鍵；主鍵一律 `uuid DEFAULT uuidv7()`
 - **NEVER** 用 `varchar(n)`；有長度限制用 `text` + CHECK，數值與契約一致

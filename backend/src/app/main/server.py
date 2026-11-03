@@ -9,6 +9,8 @@ import uvicorn
 
 from app.main.factory import Deps, create_app
 from app.main.logs import configure_logging
+from app.modules.auth.dependencies import Auth, SessionCookie
+from app.modules.auth.service import AuthService
 from app.platform.config import ConfigError, Settings
 from app.platform.db import Database
 from app.web.contract import Contract, ContractError
@@ -36,14 +38,17 @@ def run(environ: Mapping[str, str] | None) -> int:
         sys.stderr.write(f"serve: {err}\n")
         return 1
     configure_logging(settings.mode)
+    database = Database.open(settings.database)
+    auth = AuthService(database.engine, session_absolute=settings.session_absolute, session_idle=settings.session_idle)
     app = create_app(
         Deps(
-            database=Database.open(settings.database),
+            database=database,
             contract=contract,
             origin=OriginPolicy(secrets=settings.origin_secrets, required=settings.mode == "prod"),
             app_origin=settings.app_origin,
             docs=settings.mode == "dev",
             limiter=IPLimiter(settings.auth_rate_limit_per_min, time.monotonic),
+            auth=Auth(auth, SessionCookie(name=settings.session_cookie_name, secure=settings.cookie_secure)),
         )
     )
     uvicorn.run(

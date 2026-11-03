@@ -9,21 +9,26 @@ import functools
 import json
 import re
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, NoReturn, Protocol, Self, cast
+from typing import TYPE_CHECKING, NoReturn, Protocol, Self, cast, override
 
 from jsonschema import ValidationError, validators
 from openapi_core import Config, OpenAPI
 from openapi_core.datatypes import RequestParameters
+from openapi_core.security.exceptions import SecurityProviderError
+from openapi_core.security.factories import SecurityProviderFactory
 from openapi_core.validation.schemas import oas30_write_schema_validators_factory
 from openapi_core.validation.schemas.factories import SchemaValidatorsFactory
 from starlette.datastructures import Headers, QueryParams
 from starlette.requests import cookie_parser
+
+from app.platform.principal import Principal, current_principal
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator, Mapping
     from pathlib import Path
 
     from jsonschema.protocols import Validator
+    from jsonschema_path import SchemaPath
     from starlette.types import Scope
 
 # openapi-core reads the contract's servers entry (/api) against this origin; the Host header plays no part, because
@@ -86,13 +91,31 @@ class _Extend(Protocol):
 
 
 # jsonschema.validators.extend has no annotations; this is its documented signature, for pyright strict
-_extend = cast("_Extend", vars(validators)["extend"])
+_extend: _Extend = cast("_Extend", vars(validators)["extend"])
 
 # OAS 3.0's write validator (the one openapi-core picks for requests) with ECMA patterns. It also checks responses in
 # the tests: the read and write validators differ only on readOnly and writeOnly, which the contract does not use.
 _SCHEMA_VALIDATORS = SchemaValidatorsFactory(
     _extend(oas30_write_schema_validators_factory.schema_validator_cls, {"pattern": _ecma_pattern})
 )
+
+
+def _require_principal(_: RequestParameters) -> Principal:
+    principal = current_principal()
+    if principal is None:
+        msg = "no signed-in session"
+        raise SecurityProviderError(msg)
+    return principal
+
+
+class _SessionSecurity(SecurityProviderFactory):
+    """The contract's security scheme is the session cookie; what satisfies it is a session the auth middleware
+    (app.modules.auth.dependencies) found valid, not a cookie that is merely present: a stale or forged cookie is
+    unauthenticated, whatever its name (`__Host-session`, or `session` with COOKIE_SECURE=false)."""
+
+    @override
+    def create(self, scheme: SchemaPath) -> Callable[[RequestParameters], Principal]:
+        return _require_principal
 
 
 class ContractError(Exception):
@@ -111,6 +134,7 @@ class Contract:
         config = Config(
             extra_media_type_deserializers=dict.fromkeys(JSON_MEDIA_TYPES, strict_json),
             schema_validators_factory=_SCHEMA_VALIDATORS,
+            security_provider_factory=_SessionSecurity(),
         )
         try:
             return cls(OpenAPI.from_file_path(str(path), config=config), path.read_bytes())

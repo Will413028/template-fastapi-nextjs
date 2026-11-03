@@ -2,7 +2,7 @@
 
 Fullstack monorepo template with a FastAPI backend and a Next.js frontend. The frontend deploys to Vercel, which rewrites `/api/*` to the backend on one origin; the backend and PostgreSQL run with Docker Compose on a VM and are reached through a Cloudflare Tunnel.
 
-Status: shared platform in progress. The backend serves only `GET /health` and `GET /health/ready`, with the `serve`, `migrate` and `healthcheck` commands; the tables and the Alembic baseline exist, and the API operations in `backend/api/openapi.yaml` are being added module by module.
+Status: modules in progress. The backend serves `GET /health`, `GET /health/ready` and six of the contract's operations (sign-up, sign-in, sign-out, the current user, reading a user and a session), with the `serve`, `migrate` and `healthcheck` commands; the operations not routed yet are listed in `backend/src/app/main/routes.py` `UNIMPLEMENTED`, and each module adds its own.
 
 ## Verification
 
@@ -25,12 +25,13 @@ The backend is a modular monolith organized by feature. `backend/.importlinter` 
 | Package | Holds | May import |
 |---|---|---|
 | `app.main` | app factory, middleware assembly, CLI, migrations environment | everything below |
-| `app.modules.<name>` | one feature: `router.py`, `schemas.py`, `dependencies.py` (HTTP); `service.py` (business rules, owns the transaction); optional `repository.py` (complex queries); `models.py` (tables) | `app.web`, `app.platform`; never another module |
+| `app.modules.<name>` | one feature: `router.py`, `schemas.py`, `dependencies.py` (HTTP: routes, FastAPI dependencies, and any ASGI middleware `app.main.factory` mounts for the module); `service.py`, or a `service/` package when it grows (business rules, owns the transaction); optional `repository.py` (complex queries); `models.py` (tables) | `app.web`, `app.platform`; never another module |
 | `app.web` | HTTP helpers shared by routers (problem responses, request ids, rate limits, headers) | `app.platform` |
 | `app.platform` | settings, database session, pagination, clock, the authenticated principal | third-party packages only; no `fastapi` or `starlette` |
 
 - Inside a module the order is router > service > repository > models; every file in a module belongs to one of those layers.
-- `service`, `repository` and `models` do not import `fastapi` or `starlette`, directly or through another module; routers do not import `sqlalchemy`.
+- `service`, `repository` and `models` do not import `fastapi` or `starlette`, directly or through another module; routers do not import `sqlalchemy` themselves (they call the service, which does).
+- Every `/api` route carries exactly one access marker from `app.web.access` (`PUBLIC`, `SIGNED_IN`) and matches a contract operation (method, path, path parameter names); `app.main.routes` checks both at startup.
 - Modules share nothing directly: what one needs from another goes through `app.platform` (for example the principal auth's middleware sets), and a table refers to another module's table by a string foreign key such as `"users.id"`, without an ORM relationship.
 - Only `app.platform.config` reads environment variables (ruff `TID251`).
 - No import cycles between sibling packages (`acyclic_siblings`).

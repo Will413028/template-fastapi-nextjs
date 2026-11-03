@@ -1,5 +1,6 @@
 """Builds the ASGI app. Module routers are included here as the modules land."""
 
+import asyncio
 import contextlib
 import logging
 from typing import TYPE_CHECKING, Protocol
@@ -13,6 +14,9 @@ if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
 
 logger = logging.getLogger(__name__)
+
+# Below app healthcheck's 2 s client timeout: a pool exhausted by real requests answers 503 instead of hanging.
+READY_TIMEOUT_SECONDS = 1.0
 
 
 class Database(Protocol):
@@ -43,7 +47,8 @@ def create_app(database: Database) -> FastAPI:
     @app.get("/health/ready", include_in_schema=False)
     async def ready() -> JSONResponse:
         try:
-            await database.ping()
+            async with asyncio.timeout(READY_TIMEOUT_SECONDS):
+                await database.ping()
         except Exception:
             # any failure means not ready; the cause goes to the log, not to the client
             logger.warning("not ready", exc_info=True)

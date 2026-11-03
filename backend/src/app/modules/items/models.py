@@ -8,12 +8,10 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import CheckConstraint, ForeignKey, Index, text
-from sqlalchemy.dialects.postgresql import TEXT, TIMESTAMP, UUID
+from sqlalchemy.dialects.postgresql import TEXT, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.platform.db import Base
-
-TIMESTAMPTZ = TIMESTAMP(timezone=True)
+from app.platform.db import NOW, TIMESTAMPTZ, UUIDV7, Base
 
 
 class Item(Base):
@@ -24,9 +22,9 @@ class Item(Base):
         Index("items_owner_id_id_idx", "owner_id", text("id DESC")),
     )
 
-    id: Mapped[uuid.UUID] = mapped_column(UUID, primary_key=True, server_default=text("uuidv7()"))
+    id: Mapped[uuid.UUID] = mapped_column(UUID, primary_key=True, server_default=UUIDV7)
     title: Mapped[str] = mapped_column(TEXT)
     description: Mapped[str | None] = mapped_column(TEXT)
     owner_id: Mapped[uuid.UUID] = mapped_column(UUID, ForeignKey("users.id", ondelete="CASCADE"))
-    created_at: Mapped[datetime] = mapped_column(TIMESTAMPTZ, server_default=text("now()"))
-    updated_at: Mapped[datetime] = mapped_column(TIMESTAMPTZ, server_default=text("now()"))
+    created_at: Mapped[datetime] = mapped_column(TIMESTAMPTZ, server_default=NOW)
+    updated_at: Mapped[datetime] = mapped_column(TIMESTAMPTZ, server_default=NOW)

@@ -10,6 +10,7 @@ import ssl
 from typing import TYPE_CHECKING, Self
 
 from sqlalchemy import MetaData, text
+from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.engine import URL
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
@@ -20,6 +21,13 @@ if TYPE_CHECKING:
 # Ends transactions a caller forgot to finish; longer than the statement timeout because a transaction legitimately
 # spans several statements.
 IDLE_IN_TRANSACTION_TIMEOUT_SECONDS = 30
+# A connection older than this is replaced, as pgxpool's MaxConnLifetime does for the Go version.
+POOL_RECYCLE_SECONDS = 3600
+
+# Column building blocks every module's models share (docs/rules/database-design.md, 型別選擇).
+UUIDV7 = text("uuidv7()")
+NOW = text("now()")
+TIMESTAMPTZ = TIMESTAMP(timezone=True)
 
 
 class Base(DeclarativeBase):
@@ -33,11 +41,11 @@ def engine_url(settings: DatabaseSettings) -> URL:
     parts = settings.parts
     return URL.create(
         "postgresql+asyncpg",
-        username=parts.username,
+        username=settings.user,
         password=settings.password,
         host=parts.hostname,
         port=parts.port,
-        database=parts.path.lstrip("/"),
+        database=settings.database_name,
     )
 
 
@@ -61,6 +69,10 @@ def create_engine(settings: DatabaseSettings) -> AsyncEngine:
         engine_url(settings),
         pool_size=settings.max_conns,
         max_overflow=0,
+        # a connection the database or the network dropped (a postgres restart) is replaced before a request gets it,
+        # as pgxpool pings connections idle for a second or more
+        pool_pre_ping=True,
+        pool_recycle=POOL_RECYCLE_SECONDS,
         connect_args=connect_args(settings),
     )
 

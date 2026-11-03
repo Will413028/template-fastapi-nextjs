@@ -6,6 +6,7 @@ passes it in `config.attributes["connection"]`, so credentials never pass throug
 
 from alembic import context
 
+from app.main.migrate import VERSION_SCHEMA
 from app.main.schema import metadata
 
 context.configure(
@@ -14,6 +15,7 @@ context.configure(
     # each revision commits on its own, so a failure leaves the earlier ones applied and a re-run continues from it
     transaction_per_migration=True,
     compare_server_default=True,
+    version_table_schema=VERSION_SCHEMA,
 )
 with context.begin_transaction():
     context.run_migrations()

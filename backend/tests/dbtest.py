@@ -8,13 +8,15 @@ unavailable fails the tests instead of skipping them.
 These tests run only in CI (`make test-db`); this machine's `make check` leaves them out (-m "not db").
 """
 
+import asyncio
 import itertools
 import pathlib
-import re
+import time
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Self
 
 from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
@@ -23,7 +25,24 @@ from app.platform.config import DatabaseSettings
 from app.platform.db import create_engine
 
 if TYPE_CHECKING:
+    from collections.abc import Awaitable, Callable
+
     from sqlalchemy.ext.asyncio import AsyncEngine
+
+
+async def wait_until_accepting(connect: Callable[[], Awaitable[None]], *, within: float, interval: float = 0.2) -> None:
+    """Retries `connect` until the server accepts it; the error of the last attempt is raised after `within` seconds."""
+    deadline = time.monotonic() + within
+    while True:
+        try:
+            await connect()
+        except DBAPIError, OSError:
+            if time.monotonic() >= deadline:
+                raise
+            await asyncio.sleep(interval)
+        else:
+            return
+
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 # The PostgreSQL image compose runs, pinned by digest; tests/test_schema.py keeps the two equal, since Dependabot
@@ -34,9 +53,10 @@ SUPERUSER = "postgres"
 OWNER_ROLE = "template_fastapi_nextjs_owner"
 APP_ROLE = "template_fastapi_nextjs_app"
 STARTUP_TIMEOUT_SECONDS = 120
-# The image starts a temporary server for the initdb scripts, stops it and starts the real one, so the message appears
-# twice. The pattern itself requires both: LogMessageWaitStrategy returns on the first match and ignores its times=.
-READY = re.compile(r"ready to accept connections.*ready to accept connections", re.DOTALL)
+# The image starts a temporary server for the initdb scripts, stops it, prints this line on stdout once and starts the
+# real server. "ready to accept connections" cannot be counted instead: the two servers log it to different streams,
+# and testcontainers 4.15.0's LogMessageWaitStrategy searches each stream on its own and ignores times=.
+INIT_DONE = "PostgreSQL init process complete; ready for start up."
 
 
 @dataclass(frozen=True, slots=True)
@@ -71,10 +91,20 @@ class Server:
             )
             .with_copy_into_container(f"{OWNER_ROLE}\n".encode(), "/run/secrets/db_owner_password", 0o444)
             .with_copy_into_container(f"{APP_ROLE}\n".encode(), "/run/secrets/db_app_password", 0o444)
-            .waiting_for(LogMessageWaitStrategy(READY).with_startup_timeout(STARTUP_TIMEOUT_SECONDS))
+            .waiting_for(LogMessageWaitStrategy(INIT_DONE).with_startup_timeout(STARTUP_TIMEOUT_SECONDS))
         )
         container.start()
-        return cls(container)
+        server = cls(container)
+        asyncio.run(wait_until_accepting(server.ping, within=STARTUP_TIMEOUT_SECONDS))
+        return server
+
+    async def ping(self) -> None:
+        engine = self.superuser_engine()
+        try:
+            async with engine.connect() as conn:
+                await conn.execute(text("SELECT 1"))
+        finally:
+            await engine.dispose()
 
     def stop(self) -> None:
         self.container.stop()

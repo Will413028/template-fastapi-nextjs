@@ -57,6 +57,9 @@ def test_the_app_role_reads_and_writes_but_cannot_change_the_schema(postgres: Se
     )
     assert results[3:] == [1, 1]
     assert denied(db.app, "CREATE TABLE intruder (id int)")
+    # the app role cannot rewrite which revisions ran
+    assert denied(db.app, "SELECT * FROM alembic.alembic_version")
+    assert denied(db.app, "DELETE FROM alembic.alembic_version")
     assert denied(db.app, "ALTER TABLE users ADD COLUMN extra text")
 
 

@@ -31,9 +31,10 @@ DEFAULT_DB_STATEMENT_TIMEOUT = 5.0
 # The query parameters a connection URL may carry; anything else would be silently ignored by the driver.
 _URL_PARAMS = frozenset({"sslmode"})
 _SSLMODES = frozenset({"disable", "allow", "prefer", "require", "verify-ca", "verify-full"})
-# Go's time.ParseDuration syntax, as the Go version reads these variables: 5s, 1m30s, 168h, 250ms.
-_DURATION = re.compile(r"(\d+(?:\.\d+)?)(h|ms|m|s)")
-_UNIT_SECONDS = {"h": 3600.0, "m": 60.0, "s": 1.0, "ms": 0.001}
+# Go's time.ParseDuration syntax, as the Go version reads these variables: 5s, 1m30s, 168h, 250ms, .5s, 0.
+_DURATION = re.compile(r"(\d+\.?\d*|\.\d+)(ns|us|µs|μs|ms|s|m|h)")
+_UNIT_SECONDS = {"h": 3600.0, "m": 60.0, "s": 1.0, "ms": 1e-3, "us": 1e-6, "µs": 1e-6, "μs": 1e-6, "ns": 1e-9}
+_INTEGER = re.compile(r"[0-9]+")
 
 
 class ConfigError(ValueError):
@@ -79,6 +80,14 @@ class DatabaseSettings:
         return urllib.parse.urlsplit(self.url)
 
     @property
+    def user(self) -> str:
+        return urllib.parse.unquote(self.parts.username or "")
+
+    @property
+    def database_name(self) -> str:
+        return urllib.parse.unquote(self.parts.path.lstrip("/"))
+
+    @property
     def sslmode(self) -> str:
         """libpq's sslmode; libpq's default when the URL has none."""
         return urllib.parse.parse_qs(self.parts.query).get("sslmode", ["prefer"])[0]
@@ -99,7 +108,7 @@ class Settings:
         http = env.http_addr()
         url = env.database_url("DATABASE_URL")
         password = env.required("DATABASE_PASSWORD")
-        max_conns = env.parse("DB_MAX_CONNS", DEFAULT_DB_MAX_CONNS, int)
+        max_conns = env.parse("DB_MAX_CONNS", DEFAULT_DB_MAX_CONNS, _parse_int)
         timeout = env.parse("DB_STATEMENT_TIMEOUT", DEFAULT_DB_STATEMENT_TIMEOUT, _parse_duration)
         if max_conns < 1:
             env.fail("DB_MAX_CONNS must be positive")
@@ -251,8 +260,18 @@ def _url_policy_problem(raw: str, *, plaintext: str | None) -> str | None:
     return None
 
 
+def _parse_int(text: str) -> int:
+    """Digits only: int() would also take 1_0, + and surrounding spaces."""
+    if not _INTEGER.fullmatch(text):
+        msg = f"not an integer: {text!r}"
+        raise ValueError(msg)
+    return int(text)
+
+
 def _parse_duration(text: str) -> float:
     """Seconds in a Go duration such as 5s or 1m30s."""
+    if text == "0":
+        return 0.0
     parts = _DURATION.findall(text)
     if not parts or "".join(n + u for n, u in parts) != text:
         msg = f"not a duration: {text!r}"

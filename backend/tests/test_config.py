@@ -29,6 +29,25 @@ def test_dev_mode_address_and_pool() -> None:
     assert (settings.database.max_conns, settings.database.statement_timeout) == (5, 90.0)
 
 
+@pytest.mark.parametrize(
+    ("raw", "seconds"),
+    [("0", 0.0), (".5s", 0.5), ("1.5m", 90.0), ("500us", 0.0005), ("2µs", 0.000002), ("1h1ns", 3600.0)],
+)
+def test_durations_use_go_syntax(raw: str, seconds: float) -> None:
+    env = SERVE | {"DB_STATEMENT_TIMEOUT": raw}
+    if seconds == 0:
+        with pytest.raises(ConfigError, match="DB_STATEMENT_TIMEOUT must be positive"):
+            Settings.from_env(env)
+        return
+    assert Settings.from_env(env).database.statement_timeout == pytest.approx(seconds)
+
+
+def test_percent_encoded_user_and_database_are_decoded() -> None:
+    url = "postgres://app%2Bx@db.example/my%2Ddb?sslmode=verify-full"
+    db = Settings.from_env({"DATABASE_URL": url, "DATABASE_PASSWORD": "pw"}).database
+    assert (db.user, db.database_name) == ("app+x", "my-db")
+
+
 def test_healthcheck_needs_only_the_address() -> None:
     assert HttpSettings.from_env({"HTTP_ADDR": "[::]:8001"}) == HttpSettings(host="::", port=8001)
     assert HttpSettings.from_env({"HTTP_ADDR": "[::]:8001"}).probe_host == "127.0.0.1"
@@ -78,6 +97,8 @@ def test_migrate_connects_as_the_owner_without_a_statement_timeout() -> None:
         ({"DATABASE_URL": "postgres://app@db/app"}, "must use sslmode=verify-full"),
         ({"DB_MAX_CONNS": "0"}, "DB_MAX_CONNS must be positive"),
         ({"DB_MAX_CONNS": "many"}, "DB_MAX_CONNS is malformed"),
+        ({"DB_MAX_CONNS": "1_0"}, "DB_MAX_CONNS is malformed"),
+        ({"DB_MAX_CONNS": "+5"}, "DB_MAX_CONNS is malformed"),
         ({"DB_STATEMENT_TIMEOUT": "5"}, "DB_STATEMENT_TIMEOUT is malformed"),
         ({"DB_STATEMENT_TIMEOUT": "5s "}, "DB_STATEMENT_TIMEOUT is malformed"),
         ({"DB_STATEMENT_TIMEOUT": "0s"}, "DB_STATEMENT_TIMEOUT must be positive"),

@@ -15,6 +15,7 @@ from alembic import command
 from alembic.config import Config
 from alembic.runtime.migration import MigrationContext
 from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.platform.config import ConfigError, MigrateSettings
 from app.platform.db import create_engine
@@ -25,6 +26,9 @@ if TYPE_CHECKING:
     from sqlalchemy import Connection
     from sqlalchemy.ext.asyncio import AsyncEngine
 
+# Alembic's bookkeeping table lives in a schema of its own, owned by the owner role and never granted to the app role,
+# so the application cannot rewrite which revisions ran (the Go version keeps Atlas's table out of public likewise).
+VERSION_SCHEMA = "alembic"
 APPEND_ONLY = re.compile(r"^append-only(?:: retain ([1-9][0-9]*) days by ([a-z_][a-z0-9_]*))?$")
 
 
@@ -46,6 +50,8 @@ def alembic_config(connection: Connection | None = None) -> Config:
 
 async def migrate(engine: AsyncEngine, app_role: str) -> str | None:
     """Upgrades to the newest revision and grants `app_role`; returns the revision the database is at."""
+    async with engine.begin() as conn:
+        await conn.execute(text(f"CREATE SCHEMA IF NOT EXISTS {VERSION_SCHEMA}"))
     async with engine.connect() as conn:
         await conn.run_sync(lambda c: command.upgrade(alembic_config(c), "head"))
         await conn.commit()
@@ -72,7 +78,7 @@ def _grant(conn: Connection, role: str) -> str | None:
     ):
         conn.execute(text(stmt))
     _append_only(conn, r)
-    return MigrationContext.configure(conn).get_current_revision()
+    return MigrationContext.configure(conn, opts={"version_table_schema": VERSION_SCHEMA}).get_current_revision()
 
 
 def _append_only(conn: Connection, role: str) -> None:
@@ -122,7 +128,8 @@ def run(environ: Mapping[str, str] | None) -> int:
         return 1
     try:
         revision = asyncio.run(_run(settings))
-    except MigrateError as err:
+    except (MigrateError, SQLAlchemyError, OSError) as err:
+        # SQLAlchemy prints URLs with the password masked, and asyncpg's errors carry no password
         sys.stderr.write(f"migrate: {err}\n")
         return 1
     sys.stdout.write(f"migrate: at revision {revision}, app role {settings.app_role} granted\n")

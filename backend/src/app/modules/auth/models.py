@@ -8,14 +8,10 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import CheckConstraint, ForeignKey, Index, text
-from sqlalchemy.dialects.postgresql import BIGINT, BOOLEAN, BYTEA, TEXT, TIMESTAMP, UUID
+from sqlalchemy.dialects.postgresql import BIGINT, BOOLEAN, BYTEA, TEXT, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.platform.db import Base
-
-UUIDV7 = text("uuidv7()")
-NOW = text("now()")
-TIMESTAMPTZ = TIMESTAMP(timezone=True)
+from app.platform.db import NOW, TIMESTAMPTZ, UUIDV7, Base
 
 
 class User(Base):

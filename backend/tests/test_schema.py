@@ -1,9 +1,11 @@
 """Checks on the schema's sources that need no database (the db tests are in test_schema_db.py)."""
 
 import ast
+import asyncio
 import pathlib
 import re
 
+import pytest
 from alembic.script import ScriptDirectory
 
 import dbtest
@@ -56,10 +58,23 @@ def test_foreign_keys_to_users_allow_deleting_the_account() -> None:
         assert fk.ondelete in {"CASCADE", "SET NULL"}, fk.parent
 
 
-def test_the_container_counts_as_started_only_after_the_restart() -> None:
-    # testcontainers' LogMessageWaitStrategy ignores times=: the pattern itself must require the second start
-    first = (
-        "LOG:  database system is ready to accept connections\nPostgreSQL init process complete; ready for start up.\n"
-    )
-    assert not dbtest.READY.search(first)
-    assert dbtest.READY.search(first + "LOG:  database system is ready to accept connections\n")
+def test_waiting_for_postgres_retries_until_it_accepts() -> None:
+    attempts: list[int] = []
+
+    async def connect() -> None:
+        attempts.append(1)
+        if len(attempts) < 3:
+            msg = "the database system is starting up"
+            raise ConnectionRefusedError(msg)
+
+    asyncio.run(dbtest.wait_until_accepting(connect, within=5, interval=0))
+    assert len(attempts) == 3
+
+
+def test_waiting_for_postgres_gives_up_after_the_timeout() -> None:
+    async def connect() -> None:
+        msg = "the database system is starting up"
+        raise ConnectionRefusedError(msg)
+
+    with pytest.raises(ConnectionRefusedError):
+        asyncio.run(dbtest.wait_until_accepting(connect, within=0, interval=0))

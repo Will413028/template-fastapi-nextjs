@@ -28,6 +28,12 @@ DEFAULT_ADDR = ":8000"
 MAX_PORT = 65535
 DEFAULT_DB_MAX_CONNS = 20
 DEFAULT_DB_STATEMENT_TIMEOUT = 5.0
+DEFAULT_AUTH_RATE_LIMIT_PER_MIN = 5
+# The current origin secret and, while a rotation is under way, the previous one.
+MAX_ORIGIN_SECRETS = 2
+# scripts/init_env.py writes 43 characters (32 random bytes in base64url); a short one could be guessed.
+MIN_ORIGIN_SECRET_LENGTH = 32
+_PRINTABLE_ASCII = re.compile(r"[!-~]+")
 # The query parameters a connection URL may carry; anything else would be silently ignored by the driver.
 _URL_PARAMS = frozenset({"sslmode"})
 _SSLMODES = frozenset({"disable", "allow", "prefer", "require", "verify-ca", "verify-full"})
@@ -100,6 +106,10 @@ class Settings:
     mode: Mode
     http: HttpSettings
     database: DatabaseSettings
+    # X-Origin-Secret values that mark a request as coming through the site (D6 in
+    # docs/plans/2026-11-03-fastapi-template.md); empty only with MODE=dev.
+    origin_secrets: tuple[str, ...] = ()
+    auth_rate_limit_per_min: int = DEFAULT_AUTH_RATE_LIMIT_PER_MIN
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> Self:
@@ -114,11 +124,17 @@ class Settings:
             env.fail("DB_MAX_CONNS must be positive")
         if timeout <= 0:
             env.fail("DB_STATEMENT_TIMEOUT must be positive")
+        origin_secrets = env.origin_secrets(mode)
+        per_min = env.parse("AUTH_RATE_LIMIT_PER_MIN", DEFAULT_AUTH_RATE_LIMIT_PER_MIN, _parse_int)
+        if per_min < 1:
+            env.fail("AUTH_RATE_LIMIT_PER_MIN must be positive")
         env.raise_problems()
         return cls(
             mode=mode,
             http=HttpSettings(*http),
             database=DatabaseSettings(url=url, password=password, max_conns=max_conns, statement_timeout=timeout),
+            origin_secrets=origin_secrets,
+            auth_rate_limit_per_min=per_min,
         )
 
 
@@ -195,6 +211,27 @@ class _Env:
         if mode != "prod":
             self.fail(f"MODE must be dev or prod, got {mode!r}")
         return "prod"
+
+    def origin_secrets(self, mode: Mode) -> tuple[str, ...]:
+        """ORIGIN_SECRET: the current secret, optionally followed by a comma and the previous one during a rotation.
+        Required in prod; in dev a request without the header is let through (app.web.origin)."""
+        raw = self.get("ORIGIN_SECRET")
+        if raw is None:
+            if mode == "prod":
+                self.fail("ORIGIN_SECRET is required when MODE=prod")
+            return ()
+        entries = tuple(raw.split(","))
+        if "" in entries:
+            self.fail("ORIGIN_SECRET has an empty entry")
+        elif len(entries) > MAX_ORIGIN_SECRETS:
+            self.fail(f"ORIGIN_SECRET holds at most {MAX_ORIGIN_SECRETS} entries: the current and the previous")
+        elif not all(_PRINTABLE_ASCII.fullmatch(e) for e in entries):
+            self.fail("ORIGIN_SECRET entries must be printable ASCII without spaces")
+        elif any(len(e) < MIN_ORIGIN_SECRET_LENGTH for e in entries):
+            self.fail(f"ORIGIN_SECRET entries must be at least {MIN_ORIGIN_SECRET_LENGTH} characters")
+        else:
+            return entries
+        return ()
 
     def http_addr(self) -> tuple[str, int]:
         addr = self.get("HTTP_ADDR") or DEFAULT_ADDR

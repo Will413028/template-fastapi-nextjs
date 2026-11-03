@@ -15,7 +15,6 @@ context.configure(
     # each revision commits on its own, so a failure leaves the earlier ones applied and a re-run continues from it
     transaction_per_migration=True,
     compare_server_default=True,
-    version_table_schema=VERSION_SCHEMA,
 )
 with context.begin_transaction():
     context.run_migrations()

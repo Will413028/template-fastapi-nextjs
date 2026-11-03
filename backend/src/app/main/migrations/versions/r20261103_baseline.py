@@ -47,7 +47,6 @@ def upgrade() -> None:
         sa.Column("updated_at", TIMESTAMPTZ, server_default=NOW, nullable=False),
         sa.PrimaryKeyConstraint("id", name="items_pkey"),
         sa.ForeignKeyConstraint(["owner_id"], ["users.id"], name="items_owner_id_fkey", ondelete="CASCADE"),
-        sa.CheckConstraint("char_length(title) BETWEEN 1 AND 200", name="items_title_check"),
     )
     op.create_index("items_owner_id_id_idx", "items", ["owner_id", sa.text("id DESC")])
     op.create_table(

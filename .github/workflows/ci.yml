@@ -44,6 +44,7 @@ jobs:
       # The db tests start PostgreSQL with testcontainers; they run only here, never on a developer's machine by default
       # (schema equals the Go version's, models equal the revisions, grants, append-only, readiness)
       - run: make test-db
+        if: always()
       # suppression comments may only go down and executed tests only up (scripts/quality-locks.json)
       - run: python3 scripts/check_locks.py --pytest-report backend/test-report.xml --pytest-db-report backend/test-db-report.xml
         working-directory: .

@@ -28,6 +28,7 @@ class User(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID, primary_key=True, server_default=UUIDV7)
     account: Mapped[str] = mapped_column(TEXT, unique=True)
     password_hash: Mapped[str] = mapped_column(TEXT)
+    nickname: Mapped[str | None] = mapped_column(TEXT)
     role: Mapped[str] = mapped_column(TEXT, server_default=text("'user'"))
     is_disabled: Mapped[bool] = mapped_column(BOOLEAN, server_default=text("false"))
     created_at: Mapped[datetime] = mapped_column(TIMESTAMPTZ, server_default=NOW)

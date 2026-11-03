@@ -1,0 +1,151 @@
+# Each service gets only its own variables (values come from .env) and its own secrets (files under .secrets/,
+# created by `make init-env`), mounted at /run/secrets/<name> and read through <KEY>_FILE.
+# Database roles (deploy/postgres/initdb/10-roles.sh): the superuser only initializes the volume; migrate connects
+# as the owner role; backend connects as the app role, which has DML only.
+# Only caddy publishes ports (deploy/Caddyfile): /api goes to the backend, the rest to Next, one origin for the
+# browser. Ports Docker publishes bypass ufw, so nothing else is published.
+
+x-db-names: &db-names
+  POSTGRES_DB: ${POSTGRES_DB:-template_go_nextjs}
+  DB_OWNER_USER: ${DB_OWNER_USER:-template_go_nextjs_owner}
+  DB_APP_USER: ${DB_APP_USER:-template_go_nextjs_app}
+
+# Every container's log is rotated: at most 5 files of 10 MB each, then the oldest is dropped. Without this Docker's
+# default json-file driver keeps logs until the container is removed (docs/privacy/data-inventory.md, 日誌).
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "5"
+
+services:
+  postgres:
+    logging: *logging
+    image: postgres:18.6@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336
+    restart: unless-stopped
+    environment:
+      <<: *db-names
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password, db_owner_password, db_app_password]
+    volumes:
+      # 18+ keeps data in a versioned subdirectory; mount the parent (docker-library/postgres#37)
+      - postgres-data:/var/lib/postgresql
+      # runs only when the volume is empty; on an existing volume the roles must already exist
+      - ./deploy/postgres/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # applies backend/migrations as the owner role and grants the app role; backend starts after it exits.
+  # Same image as backend, built once by the backend service.
+  migrate:
+    logging: *logging
+    image: template-go-nextjs-backend
+    pull_policy: never
+    command: ["migrate"]
+    environment:
+      MODE: ${MODE:-prod}
+      MIGRATE_DATABASE_URL: postgres://${DB_OWNER_USER:-template_go_nextjs_owner}@postgres:5432/${POSTGRES_DB:-template_go_nextjs}?sslmode=disable
+      # plaintext only because postgres is on this host's compose network (backend config, DATABASE_PLAINTEXT)
+      DATABASE_PLAINTEXT: same-host
+      MIGRATE_DATABASE_PASSWORD_FILE: /run/secrets/db_owner_password
+      DB_APP_USER: ${DB_APP_USER:-template_go_nextjs_app}
+    secrets: [db_owner_password]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  backend:
+    logging: *logging
+    build: ./backend
+    image: template-go-nextjs-backend
+    restart: unless-stopped
+    # longer than the 30s graceful shutdown, so in-flight requests finish before SIGKILL
+    stop_grace_period: 35s
+    environment:
+      MODE: ${MODE:-prod}
+      DATABASE_URL: postgres://${DB_APP_USER:-template_go_nextjs_app}@postgres:5432/${POSTGRES_DB:-template_go_nextjs}?sslmode=disable
+      # plaintext only because postgres is on this host's compose network (backend config, DATABASE_PLAINTEXT)
+      DATABASE_PLAINTEXT: same-host
+      DATABASE_PASSWORD_FILE: /run/secrets/db_app_password
+      SESSION_ABSOLUTE: ${SESSION_ABSOLUTE:-}
+      SESSION_IDLE: ${SESSION_IDLE:-}
+      COOKIE_SECURE: ${COOKIE_SECURE:-}
+      # caddy's fixed address: only it may set X-Forwarded-For and X-Request-ID. Next is on the same network but is
+      # not a proxy, so its server-side calls cannot choose the client address.
+      TRUSTED_PROXIES: ${TRUSTED_PROXIES:-172.30.0.2/32}
+      DB_MAX_CONNS: ${DB_MAX_CONNS:-}
+      DB_STATEMENT_TIMEOUT: ${DB_STATEMENT_TIMEOUT:-}
+      AUTH_RATE_LIMIT_PER_MIN: ${AUTH_RATE_LIMIT_PER_MIN:-}
+      PASSWORD_HIBP_CHECK: ${PASSWORD_HIBP_CHECK:-}
+    secrets: [db_app_password]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/app", "healthcheck"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  frontend:
+    logging: *logging
+    build: ./frontend
+    restart: unless-stopped
+    environment:
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-}
+      # server-side (SSR/RSC) fetches reach the backend by service name; the browser uses /api through caddy
+      API_URL: http://backend:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  caddy:
+    logging: *logging
+    image: caddy:2.11.7@sha256:685ae3d7c34d9b5f8caeddc5d14051db7bbd88ff1f5a2fa0c16bd8ca328fb7af
+    restart: unless-stopped
+    environment:
+      # a domain name for automatic HTTPS, or :80 for plain http on a local machine
+      SITE_ADDRESS: ${SITE_ADDRESS:-:80}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      default:
+        # outside ip_range, so no other container can take it; TRUSTED_PROXIES names it
+        ipv4_address: 172.30.0.2
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+          # containers without a fixed address get one from here
+          ip_range: 172.30.0.128/25
+
+secrets:
+  postgres_password:
+    file: .secrets/postgres_password
+  db_owner_password:
+    file: .secrets/db_owner_password
+  db_app_password:
+    file: .secrets/db_app_password
+
+volumes:
+  postgres-data:
+  caddy-data:
+  caddy-config:

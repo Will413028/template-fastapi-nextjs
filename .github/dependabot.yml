@@ -1,0 +1,99 @@
+version: 2
+
+# Wait a week before proposing a new release, so a compromised version has time
+# to be caught and yanked before it lands here.
+updates:
+  - package-ecosystem: github-actions
+    target-branch: dev
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  - package-ecosystem: gomod
+    target-branch: dev
+    directory: /backend
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      backend-minor-patch:
+        update-types: [minor, patch]
+
+  # the Go-built dev tools (backend/tools/go.mod, backend/Makefile). Every require there is marked indirect, which
+  # version updates skip by default, so allow all dependency types.
+  - package-ecosystem: gomod
+    target-branch: dev
+    directory: /backend/tools
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    allow:
+      - dependency-type: all
+    groups:
+      backend-tools:
+        patterns: ["*"]
+
+  # the Go toolchain and distroless base images, pinned by digest in backend/Dockerfile
+  - package-ecosystem: docker
+    target-branch: dev
+    directory: /backend
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+
+  # node in frontend/Dockerfile, pinned by digest
+  - package-ecosystem: docker
+    target-branch: dev
+    directory: /frontend
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+
+  # postgres and caddy in docker-compose.yml, pinned by digest
+  - package-ecosystem: docker-compose
+    target-branch: dev
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+
+  # CLIs the backend Makefile runs (squawk, diff-cover)
+  - package-ecosystem: npm
+    target-branch: dev
+    directory: /backend/tools
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+  - package-ecosystem: pip
+    target-branch: dev
+    directory: /backend/tools
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+  - package-ecosystem: npm
+    target-branch: dev
+    directory: /frontend
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    # @types/node follows the Node.js major the frontend runs on (frontend/Dockerfile, CI); its major moves with the
+    # Node.js upgrade, not on its own.
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+    groups:
+      frontend-minor-patch:
+        update-types: [minor, patch]

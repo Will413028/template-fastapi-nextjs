@@ -1,0 +1,196 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # main runs are never cancelled: the existing-migrations check compares each push with the previous one, so a
+  # cancelled run would let the next push treat a modified migration as the base.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  backend:
+    name: Backend (lint + test + vuln)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # full history: the existing-migrations check needs the merge-base with the base branch
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: backend/go.mod
+          # the dev tools build from their own module, backend/tools/
+          cache-dependency-path: |
+            backend/go.sum
+            backend/tools/go.sum
+      # squawk installs from backend/tools/package-lock.json with npm
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+      # Atlas standard build (checksum-verified) for migration generation and drift checks
+      - run: make tools
+      - name: make check
+        env:
+          EVENT_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
+        run: |
+          base="$EVENT_BASE"
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then base=HEAD~1; fi
+          make check BASE="$base"
+      # Reported, not gated: total coverage, plus changed-line coverage against the PR base on pull requests
+      - name: Coverage report
+        env:
+          COVER_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || '' }}
+        run: make -s coverage COVER_BASE="$COVER_BASE" >> "$GITHUB_STEP_SUMMARY"
+      - run: make atlas-age
+      # suppression comments may only go down and executed tests only up (scripts/quality-locks.json)
+      - run: python3 scripts/check_locks.py --go-test-report backend/test-report.json
+        working-directory: .
+
+  # Every commit that edits a checker's configuration or moves a lock the bad way names why in a Quality-Gate trailer
+  # (scripts/check_commit_policy.py; lefthook checks it at commit time too).
+  policy:
+    name: Commit policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - run: python3 -m unittest discover -s scripts -p 'test_*.py'
+      # the Atlas build the image applies migrations with is the one the tests use (backend/Makefile, Dockerfile)
+      - run: python3 scripts/tool_versions.py verify
+      - name: Check the commits being added
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]; then range="$HEAD_SHA~1..$HEAD_SHA"
+          else range="$BASE..$HEAD_SHA"; fi
+          python3 scripts/check_commit_policy.py --range "$range"
+
+  # A derived project starts with `make rename`; it must rewrite every old module path and still build.
+  rename:
+    name: Rename smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - run: make rename NAME=ci-probe
+      - name: No file still names the template's module path
+        run: '! git grep -n "github.com/Will413028/template-go-nextjs/backend" -- backend'
+      - run: go vet ./...
+        working-directory: backend
+
+  # Builds the production backend image and applies migrations with the Atlas build that ships in it.
+  stack:
+    name: Compose stack (image + migrate + health)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: make lint-docker
+      # .env and the password files under .secrets/, as a developer gets them
+      - run: make init-env
+      - name: Each service gets only its own secrets
+        run: |
+          docker compose config --format json > /tmp/compose.json
+          test "$(jq -c '.services.backend.secrets | map(.source)' /tmp/compose.json)" = '["db_app_password"]'
+          test "$(jq -c '.services.migrate.secrets | map(.source)' /tmp/compose.json)" = '["db_owner_password"]'
+          test "$(jq -c '.services.frontend.secrets // []' /tmp/compose.json)" = '[]'
+          jq -e '.services.frontend.environment' /tmp/compose.json > /dev/null
+          if jq -r '.services.frontend.environment | keys[]' /tmp/compose.json | grep -E '^(DATABASE|MIGRATE|POSTGRES|DB_)'; then
+            echo "frontend receives database settings"; exit 1
+          fi
+      # Logs hold client addresses and paths: every service rotates them (docs/privacy/data-inventory.md)
+      - name: Every service rotates its logs
+        run: test "$(jq -c '[.services | to_entries[] | select(.value.logging.options["max-size"] == null) | .key]' /tmp/compose.json)" = '[]'
+      # Published ports bypass ufw: only caddy may have any (docs/adr/2026-10-18-api-and-auth-baseline.md D1)
+      - name: Only caddy publishes ports
+        run: test "$(jq -c '[.services | to_entries[] | select(.value.ports) | .key]' /tmp/compose.json)" = '["caddy"]'
+      - run: docker compose up -d --build --wait
+      - name: Migrate exited cleanly and backend is ready
+        run: |
+          test "$(docker compose ps -a migrate --format '{{.ExitCode}}')" = 0
+          docker compose exec -T backend /usr/local/bin/app healthcheck
+      - name: Caddy serves the API and the pages on one origin
+        run: |
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost/api/users/me)" = 401
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost/en/login)" = 200
+          # the backend believes caddy's request id, so caddy must not pass on the client's, or a client could write
+          # any string into the log
+          id="$(curl -s -o /dev/null -D - -H 'X-Request-ID: client-chosen' http://localhost/api/users/me | tr -d '\r' | awk -F': ' 'tolower($1) == "x-request-id" {print $2}')"
+          test -n "$id" && test "$id" != client-chosen
+      - name: The app role cannot change the schema
+        run: |
+          out="$(docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U template_go_nextjs_app -d template_go_nextjs -c 'CREATE TABLE intruder (id int)' 2>&1)" && exit 1
+          echo "$out"
+          grep -q 'permission denied for schema public' <<< "$out"
+      - if: failure()
+        run: docker compose logs
+
+  frontend:
+    name: Frontend (lint + test + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Node.js 26 and the pnpm version in package.json's packageManager, then pnpm install --frozen-lockfile with the
+      # store cached. pnpm/setup succeeds pnpm/action-setup for pnpm 11 and newer.
+      - uses: pnpm/setup@a0881977cd8ea73b1ed212236c99ca10dcc80cf4 # v3.1.1
+        with:
+          working-directory: frontend
+          runtime: node@26
+          cache: true
+          require-lockfile: true
+      - name: Check git hooks were installed
+        run: test -x "$(git rev-parse --git-path hooks)/commit-msg"
+      - run: pnpm audit --prod --audit-level high
+      # src/lib/api/schema.d.ts must match backend/api/openapi.yaml, the contract's single source
+      - run: pnpm gen:api:check
+      - run: pnpm lint
+      - run: pnpm check:deps
+      - run: pnpm check:arch
+      - run: pnpm test:report
+      # suppression comments may only go down and executed tests only up (scripts/quality-locks.json)
+      - run: python3 scripts/check_locks.py --vitest-report frontend/test-report.json
+        working-directory: .
+      - run: pnpm build
+
+  gate:
+    # The only required check on main: it passes when every other job in this workflow succeeded or was skipped.
+    name: gate (ci)
+    if: always()
+    needs: [backend, policy, rename, stack, frontend]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Every job succeeded or was skipped
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          for r in $RESULTS; do
+            case "$r" in success|skipped) ;; *) echo "a needed job ended with: $r"; exit 1 ;; esac
+          done

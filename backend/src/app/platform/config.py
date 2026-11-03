@@ -16,6 +16,7 @@ import pathlib
 import re
 import urllib.parse
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import TYPE_CHECKING, Literal, Self
 
 if TYPE_CHECKING:
@@ -29,6 +30,8 @@ MAX_PORT = 65535
 DEFAULT_DB_MAX_CONNS = 20
 DEFAULT_DB_STATEMENT_TIMEOUT = 5.0
 DEFAULT_AUTH_RATE_LIMIT_PER_MIN = 5
+DEFAULT_SESSION_ABSOLUTE = timedelta(hours=168)
+DEFAULT_SESSION_IDLE = timedelta(hours=24)
 # The current origin secret and, while a rotation is under way, the previous one.
 MAX_ORIGIN_SECRETS = 2
 # scripts/init_env.py writes 43 characters (32 random bytes in base64url); a short one could be guessed.
@@ -41,6 +44,11 @@ _SSLMODES = frozenset({"disable", "allow", "prefer", "require", "verify-ca", "ve
 _DURATION = re.compile(r"(\d+\.?\d*|\.\d+)(ns|us|µs|μs|ms|s|m|h)")
 _UNIT_SECONDS = {"h": 3600.0, "m": 60.0, "s": 1.0, "ms": 1e-3, "us": 1e-6, "µs": 1e-6, "μs": 1e-6, "ns": 1e-9}
 _INTEGER = re.compile(r"[0-9]+")
+# strconv.ParseBool's spellings, as the Go version reads COOKIE_SECURE
+_BOOLEANS = dict.fromkeys(("1", "t", "T", "TRUE", "true", "True"), True) | dict.fromkeys(
+    ("0", "f", "F", "FALSE", "false", "False"), False
+)
+_DEFAULT_PORTS = {"http": 80, "https": 443}
 
 
 class ConfigError(ValueError):
@@ -106,10 +114,23 @@ class Settings:
     mode: Mode
     http: HttpSettings
     database: DatabaseSettings
+    # The site's origin as browsers send it in Origin (scheme://host[:port], lowercase, no default port): the CSRF
+    # check compares against it because the Host the backend receives is not the name the browser used (D6).
+    app_origin: str
     # X-Origin-Secret values that mark a request as coming through the site (D6 in
     # docs/plans/2026-11-03-fastapi-template.md); empty only with MODE=dev.
     origin_secrets: tuple[str, ...] = ()
     auth_rate_limit_per_min: int = DEFAULT_AUTH_RATE_LIMIT_PER_MIN
+    # A session ends session_absolute after sign-in, or session_idle after its last use (ADR api-and-auth-baseline D4).
+    session_absolute: timedelta = DEFAULT_SESSION_ABSOLUTE
+    session_idle: timedelta = DEFAULT_SESSION_IDLE
+    # false only for local development over http
+    cookie_secure: bool = True
+
+    @property
+    def session_cookie_name(self) -> str:
+        """The `__Host-` prefix requires Secure, so a cookie that is not Secure drops it."""
+        return "__Host-session" if self.cookie_secure else "session"
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> Self:
@@ -128,13 +149,27 @@ class Settings:
         per_min = env.parse("AUTH_RATE_LIMIT_PER_MIN", DEFAULT_AUTH_RATE_LIMIT_PER_MIN, _parse_int)
         if per_min < 1:
             env.fail("AUTH_RATE_LIMIT_PER_MIN must be positive")
+        app_origin = env.app_origin()
+        absolute = timedelta(
+            seconds=env.parse("SESSION_ABSOLUTE", DEFAULT_SESSION_ABSOLUTE.total_seconds(), _parse_duration)
+        )
+        idle = timedelta(seconds=env.parse("SESSION_IDLE", DEFAULT_SESSION_IDLE.total_seconds(), _parse_duration))
+        if idle <= timedelta(0) or absolute <= timedelta(0):
+            env.fail("SESSION_IDLE and SESSION_ABSOLUTE must be positive")
+        elif idle > absolute:
+            env.fail(f"SESSION_IDLE ({idle}) must not exceed SESSION_ABSOLUTE ({absolute})")
+        cookie_secure = env.parse("COOKIE_SECURE", default=True, parse=_parse_bool)
         env.raise_problems()
         return cls(
             mode=mode,
             http=HttpSettings(*http),
             database=DatabaseSettings(url=url, password=password, max_conns=max_conns, statement_timeout=timeout),
+            app_origin=app_origin,
             origin_secrets=origin_secrets,
             auth_rate_limit_per_min=per_min,
+            session_absolute=absolute,
+            session_idle=idle,
+            cookie_secure=cookie_secure,
         )
 
 
@@ -233,6 +268,27 @@ class _Env:
             return entries
         return ()
 
+    def app_origin(self) -> str:
+        raw = self.required("APP_ORIGIN")
+        if not raw:
+            return ""
+        parts = urllib.parse.urlsplit(raw.lower())
+        try:
+            port = parts.port
+        except ValueError:
+            port = -1
+        if (
+            parts.scheme not in _DEFAULT_PORTS
+            or not parts.hostname
+            or parts.username is not None
+            or f"{parts.scheme}://{parts.netloc}" != raw.lower()
+            or port == -1
+        ):
+            self.fail(f"APP_ORIGIN must be an origin such as https://app.example (scheme://host[:port]), got {raw!r}")
+        elif port == _DEFAULT_PORTS[parts.scheme]:
+            self.fail(f"APP_ORIGIN must leave out the default port, as browsers do in Origin: got {raw!r}")
+        return raw.lower()
+
     def http_addr(self) -> tuple[str, int]:
         addr = self.get("HTTP_ADDR") or DEFAULT_ADDR
         host, sep, port_text = addr.rpartition(":")
@@ -303,6 +359,13 @@ def _parse_int(text: str) -> int:
         msg = f"not an integer: {text!r}"
         raise ValueError(msg)
     return int(text)
+
+
+def _parse_bool(text: str) -> bool:
+    if text not in _BOOLEANS:
+        msg = f"not a boolean: {text!r}"
+        raise ValueError(msg)
+    return _BOOLEANS[text]
 
 
 def _parse_duration(text: str) -> float:

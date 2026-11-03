@@ -90,6 +90,7 @@ SERVE_ENV = {
     "DATABASE_PASSWORD": "x",
     "DATABASE_PLAINTEXT": "same-host",
     "ORIGIN_SECRET": "s" * 43,
+    "APP_ORIGIN": "https://app.example",
 }
 
 

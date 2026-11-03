@@ -1,3 +1,4 @@
+from datetime import timedelta
 from typing import TYPE_CHECKING
 
 import pytest
@@ -9,7 +10,12 @@ if TYPE_CHECKING:
 
 DB_URL = "postgres://app@db.example:5432/app?sslmode=verify-full"
 SECRET = "s" * 43
-SERVE = {"DATABASE_URL": DB_URL, "DATABASE_PASSWORD": "pw", "ORIGIN_SECRET": SECRET}
+SERVE = {
+    "DATABASE_URL": DB_URL,
+    "DATABASE_PASSWORD": "pw",
+    "ORIGIN_SECRET": SECRET,
+    "APP_ORIGIN": "https://app.example",
+}
 
 
 def test_serve_defaults_are_production() -> None:
@@ -22,6 +28,27 @@ def test_serve_defaults_are_production() -> None:
     assert db.sslmode == "verify-full"
     assert settings.origin_secrets == (SECRET,)
     assert settings.auth_rate_limit_per_min == 5
+    assert (settings.session_absolute, settings.session_idle) == (timedelta(hours=168), timedelta(hours=24))
+    assert settings.cookie_secure
+    assert settings.app_origin == "https://app.example"
+
+
+@pytest.mark.parametrize(
+    ("secure", "name"), [("true", "__Host-session"), ("false", "session"), ("1", "__Host-session")]
+)
+def test_cookie_name_follows_secure(secure: str, name: str) -> None:
+    # the __Host- prefix requires Secure, so local development over http drops it
+    assert Settings.from_env(SERVE | {"COOKIE_SECURE": secure}).session_cookie_name == name
+
+
+def test_session_idle_may_equal_absolute() -> None:
+    settings = Settings.from_env(SERVE | {"SESSION_ABSOLUTE": "24h", "SESSION_IDLE": "24h"})
+    assert settings.session_idle == settings.session_absolute == timedelta(hours=24)
+
+
+@pytest.mark.parametrize("origin", ["http://localhost:3000", "HTTPS://App.Example"])
+def test_app_origin_is_kept_as_a_browser_sends_it(origin: str) -> None:
+    assert Settings.from_env(SERVE | {"APP_ORIGIN": origin}).app_origin == origin.lower()
 
 
 def test_dev_mode_address_and_pool() -> None:
@@ -59,7 +86,7 @@ def test_healthcheck_needs_only_the_address() -> None:
 def test_a_value_can_come_from_a_file(tmp_path: pathlib.Path) -> None:
     secret = tmp_path / "db_app_password"
     secret.write_text("from-file\n", encoding="utf-8")
-    env = {"DATABASE_URL": DB_URL, "DATABASE_PASSWORD_FILE": str(secret), "ORIGIN_SECRET": SECRET}
+    env = {k: v for k, v in SERVE.items() if k != "DATABASE_PASSWORD"} | {"DATABASE_PASSWORD_FILE": str(secret)}
     assert Settings.from_env(env).database.password == secret.read_text(encoding="utf-8").strip()
 
 
@@ -115,6 +142,18 @@ def test_migrate_connects_as_the_owner_without_a_statement_timeout() -> None:
         ({"ORIGIN_SECRET": ",".join([SECRET] * 3)}, "ORIGIN_SECRET holds at most 2 entries"),
         ({"AUTH_RATE_LIMIT_PER_MIN": "0"}, "AUTH_RATE_LIMIT_PER_MIN must be positive"),
         ({"AUTH_RATE_LIMIT_PER_MIN": "ten"}, "AUTH_RATE_LIMIT_PER_MIN is malformed"),
+        ({"SESSION_ABSOLUTE": "24h", "SESSION_IDLE": "48h"}, "SESSION_IDLE .* must not exceed SESSION_ABSOLUTE"),
+        ({"SESSION_IDLE": "0s"}, "SESSION_IDLE and SESSION_ABSOLUTE must be positive"),
+        ({"SESSION_ABSOLUTE": "7d"}, "SESSION_ABSOLUTE is malformed"),
+        ({"COOKIE_SECURE": "yes"}, "COOKIE_SECURE is malformed"),
+        ({"APP_ORIGIN": ""}, "missing required environment variable APP_ORIGIN"),
+        ({"APP_ORIGIN": "app.example"}, "APP_ORIGIN must be an origin such as https://app.example"),
+        ({"APP_ORIGIN": "ftp://app.example"}, "APP_ORIGIN must be an origin such as https://app.example"),
+        ({"APP_ORIGIN": "https://app.example/"}, "APP_ORIGIN must be an origin such as https://app.example"),
+        ({"APP_ORIGIN": "https://app.example/app"}, "APP_ORIGIN must be an origin such as https://app.example"),
+        ({"APP_ORIGIN": "https://user@app.example"}, "APP_ORIGIN must be an origin such as https://app.example"),
+        ({"APP_ORIGIN": "https://app.example:443"}, "APP_ORIGIN must leave out the default port"),
+        ({"APP_ORIGIN": "http://app.example:80"}, "APP_ORIGIN must leave out the default port"),
     ],
 )
 def test_invalid_values_stop_startup(env: dict[str, str], message: str) -> None:

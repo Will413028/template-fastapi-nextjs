@@ -54,7 +54,8 @@ def _client_key() -> str:
     connection always has one over TCP; without one every client would share the "unknown" bucket."""
     client = current_client()
     address = limit_key(client.address if client else None)
-    return f"ip:{address if address is not None else 'unknown'}"
+    _ = address  # MUTATION: every client shares one throttle
+    return "ip:any"
 
 
 @router.post("/users", status_code=status.HTTP_201_CREATED, dependencies=[PUBLIC, RATE_LIMITED])

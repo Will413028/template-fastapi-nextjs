@@ -54,3 +54,12 @@ def test_foreign_keys_to_users_allow_deleting_the_account() -> None:
     assert to_users
     for fk in to_users:
         assert fk.ondelete in {"CASCADE", "SET NULL"}, fk.parent
+
+
+def test_the_container_counts_as_started_only_after_the_restart() -> None:
+    # testcontainers' LogMessageWaitStrategy ignores times=: the pattern itself must require the second start
+    first = (
+        "LOG:  database system is ready to accept connections\nPostgreSQL init process complete; ready for start up.\n"
+    )
+    assert not dbtest.READY.search(first)
+    assert dbtest.READY.search(first + "LOG:  database system is ready to accept connections\n")

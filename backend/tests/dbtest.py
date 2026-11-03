@@ -10,6 +10,7 @@ These tests run only in CI (`make test-db`); this machine's `make check` leaves 
 
 import itertools
 import pathlib
+import re
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Self
 
@@ -33,6 +34,9 @@ SUPERUSER = "postgres"
 OWNER_ROLE = "template_fastapi_nextjs_owner"
 APP_ROLE = "template_fastapi_nextjs_app"
 STARTUP_TIMEOUT_SECONDS = 120
+# The image starts a temporary server for the initdb scripts, stops it and starts the real one, so the message appears
+# twice. The pattern itself requires both: LogMessageWaitStrategy returns on the first match and ignores its times=.
+READY = re.compile(r"ready to accept connections.*ready to accept connections", re.DOTALL)
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,12 +71,7 @@ class Server:
             )
             .with_copy_into_container(f"{OWNER_ROLE}\n".encode(), "/run/secrets/db_owner_password", 0o444)
             .with_copy_into_container(f"{APP_ROLE}\n".encode(), "/run/secrets/db_app_password", 0o444)
-            # the image restarts the server once after running the initdb scripts
-            .waiting_for(
-                LogMessageWaitStrategy("database system is ready to accept connections", times=2).with_startup_timeout(
-                    STARTUP_TIMEOUT_SECONDS
-                )
-            )
+            .waiting_for(LogMessageWaitStrategy(READY).with_startup_timeout(STARTUP_TIMEOUT_SECONDS))
         )
         container.start()
         return cls(container)

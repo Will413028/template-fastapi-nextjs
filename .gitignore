@@ -1,0 +1,12 @@
+.env
+.secrets/
+.DS_Store
+frontend/test-report.json
+backend/coverage.xml
+/bin/
+__pycache__/
+.venv/
+backend/test-report.xml
+.pytest_cache/
+.ruff_cache/
+AGENTS.local.md

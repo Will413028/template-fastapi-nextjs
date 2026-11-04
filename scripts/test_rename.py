@@ -53,6 +53,8 @@ class RenameTest(unittest.TestCase):
         self.assertIn('name = "ci-probe-backend"', self.read("backend/uv.lock"))
         self.assertIn('"name": "ci-probe-frontend"', self.read("frontend/package.json"))
         self.assertIn("github.com/Will413028/ci-probe/security", self.read("SECURITY.md"))
+        # the drift check against template-go-nextjs goes with the template's name
+        self.assertFalse((self.copy / "scripts/check_go_drift.py").exists())
 
     def test_repo_option(self) -> None:
         result = self.rename("ci-probe", "--repo", "acme/shop")

@@ -1,6 +1,6 @@
 # API Design Rules
 
-本專案的 API 是 contract-first：`backend/api/openapi.yaml`（OpenAPI 3.0.3）是 API 形狀與限制的唯一來源，HTTP 層在 `backend/internal/httpapi`，業務邏輯在 `backend/internal/modules/<m>` 的 service。決策來源見 [ADR api-and-auth](../adr/2026-10-18-api-and-auth-baseline.md) 與 [ADR go-backend](../adr/2026-10-18-go-backend.md)。
+本專案的 API 是 contract-first：`backend/api/openapi.yaml`（OpenAPI 3.0.3）是 API 形狀與限制的唯一來源，HTTP 層在 `backend/internal/httpapi`，業務邏輯在 `backend/internal/modules/<m>` 的 service。決策來源見 [ADR api-and-auth](../adr/2026-10-18-api-and-auth-baseline.md) 與 [ADR FastAPI 版後端](../adr/2026-11-05-fastapi-backend-stack.md)。
 
 ## 契約是唯一來源
 

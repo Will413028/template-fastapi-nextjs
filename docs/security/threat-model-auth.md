@@ -1,6 +1,6 @@
 # 威脅建模：認證與 session
 
-用 STRIDE 逐項檢查帳號、密碼、session 與角色在目前程式碼裡的做法。每個緩解措施都寫出程式碼或證明它的測試；找不到程式碼的威脅列為 Open。設計的決定在 [API 與認證基準](../adr/2026-10-18-api-and-auth-baseline.md)（D4 session、D5 CSRF、D6 密碼與節流、D7 授權）與 [Go 後端](../adr/2026-10-18-go-backend.md)（D5 資料庫角色）。
+用 STRIDE 逐項檢查帳號、密碼、session 與角色在目前程式碼裡的做法。每個緩解措施都寫出程式碼或證明它的測試；找不到程式碼的威脅列為 Open。設計的決定在 [API 與認證基準](../adr/2026-10-18-api-and-auth-baseline.md)（D4 session、D5 CSRF、D6 密碼與節流、D7 授權）與 [FastAPI 版後端](../adr/2026-11-05-fastapi-backend-stack.md)（D7 資料庫角色）。
 
 路徑相對於 repo 根目錄；`auth/` 指 `backend/src/app/modules/auth/`，`web/` 指 `backend/src/app/web/`，測試在 `backend/tests/`（`*_db.py` 需要資料庫，只在 CI 跑）。還沒移植的機制那幾列仍指 Go 版 `template-go-nextjs@560106d` 的檔案（`httpapi/` 是它的 `backend/internal/httpapi/`，Go 的 `auth/*.go` 是它的 `backend/internal/modules/auth/`），由計畫步驟 7（`docs/plans/2026-11-03-fastapi-template.md`）改寫。
 

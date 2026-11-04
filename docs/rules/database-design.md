@@ -1,6 +1,6 @@
 # Database Design Rules
 
-本專案使用 PostgreSQL 18、SQLAlchemy 2.0 async 加 asyncpg，schema 由 Alembic 管理（`docs/plans/2026-11-03-fastapi-template.md` 的 D2、D3）。命名、型別、FK、角色等 schema 規則沿用 Go 版（[ADR go-backend](../adr/2026-10-18-go-backend.md)），兩版的 schema 相同，由測試守住（`backend/tests/test_schema_db.py`）。
+本專案使用 PostgreSQL 18、SQLAlchemy 2.0 async 加 asyncpg，schema 由 Alembic 管理（`docs/plans/2026-11-03-fastapi-template.md` 的 D2、D3）。命名、型別、FK、角色等 schema 規則沿用 Go 版（[ADR FastAPI 版後端](../adr/2026-11-05-fastapi-backend-stack.md) D6、D7），兩版的 schema 相同，由測試守住（`backend/tests/test_schema_db.py`）。
 
 ## Schema 與查詢的位置
 
@@ -43,13 +43,13 @@ Index("sessions_id_key", "id", unique=True)
 
 ## 模組邊界
 
-- 跨模組只允許 FK 指向 `users`（ADR go-backend Invariants）。
+- 跨模組只允許 FK 指向 `users`（Go 版 ADR go-backend 的 Invariants；本 repo 由 [ADR FastAPI 版後端](../adr/2026-11-05-fastapi-backend-stack.md) D5 的模組規則承接）。
 - 模組的查詢**NEVER** `SELECT` 或 `JOIN` 其他模組的表，也不 import 其他模組的 `models.py`（import-linter 的 `modules-independent` 會擋）；FK 用字串，不需要對方的模型。
 - 需要別的模組的資料時，經由該模組的 service 取得。
 
 ## 型別選擇
 
-照 [PostgreSQL wiki「Don't Do This」](https://wiki.postgresql.org/wiki/Don%27t_Do_This)（ADR go-backend D3）：
+照 [PostgreSQL wiki「Don't Do This」](https://wiki.postgresql.org/wiki/Don%27t_Do_This)（ADR FastAPI 版後端 D6）：
 
 | 場景 | 使用 | 避免 |
 |------|------|------|
@@ -63,8 +63,8 @@ Index("sessions_id_key", "id", unique=True)
 | 布林 | `boolean` | `smallint`、`'Y'/'N'` |
 | 二進位（雜湊等） | `bytea` + `CHECK (octet_length(x) = n)` | hex 字串存 `text` |
 
-- 主鍵由 DB 的 `uuidv7()`（PostgreSQL 18 內建）產生，JSON 裡是字串。UUIDv7 依時間排序，可以直接當 keyset 分頁的排序鍵（ADR go-backend D3）。
-- 長度與 enum 的 CHECK 數值必須和 `backend/api/openapi.yaml` 一致：契約是第一道防線，CHECK 是第二道，任何不合長度或 enum 的資料在 DB 層就寫不進去（ADR go-backend Expected Outcome）。
+- 主鍵由 DB 的 `uuidv7()`（PostgreSQL 18 內建）產生，JSON 裡是字串。UUIDv7 依時間排序，可以直接當 keyset 分頁的排序鍵（ADR FastAPI 版後端 D6）。
+- 長度與 enum 的 CHECK 數值必須和 `backend/api/openapi.yaml` 一致：契約是第一道防線，CHECK 是第二道，任何不合長度或 enum 的資料在 DB 層就寫不進去（ADR FastAPI 版後端 Expected Outcome）。
 - 新增狀態值時，在同一個 PR 改契約的 `enum`、模型的 `CheckConstraint`，並產生 revision（autogenerate 抓不到 CHECK 的變更，要手動補進 revision；`tests/test_schema_db.py` 的 catalog 比對會擋下漏補）。
 
 ```python
@@ -96,7 +96,7 @@ class User(Base):
 ## 時間戳記
 
 - 對外的資源表（API 回傳 `updated_at` 的）都有 `created_at`、`updated_at timestamptz NOT NULL DEFAULT now()`。
-- **這些表的每個 UPDATE 查詢都明寫 `updated_at = now()`**（SQLAlchemy：`.values(..., updated_at=func.now())`），不靠 trigger，也不由 Python 傳值；並有測試覆蓋（Go 版 `TestUpdatedAtChanges`，步驟 4 移植）（ADR go-backend D3）。
+- **這些表的每個 UPDATE 查詢都明寫 `updated_at = now()`**（SQLAlchemy：`.values(..., updated_at=func.now())`），不靠 trigger，也不由 Python 傳值；並有測試覆蓋（Go 版 `TestUpdatedAtChanges`，步驟 4 移植）（ADR FastAPI 版後端 D6）。
 - 例外：內部的狀態表可以由 service 傳入時間，讓測試控制時鐘（`sign_in_throttles.updated_at` 與 `sessions.last_used_at`、`created_at`、`expires_at` 由 service 的 `now` 傳入，限流與期限的測試因此不用等真實時間；`app/modules/auth/repository.py`）。
 - 連線的 `TimeZone` 固定為 UTC。
 
@@ -107,7 +107,7 @@ update(User).where(User.id == user_id).values(is_disabled=disabled, updated_at=f
 
 ## Migration
 
-Alembic（ADR go-backend D2 在 FastAPI 版改選 Alembic，見 `docs/plans/2026-11-03-fastapi-template.md` 的 D2）。表定義在各模組的 `models.py`，revision 在 `backend/src/app/main/migrations/versions/`。
+Alembic（[ADR FastAPI 版後端](../adr/2026-11-05-fastapi-backend-stack.md) D3）。表定義在各模組的 `models.py`，revision 在 `backend/src/app/main/migrations/versions/`。
 
 ### 產生
 
@@ -141,7 +141,7 @@ Alembic（ADR go-backend D2 在 FastAPI 版改選 Alembic，見 `docs/plans/2026
 
 ## DB 角色與權限
 
-照 OWASP 最小權限（ADR go-backend D5）：
+照 OWASP 最小權限（ADR FastAPI 版後端 D7）：
 
 - `POSTGRES_USER`（superuser）只用於初始化與容器內維運，app **NEVER** 用它連線。
 - migrate 用 owner 角色（`DB_OWNER_USER`，例如 `template_fastapi_nextjs_owner`）：擁有 database 與 `public` schema，不是 superuser，經 `MIGRATE_DATABASE_URL` 連線。

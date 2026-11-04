@@ -41,7 +41,13 @@ BRAND_FILES = (
     "README.md",
 )
 # May keep naming the template: the plans record its history, and this script and its test name the placeholder.
-KEPT = ("docs/plans/", "scripts/rename.py", "scripts/test_rename.py")
+KEPT = (
+    "docs/plans/",
+    "scripts/rename.py",
+    "scripts/test_rename.py",
+    *(DROPPED := ("scripts/check_go_drift.py", "scripts/test_check_go_drift.py")),
+)
+# DROPPED: the drift check against template-go-nextjs only means something in the template; a renamed project loses it.
 NAME_PATTERN = re.compile(r"[a-z](?:[a-z0-9-]*[a-z0-9])?")
 # PostgreSQL limits identifiers to 63 bytes; the longest one built from the name is <db>_owner.
 MAX_NAME = 63 - len("_owner")
@@ -132,6 +138,9 @@ def main() -> int:
         if PLACEHOLDER.search((root / rel).read_text(encoding="utf-8")):
             print(f"error: {rel} still names the placeholder after the rename; fix scripts/rename.py", file=sys.stderr)
             return 1
+    for rel in DROPPED:
+        (root / rel).unlink(missing_ok=True)
+        print(f"Removed {rel}")
     print("Done! Review the changes with: git diff")
     print("An existing .env keeps the old database and role names; compare it with .env-example.")
     return 0

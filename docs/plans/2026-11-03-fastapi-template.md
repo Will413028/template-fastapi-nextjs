@@ -181,7 +181,7 @@
   - 範圍：inventory 標步驟 4 的 5 個操作，含 owner 權限與分頁。
   - 消費端：`rg -n 'items' frontend/src`。
   - 驗收：對照 Go 版 `items_test.go`、`authz_test.go`；mutation：拿掉 owner 檢查，跨使用者讀取的測試要失敗；`backend/src/app/modules/items/router.py`、`service.py` 不再只有 docstring。
-- [ ] **5. 帳號濫用與管理**（被擋於：步驟 3）：一個 session 做不完（Go 版對應約 1,000 行加測試），2026-11-04 拆成 5a、5b、5c，依序做，各自有驗收；下面「範圍」「驗收」是整步的總表，各子步驟分走。
+- [x] **5. 帳號濫用與管理**（被擋於：步驟 3）：一個 session 做不完（Go 版對應約 1,000 行加測試），2026-11-04 拆成 5a、5b、5c，依序做，各自有驗收；下面「範圍」「驗收」是整步的總表，各子步驟分走。
   - 範圍：inventory 標步驟 5 的 5 個 admin 操作、`recover-admin`、trusted devices、登入鎖定、稽核紀錄、HIBP 密碼檢查（ADR account-abuse-and-lifecycle），以及附件 `auth-carryover.md` 標 5 的列：`ADMIN` 存取標記與 `insufficient_role`、`authz.denied`；登出全部、停用與 recover 也刪 trusted devices；清理也刪過期的 devices；「尚未實作」集合刪除；加回清整個帳號節流的 `clear_login_throttles`（3c 刪掉，附件第 28 列）；`recover-admin` 與 `seed-admin` 共用建 `AuthService` 的組裝，不再各自塞用不到的 session 期限（3c design review）。
   - 驗收：對照 Go 版 `backend/internal/httpapi/throttle_test.go`、`users.go` 對應的 `authz_test.go` 案例、`backend/internal/modules/auth/service_test.go` 的 devices 與鎖定案例；mutation：把鎖定門檻加大，鎖定測試要失敗。
 - [x] **5a. ADMIN 標記與 admin 操作**（被擋於：無）
@@ -194,9 +194,14 @@
   - 執行中的決定與偏離（2026-11-04）：
     - 裝置 cookie 名稱由 `Settings.device_cookie_name` 決定（跟 session cookie 同規則），`SessionCookie` 多一個 `device_name` 欄位與 `device()`；`sign_in` 回傳 `SignedIn`（user、session、device）。
     - `/code-review medium` 9 項（blocking 0）：修 1（威脅模型仍寫 `_client_key`）；駁回 5：信任裝置登入成功也把帳號合計歸零（ADR D4 2026-11-04 修訂與 D10 的 B 寫明，C 已被否決）、被拒的嘗試也更新 `updated_at` 使「一天沒有嘗試」延後（ADR 的字面意思，D10 C 已記這個性質）、鎖定狀態只靠每小時清理過期（最多晚 1 小時，與 Go 版相同）、鎖定拒絕前已計入該來源的退避（Go 版同順序）、`SessionCookie` 名稱（nit）；記錄 3（皆與 Go 版相同）：一個瀏覽器只有一個裝置 cookie，兩個帳號共用同一瀏覽器時互相覆蓋信任——觸發條件：有多帳號共用瀏覽器的需求時改成 cookie 存多個 token；不帶 cookie 的客戶端每次成功都新增一列 `trusted_devices`、沒有每人上限——觸發條件：任一使用者的裝置列超過 100 時加上限或去重；一次登入開 4–5 次連線——觸發條件：登入延遲或連線池等待出現在監控時合併成一個交易。
-- [ ] **5c. recover-admin、HIBP 與收掉「尚未實作」集合**（被擋於：5b）
+- [x] **5c. recover-admin、HIBP 與收掉「尚未實作」集合**（被擋於：5b）
   - 範圍：`recover-admin` 與 `make recover-admin`（附件第 14、50 列），和 `seed-admin` 共用建 `AuthService` 的組裝；HIBP 與 `PASSWORD_HIBP_CHECK`（第 11、48 列；用標準庫 HTTP，不加依賴；要加依賴就停下問）；刪掉 `UNIMPLEMENTED`；補回 `TestCredentialsNeverLogged`、`TestSecurityEventsLogged` 的 HIBP 與 `authz.denied` 部分。
   - 驗收：對照 `TestRecoverAdmin`、`TestCreateUserBreachedPassword`；mutation：HIBP 失敗改成拒絕，失敗放行的測試要失敗。
+  - 執行中的決定與偏離（2026-11-04）：
+    - HIBP 用戶端放 `app.platform.hibp`（標準庫 `http.client` 在執行緒裡跑，沒有加依賴）；`AuthService` 收一個 `BreachCheck`，捕捉 `HIBPError` 後放行。錯誤訊息不含請求路徑，所以 Go 版「5 字元前綴寫進日誌」那項接受的風險在這裡不存在。
+    - `AuthService` 的兩個 session 期限合成 `SessionLimits`（有預設值），admin 命令不再傳；`seed-admin` 與 `recover-admin` 共用 `app.main.seed.run_admin_command`。
+    - 刪 `UNIMPLEMENTED` 之後，`test_routes.py` 改成用「路由全部 operation，再替換或拿掉幾個」的 app 來測。
+    - `/code-review medium` 7 項（blocking 0）：修 4——補 `User-Agent`；整個檢查加一個 deadline（`asyncio.timeout`，DNS 也算在內）；`recover_admin` 先確認帳號是 admin 才雜湊（打錯帳號就回報「no admin account」，不會先去查 HIBP）；role 改用 `ROLE_ADMIN` 常數，不寫死字串。記錄 1：每次檢查都開新的 TLS 連線，跑在預設執行緒池——觸發條件：監控看到註冊延遲或預設執行緒池排隊時，改成專用池或重用連線。駁回 2：Makefile 的讀密碼流程和 `seed` 重複（nit，Go 版也一樣）；admin 命令也是失敗就放行（與 Go 版 `auth.go:154`、ADR account-abuse-and-lifecycle 一致）。
 - [ ] **6. rename 腳本與 smoke test**（被擋於：步驟 1）
   - 範圍：恢復步驟 1 拿掉的根目錄 `make rename` target 與 CI rename job（步驟 1 時 rename 腳本還是 Go 版，先移除）；`scripts/rename.py` 改成 Python 版（套件名、DB 與角色名、image、品牌字，沒有 module path）；CI rename job。（2a 起 `backend/tests/dbtest.py` 寫著角色與資料庫的佔位名稱，要納入替換或改成從設定讀取。）
   - 驗收：CI 跑 `make rename NAME=ci-probe` 後 `rg` 找不到佔位名稱、pytest 通過；mutation：刪掉一個替換規則，smoke job 要失敗。
@@ -285,6 +290,7 @@
 | 5 帳號濫用與管理 | 進行中（5a 完成） | | | |
 | 5a ADMIN 標記與 admin 操作 | 完成 | CI：run `41722671968` 五個 job 全綠（84 個 db 測試、335 個非 db 測試）、Security run `41722671961` 全綠。本機：`make -C backend check` exit 0、`check_locks.py` 通過、pre-push 全過；先寫的 `test_a_user_who_is_not_an_admin_is_refused_and_it_is_logged` 在實作前 3 個參數都失敗（405）。本機 mutation（`red-proof.py`，baseline 與 canary 先過）2 個全被殺：`admin` 不檢查角色、`listUsers` 標記換成 `SIGNED_IN`。CI mutation：`_keep_an_admin` 永不拒絕（PR #16，run `41723074893`，4 個預期的 db 測試失敗：唯一 admin 不能停用、並行停用留一個、admin 刪除、唯一 admin 刪自己）。審查：`/code-review medium` 8 項（blocking 0）：修 3（角色常數共用 `app.platform.principal.ROLE_ADMIN`、同一交易的 audit 時間與重新驗證用同一個 `now`、過時註解）、駁回 5（admin 停用或刪除自己時不清 cookie：下個請求 middleware 會清，Go 版相同；重複停用也寫 audit、每次停用都鎖 admin 列、停用不寫應用日誌：與 Go 版 `SetDisabled` 相同） | 第 2 輪審查沒跑：修正是重構，由既有測試與 CI 證明 | `d8272a2`（拆分）、`6827c63`；下一步：5b |
 | 5b trusted devices 與帳號鎖定 | 完成 | CI：run `41763385013` 全綠（90 個 db 測試、339 個非 db 測試）、Security run `41763384999` 全綠；第一次 run `41763118445` 只有 `test_an_admin_sees_and_lifts_the_lock` 失敗，是測試的預期值算錯（等待中的來源那次不計入帳號合計，104 不是 105），`6d159c1` 修正。本機：`make -C backend check` exit 0、`check_locks.py` 通過、pre-push 全過；先寫的非 db 測試在實作前無法載入（`SessionCookie` 沒有 `device_name`）。本機 mutation（`red-proof.py`）：成功只清該來源不含帳號合計、裝置 cookie 改 `Lax`、`deleteSignInLock` 標記換成 `SIGNED_IN`，全被殺；從 `ADMIN_OPERATIONS` 拿掉解鎖在本機存活（只由 db 測試的 `set(AUDITED)` 抓）。CI mutation（PR #18，run `41763478998`）：鎖定門檻 101 加 `delete_user_trusted_devices` 不刪，4 個預期的 db 測試失敗（鎖定與信任裝置、裝置依帳號、全部登出與停用各一）；PR #17 的第一版 mutation 被 ruff 擋在 db 測試之前，不算。審查：`/code-review medium`，處理見 5b 的「執行中的決定與偏離」 | 第 2 輪審查沒跑：唯一的修正是文件符號名稱 | `d841c0c`、`6d159c1`；下一步：5c |
+| 5c recover-admin 與 HIBP | 完成 | CI：run `41820270850` 全綠（94 個 db 測試、353 個非 db 測試）、Security run `41820270959` 全綠。本機：`make -C backend check` exit 0、`check_locks.py` 通過。本機 mutation（`red-proof.py`）全被殺：HIBP 失敗改成拒絕、拿掉 breach 檢查、檢查時不先做 NFKC、送出完整雜湊、不帶 padding、count 0 也算外洩、忽略 HTTP 狀態、拿掉 deadline、拿掉 User-Agent、路由檢查放過沒有 route 的 operation、recover 不限定 admin、recover 不啟用帳號。CI mutation（PR #19，run `41820506403`）：recover 不刪 sessions 與信任裝置、不清節流，1 個預期的 db 測試失敗。審查：`/code-review medium`，處理見 5c 的「執行中的決定與偏離」 | 第 2 輪審查沒跑：每個修正都有先失敗後通過的測試或 mutation。第一次 push 時 pre-push 的 `backend-check` 失敗過一次，輸出被截斷、看不到原因；重推就通過了，本機連跑 6 次也都通過，原因未查明 | `f45ed34`；下一步：6 |
 | 6 rename | 未開始 | | | |
 | 7 漂移檢查 | 未開始 | | | |
 | 8 收尾 | 未開始 | | | |

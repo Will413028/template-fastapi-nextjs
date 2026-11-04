@@ -30,7 +30,7 @@
 
 | 不變量 | 依賴它的機制 |
 |---|---|
-| API 契約與 Go 版相同（路徑、方法、request／response schema、problem code） | `frontend/src/lib/api/`、前端生成型別、步驟 1–5 的契約測試 |
+| API 契約與 Go 版 `560106d` 相同（路徑、方法、request／response schema、problem code）；D11 起是分家點，不再跟 Go 版之後的改動 | `frontend/src/lib/api/`、前端生成型別、步驟 1–5 的契約測試 |
 | 錯誤一律 RFC 9457 problem 加機器可讀的 `code` | 前端錯誤處理、`docs/rules/api-design.md`、步驟 2b 的 exception handler |
 | DB 分 owner 與 app 兩個角色，app 角色只有 DML | `deploy/postgres/initdb/10-roles.sh`、compose 的 `MIGRATE_DATABASE_URL`／`DATABASE_URL`、CI stack job 的 `intruder` 檢查 |
 | 同源：瀏覽器看到前端與 `/api` 同一個網域，由 Vercel rewrite 轉送 `/api/*`（D6） | `frontend/vercel.json` 的 `/api/` route、CI policy job 的 `vercel.json` 檢查、cookie 的 `__Host-` 前綴、CSRF 防護（`Sec-Fetch-Site`）、前端 `src/proxy.ts` 的 CSP `connect-src 'self'` |
@@ -208,7 +208,7 @@
 - [ ] **7. 與 Go 版的漂移檢查與文件**（被擋於：D4、步驟 3）
   - 2026-11-05 拆成 7a、7b（一個 session 做不完；依序做，各自有驗收）：
     - [x] **7a 漂移腳本與 ADR**：`scripts/check_go_drift.py` 與測試（D4）；補回步驟 1 漏搬的 `frontend/AGENTS.md`（同源段改寫成 Vercel rewrite）；ADR `docs/adr/2026-11-05-fastapi-backend-stack.md`（D1–D5、D7、D8，加上 Go 版 ADR go-backend 仍成立的型別與 DB 角色規則）與 `docs/adr/2026-11-05-vercel-rewrite-and-cloudflare-tunnel.md`（D6）；刪除 `go-backend` ADR 並改指向；原 ADR `api-and-auth-baseline` 標 2026-11-05 修訂。dependabot 的 cloudflared 與 digest 在步驟 1 已完成。驗收：腳本對故意改過的共用檔回報差異、對未改的回報乾淨（`scripts/test_check_go_drift.py` 與 mutation）；`--ref 560106d` 對本 repo 回報乾淨；D6 的 ADR 列出取代的段落，原 ADR 那幾段都有修訂標記。
-    - [ ] **7b 部署指南與其餘文件**：下面範圍裡剩下的文件改寫（`docs/deploy-vps.md`、威脅模型、個資盤點、`docs/frontend-known-issues.md`、`docs/rules/api-design.md` 的 Go 專屬段、`frontend/README.md`）與下面驗收裡的兩個 `rg` 掃描與第一次部署檢查清單（D6 的 ADR 檔名：`2026-11-05-vercel-rewrite-and-cloudflare-tunnel.md`）。
+    - [ ] **7b 部署指南與其餘文件**（被擋於：無；D11 已決）：先做 D11 的後果：ADR `2026-11-05-fastapi-backend-stack.md` 的標題、Context、D8 與 Revocation Triggers 改成「以 `560106d` 為分家點」並記下 D11；刪除 `scripts/check_go_drift.py`、`scripts/test_check_go_drift.py` 與 `rename.py` 的 DROPPED（剩下真正共用的檔只有 LICENSE、SECURITY.md、security.yml 這類，不值得一支腳本）；部署拓樸 ADR 的 Rationale 與 Expected Outcome 不再拿「能用比對腳本追蹤 Go 版」當理由；`README.md` 第 3 行「same HTTP contract and the same Next.js frontend」改成以 `560106d` 為分家點（全域約束本來就以 `560106d` 為規格，不用改）。驗收另加：`rg -n 'check_go_drift' -g '!docs/plans/**' .` 沒有結果。然後：下面範圍裡剩下的文件改寫（`docs/deploy-vps.md`、威脅模型、個資盤點、`docs/frontend-known-issues.md`、`docs/rules/api-design.md` 的 Go 專屬段、`frontend/README.md`）與下面驗收裡的兩個 `rg` 掃描與第一次部署檢查清單（D6 的 ADR 檔名：`2026-11-05-vercel-rewrite-and-cloudflare-tunnel.md`）。
   - 範圍：依 D4 做共用檔清單與比對腳本；`docs/` 的 Go 專屬段改寫；刪除 `go-backend` ADR，D1–D3、D6 寫成本 repo 的 ADR；D6 的 ADR 取代 Go 版 ADR `api-and-auth-baseline` 的 D1（拓樸）、D6（IP 來源）、D8（proxy 部分），以及它的約束段、Expected Outcome、Revocation Triggers 中提到 Caddy 的部分，照 ADR 修訂流程在原 ADR 標註；D6 的 ADR 寫明 dev 與正式不再是同一套 proxy 這個代價；`docs/deploy-vps.md` 改寫成「Vercel + VM + Cloudflare Tunnel」部署指南（含 Vercel Function 區域、前端 DNS 不開代理、密鑰輪換步驟）；`docs/security/threat-model-auth.md` 的信任邊界改寫（瀏覽器 → Vercel → Cloudflare → backend）；`docs/privacy/data-inventory.md` 把 Caddy log 換成 Vercel 與 Cloudflare（兩者都終止 TLS，是新的資料處理者）；`docs/frontend-known-issues.md` 的同源說明；`frontend/AGENTS.md`、`frontend/README.md`；`.github/dependabot.yml` 的 caddy 註解換成 cloudflared，cloudflared image 釘 digest。
   - 驗收：腳本對一個故意改過的共用檔回報差異，對未改的回報乾淨；`rg -n -i 'golang|gofmt|sqlc|go test|golangci' docs/ AGENTS.md README.md` 沒有結果，或每筆都附保留理由；`rg -n -i -g '!docs/plans/**' -g '!docs/adr/2026-10-18-api-and-auth-baseline.md' -g '!docs/adr/<D6 ADR 檔名>' 'caddy|TRUSTED_PROXIES|SITE_ADDRESS|lb_try_duration|172\.30' .` 沒有結果（原 ADR 只標修訂、不改原文；D6 的 ADR 必須寫出它取代了什麼；兩者都排除）；D6 的 ADR 檔案存在並列出它取代原 ADR 的哪幾段，`rg -n '修訂' docs/adr/2026-10-18-api-and-auth-baseline.md` 在那幾段都找得到標記；部署文件有「第一次部署檢查清單」，逐項對應前提段「未驗證」那條（cookie 穿過 rewrite、`X-Real-IP`、`Host`、transform 覆寫、`no-store` 不被快取、SSR 帶密鑰、access log 的 `client_ip` 是使用者位址而不是 cloudflared 的、HSTS、改環境變數後是否要 redeploy、tunnel 只轉送 `/api/*`、從另一個網域對 `/api/sessions` 發 POST 經 Vercel 收到 403 `cross_origin_request`），每項附確認用的指令；`rg -c` 檢查清單的項數等於那條列的項數。
 - [ ] **8. 收尾**：完成定義逐項核對；design-review skill 獨立審查；quality-baseline skill 重跑一次確認等級；漂移檢查接進 CI 或週回顧；延後項搬回專案頁 Pending。驗收：`rg -n '^\| ' inventory.md | rg -v '完成 \|$|^[^|]*\| (方法|子命令|路徑|檔案)|---'` 沒有結果（每一列狀態都是完成）；CI 全綠的 run 連結。
@@ -266,6 +266,12 @@
 - **D9 `jsonschema` 列為直接依賴**（狀態：已決 2026-11-03，Will；擋住步驟：無）
   - 結論：列入 `backend/pyproject.toml` 的 `dependencies`，`jsonschema==4.26.0`（`app.web.validation` 直接用它的 `ValidationError`；lock 裡已是這個版本，不多裝套件）。
 
+- **D11 Go 版改用 Protobuf＋Connect 後，還要不要和它共用契約與前端**（狀態：已決 2026-11-05，Will；擋住步驟：7b）
+  - 事實：Go 版 `dev`（f91118e）把 REST 與 `openapi.yaml` 刪掉，改成根目錄 `api/` 的 `.proto` 加 Connect，前端 `src/lib/api/` 重寫（Go 版 ADR `2026-11-03-api-contract-protobuf-connect.md`）。那份 ADR 寫明選 Connect 的決定性理由是跟 hawkr 一致，讓 Go 專案只用一套工具，技術上和 OpenAPI 相近。
+  - A：跟上 Connect：proto 照搬、backend 換 Python 的 Connect server、前端照搬 Go 版——兩版又相同；代價是 21 支 API 的 HTTP 層與測試重寫，Python 的 Connect 實作成熟度未查證。
+  - B：分家，維持 OpenAPI——`560106d` 是最後的共同點，之後 Go 版的前端修正手動挑著搬；代價是兩版前端漸行漸遠，漂移腳本對契約與前端失去意義。
+  - C：先不決定——漂移腳本滿版差異，題目遲早要回答。
+  - 結論：B（Will 2026-11-05）。取代 D4 的共用前提與全域約束裡「前端與契約和 Go 版相同」的部分；後果寫進步驟 7b。重新評估：有 Python 專案要和 hawkr 共用 Connect 契約工具時。
 - **D10 登入成功時清除哪些節流列**（狀態：已決 2026-11-04，Will；擋住步驟：3c 的節流部分）
   - A：清該帳號所有來源的列（Go 版照搬）——攻擊者分散在多個位址時，本人每登入一次，每個攻擊來源都拿回 5 次免等待的機會。
   - B：只清成功的那個來源；步驟 5 的帳號合計（`client_key` 為空字串的列）成功時歸零（NIST SP 800-63B-4 3.2.2「成功後忽略先前的失敗」，它的計數不分來源）；admin 解鎖與 `recover-admin` 仍清整個帳號（建議）。業界：django-axes 以帳號＋IP 鎖定時只重設成功的那組（讀原始碼）；Auth0 以使用者＋IP 封鎖，文件沒有寫別處成功會解鎖（推論）；OWASP device cookies 不讓別處的成功解鎖其他來源。代價：3c 到步驟 5 之間沒有裝置 cookie，本人與攻擊者在同一個 NAT 後面時會卡在那個位址的退避（每輪最多 1 小時），步驟 5 的信任裝置解決。

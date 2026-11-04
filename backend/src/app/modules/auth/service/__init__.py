@@ -342,8 +342,6 @@ class AuthService:
             user_id = await repository.recover_admin(conn, account=key, password_hash=password_hash)
             if user_id is None:
                 raise NoSuchAdminError
-            await _end_everywhere(conn, user_id)
-            await repository.clear_login_throttles(conn, key)
             await repository.insert_audit_event(
                 conn,
                 repository.AuditRecord(

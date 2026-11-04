@@ -798,7 +798,9 @@ def test_an_admin_sees_and_lifts_the_lock(api: AuthAPI) -> None:
     lock_out(api, "alice", 100)
     for _ in range(5):
         api.sign_in("alice", WRONG, address="198.51.0.1")  # one address also waits
-    assert api.do("GET", path, admin).json() == {"locked": True, "failures": 105}
+    # lock_out's first failure was from 198.51.0.1, so its 5th failure comes on the 4th attempt here; the 5th waits
+    # and is not counted for the account
+    assert api.do("GET", path, admin).json() == {"locked": True, "failures": 104}
     assert api.do("DELETE", path, admin).status_code == 204
     # every count of the account goes, the per-client waits too (plan D10)
     assert api.sql("SELECT 1 FROM sign_in_throttles WHERE account_key = 'alice'") == []

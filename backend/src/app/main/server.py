@@ -11,10 +11,11 @@ from app.main.factory import Deps, Modules, create_app
 from app.main.logs import configure_logging
 from app.main.routes import RouteContractError
 from app.modules.auth.dependencies import Auth, SessionCookie
-from app.modules.auth.service import AuthService
+from app.modules.auth.service import AuthService, SessionLimits
 from app.modules.items.service import ItemsService
 from app.platform.config import ConfigError, Settings
 from app.platform.db import Database
+from app.platform.hibp import HIBPClient
 from app.web.contract import Contract, ContractError
 from app.web.origin import OriginPolicy
 from app.web.ratelimit import IPLimiter
@@ -41,7 +42,11 @@ def run(environ: Mapping[str, str] | None) -> int:
         return 1
     configure_logging(settings.mode)
     database = Database.open(settings.database)
-    auth = AuthService(database.engine, session_absolute=settings.session_absolute, session_idle=settings.session_idle)
+    auth = AuthService(
+        database.engine,
+        sessions=SessionLimits(absolute=settings.session_absolute, idle=settings.session_idle),
+        breach=HIBPClient() if settings.password_hibp_check else None,
+    )
     try:
         app = create_app(
             Deps(

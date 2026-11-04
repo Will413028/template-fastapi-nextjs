@@ -6,6 +6,8 @@ The input is checked against the contract's CreateUserRequest, the rules POST /a
 generated from it (app.web.contract_models, which gen-check keeps in step with the contract), and the password against
 the common-password list. Messages name the variable and the rule, never the value. An existing account is left
 exactly as it is: seed-admin never promotes or changes a user.
+
+`app recover-admin` (app.main.recover) shares the input checks and the AuthService assembly.
 """
 
 import asyncio
@@ -15,14 +17,15 @@ from typing import TYPE_CHECKING
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.modules.auth.service import AuthService, account_key
-from app.platform.config import DEFAULT_SESSION_ABSOLUTE, DEFAULT_SESSION_IDLE, ConfigError, SeedSettings
+from app.modules.auth.service import AuthService, NoSuchAdminError, account_key
+from app.platform.config import ConfigError, SeedSettings
 from app.platform.db import Database
 from app.platform.errors import AppError, Kind
+from app.platform.hibp import HIBPClient
 from app.web.contract_models import CreateUserRequest
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Awaitable, Callable, Mapping
 
 # The environment variable each CreateUserRequest property comes from, for messages.
 _INPUT_VARS = {"account": "ADMIN_ACCOUNT", "password": "ADMIN_PASSWORD"}
@@ -59,28 +62,58 @@ async def seed_admin(service: AuthService, account: str, password: str) -> str:
     return f"account {name!r} already exists; nothing changed"
 
 
-async def _run(settings: SeedSettings) -> str:
-    database = Database.open(settings.database)
-    # the session limits do not matter here: seed-admin issues no session
-    service = AuthService(database.engine, session_absolute=DEFAULT_SESSION_ABSOLUTE, session_idle=DEFAULT_SESSION_IDLE)
+async def recover_admin(service: AuthService, account: str, password: str) -> str:
+    """Gives an existing admin a new password, enables it and signs it out everywhere (AuthService.recover_admin): the
+    way back when every admin is disabled, locked out or has lost the password. The input is checked like
+    seed_admin's; SeedError for input the rules refuse or an account that is not an admin."""
+    validate_admin_input(account, password)
+    name = account_key(account)
     try:
-        return await seed_admin(service, settings.admin_account, settings.admin_password)
+        await service.recover_admin(account, password)
+    except AppError as err:
+        if err.kind is not Kind.VALIDATION:
+            raise
+        msg = f"ADMIN_PASSWORD: {err.detail} ({err.code})"
+        raise SeedError(msg) from None
+    except NoSuchAdminError:
+        msg = f"no admin account {name!r}: recover-admin changes only an existing admin"
+        raise SeedError(msg) from None
+    return f"admin account {name!r} recovered: new password set, enabled, signed out everywhere"
+
+
+type AdminCommand = Callable[[AuthService, str, str], Awaitable[str]]
+
+
+async def _run(settings: SeedSettings, command: AdminCommand) -> str:
+    database = Database.open(settings.database)
+    # the session limits stay at their defaults: the admin commands issue no session
+    service = AuthService(
+        database.engine,
+        breach=HIBPClient() if settings.password_hibp_check else None,
+    )
+    try:
+        return await command(service, settings.admin_account, settings.admin_password)
     finally:
         service.close()
         await database.close()
 
 
-def run(environ: Mapping[str, str] | None) -> int:
+def run_admin_command(name: str, command: AdminCommand, environ: Mapping[str, str] | None) -> int:
+    """Runs seed-admin or recover-admin with ADMIN_ACCOUNT and ADMIN_PASSWORD, printing the outcome under name."""
     try:
         settings = SeedSettings.from_env(environ)
     except ConfigError as err:
-        sys.stderr.write(f"seed-admin: {err}\n")
+        sys.stderr.write(f"{name}: {err}\n")
         return 1
     try:
-        message = asyncio.run(_run(settings))
+        message = asyncio.run(_run(settings, command))
     except (SeedError, SQLAlchemyError, OSError) as err:
         # SQLAlchemy prints URLs with the password masked, and asyncpg's errors carry no password
-        sys.stderr.write(f"seed-admin: {err}\n")
+        sys.stderr.write(f"{name}: {err}\n")
         return 1
-    sys.stdout.write(f"seed-admin: {message}\n")
+    sys.stdout.write(f"{name}: {message}\n")
     return 0
+
+
+def run(environ: Mapping[str, str] | None) -> int:
+    return run_admin_command("seed-admin", seed_admin, environ)

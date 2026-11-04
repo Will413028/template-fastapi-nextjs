@@ -145,7 +145,7 @@ Alembic（ADR go-backend D2 在 FastAPI 版改選 Alembic，見 `docs/plans/2026
 
 - `POSTGRES_USER`（superuser）只用於初始化與容器內維運，app **NEVER** 用它連線。
 - migrate 用 owner 角色（`DB_OWNER_USER`，例如 `template_fastapi_nextjs_owner`）：擁有 database 與 `public` schema，不是 superuser，經 `MIGRATE_DATABASE_URL` 連線。
-- `serve` 與 `seed-admin` 用 app 角色（`DB_APP_USER`，例如 `template_fastapi_nextjs_app`），只有 DML，經 `DATABASE_URL` 連線。
+- `serve`、`seed-admin` 與 `recover-admin` 用 app 角色（`DB_APP_USER`，例如 `template_fastapi_nextjs_app`），只有 DML，經 `DATABASE_URL` 連線。
 - 角色由 `deploy/postgres/initdb/10-roles.sh` 建立；授權（含 `ALTER DEFAULT PRIVILEGES`）由 `app migrate` 每次套用後冪等執行，所以新表自動給 app 角色 DML。
 - Alembic 的 `alembic_version` 放在 owner 擁有的 `alembic` schema，app 角色沒有那個 schema 的 `USAGE`，改不了套用過哪些 revision（`tests/test_migrate_db.py`）。
 - 密碼不放在 URL 或環境變數：用 `*_FILE`（compose secrets 掛檔）傳入，URL 只寫使用者名稱。

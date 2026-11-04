@@ -11,6 +11,7 @@ from sqlalchemy import Integer, Row, case, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 
 from app.modules.auth.models import AuditEvent, Session, SignInThrottle, TrustedDevice, User
+from app.platform.principal import ROLE_ADMIN
 
 if TYPE_CHECKING:
     import uuid
@@ -67,6 +68,17 @@ async def set_user_disabled(
     """Sets is_disabled and returns the user; None when there is no such user."""
     stmt = update(User).where(User.id == user_id).values(is_disabled=disabled).returning(*USER_COLUMNS)
     return (await conn.execute(stmt)).one_or_none()
+
+
+async def recover_admin(conn: AsyncConnection, *, account: str, password_hash: str) -> uuid.UUID | None:
+    """Gives the admin with account a new password and enables it; None for any other account, which is unchanged."""
+    stmt = (
+        update(User)
+        .where(User.account == account, User.role == ROLE_ADMIN)
+        .values(password_hash=password_hash, is_disabled=False, updated_at=func.now())
+        .returning(User.id)
+    )
+    return (await conn.execute(stmt)).scalar_one_or_none()
 
 
 async def get_login_user(conn: AsyncConnection, account: str) -> Row[uuid.UUID, str, str, bool, datetime, str] | None:
@@ -177,7 +189,9 @@ async def delete_expired_sessions(conn: AsyncConnection, *, now: datetime, idle:
 async def lock_enabled_admins(conn: AsyncConnection) -> list[uuid.UUID]:
     """The enabled admins' ids, locked until the transaction ends: two admins deleting themselves at once cannot both
     see the other still there."""
-    stmt = select(User.id).where(User.role == "admin", User.is_disabled.is_(False)).order_by(User.id).with_for_update()
+    stmt = (
+        select(User.id).where(User.role == ROLE_ADMIN, User.is_disabled.is_(False)).order_by(User.id).with_for_update()
+    )
     return list((await conn.execute(stmt)).scalars())
 
 

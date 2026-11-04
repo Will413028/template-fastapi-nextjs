@@ -4,7 +4,7 @@ The Go version gets this from code generation: every operation is a method of th
 handler or a renamed path parameter does not compile. Here the routes are written by hand, so the check is:
 
 - every /api route is an operation of the contract with the same method and path (path parameter names included),
-  and every operation has a route unless it is listed in UNIMPLEMENTED;
+  and every operation has a route;
 - every /api route carries exactly one access marker (app.web.access), and PUBLIC is exactly the operations the
   contract gives `security: []`: a new operation's access is a decision, not a default;
 - nothing else is routed but the health checks and, in MODE=dev, the docs.
@@ -29,12 +29,6 @@ if TYPE_CHECKING:
 
 # The contract's paths are relative to its server, /api (frontend/scripts/gen-api.mjs, D6's /api rewrite).
 API_PREFIX = "/api"
-
-# Operations whose step has not landed yet (docs/plans/2026-11-03-fastapi-template.md): each step removes its own,
-# and step 5 deletes this set. Needed only while some operation has no route; without it the check could not pass
-# before step 5.
-# empty since step 5b; step 5c removes it
-UNIMPLEMENTED: frozenset[tuple[str, str]] = frozenset()
 
 HEALTH_PATHS = frozenset({"/health", "/health/ready"})
 _METHODS = frozenset({"get", "put", "post", "delete", "options", "head", "patch", "trace"})
@@ -64,7 +58,6 @@ def check_routes(
     app: FastAPI,
     contract: Contract,
     *,
-    unimplemented: frozenset[tuple[str, str]] = UNIMPLEMENTED,
     docs_paths: frozenset[str] = frozenset(),
 ) -> frozenset[tuple[str, str]]:
     """Raises RouteContractError listing every disagreement; returns the operations it found a route for, so a test
@@ -73,12 +66,8 @@ def check_routes(
     routes, problems = _api_routes(app, docs_paths)
     for key in sorted(routes.keys() - operations.keys()):
         problems.append(f"{_name(key)} is routed but is not an operation of the contract")
-    for key in sorted(operations.keys() - routes.keys() - unimplemented):
-        problems.append(f"{_name(key)} has no route and is not listed in UNIMPLEMENTED")
-    for key in sorted(unimplemented & routes.keys()):
-        problems.append(f"{_name(key)} has a route but is still listed in UNIMPLEMENTED")
-    for key in sorted(unimplemented - operations.keys()):
-        problems.append(f"UNIMPLEMENTED lists {_name(key)}, which is not an operation of the contract")
+    for key in sorted(operations.keys() - routes.keys()):
+        problems.append(f"{_name(key)} has no route")
     for key in sorted(routes.keys() & operations.keys()):
         markers = routes[key]
         if len(markers) != 1:

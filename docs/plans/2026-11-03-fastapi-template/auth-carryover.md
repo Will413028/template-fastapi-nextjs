@@ -45,10 +45,10 @@
 | 8 | `normalizePassword` NFKC（`password.go:19`） | 保留（`unicodedata.normalize("NFKC", …)`）；契約的長度限制算原始輸入 | 3b |
 | 9 | `accountKey` 轉小寫（`auth.go:148`） | 保留（契約 pattern 限 ASCII，`str.lower` 與 Go `ToLower` 結果相同） | 3b |
 | 10 | `blocklist`（SecLists 常見密碼 5,406 行與 MIT 授權檔）；載入時每一行先 NFKC 正規化 | 保留：照搬資料檔與授權檔到 `app/modules/auth/`，第一次用到時逐行 NFKC 後載入成 `frozenset`；wheel 要包含 `.txt`（CI stack job 的註冊流程會用到） | 3b |
-| 11 | `checkNewPassword` 的 HIBP 檢查與失敗放行（`auth.go:154`） | 步驟 5（HIBP 屬於 ADR account-abuse-and-lifecycle）；3b 只有 blocklist | 5 |
+| 11 | `checkNewPassword` 的 HIBP 檢查與失敗放行（`auth.go:154`） | 保留（`AuthService._breached`；用戶端在 `app.platform.hibp`，標準庫 `http.client` 放在執行緒，不加依賴；失敗的錯誤訊息不含請求路徑） | 5c |
 | 12 | `CreateUser`（`auth.go:184`）：雜湊在交易外、建帳號與 session 同一交易、unique violation 回 409 `account_taken`、記 `auth.sign_up` | 保留；改寫：用 `INSERT … ON CONFLICT (account) DO NOTHING RETURNING`（與 Go 的 `CreateUserIfAbsent` 同形），沒有回傳列就是 409，不靠例外控制流程 | 3b |
 | 13 | `EnsureAdmin`（`auth.go:212`） | 保留 | 3c |
-| 14 | `RecoverAdmin`（`auth.go:237`） | 步驟 5 | 5 |
+| 14 | `RecoverAdmin`（`auth.go:237`） | 保留（`AuthService.recover_admin`、`repository.recover_admin`） | 5c |
 | 15 | `audit()` 與 `AuditUserDeleted`（`auth.go:273`） | 保留，`deleteCurrentUser` 用到；其他 audit action 在步驟 5 | 3c |
 | 16 | `keepAnAdmin` 與 `LockEnabledAdmins … FOR UPDATE`（`auth.go:297`） | 保留，`deleteCurrentUser` 用到 | 3c |
 | 17 | `caller(ctx)`（`auth.go:310`） | 改寫：router 用依賴取得目前的使用者，顯式傳給 service（見「資料存取與組裝」的 principal）；`app.platform` 的 ContextVar 只給 security provider | 3b |
@@ -92,10 +92,10 @@
 | # | Go 機制（位置） | 去向 | 子步驟 |
 |---|---|---|---|
 | 47 | 設定：`SESSION_ABSOLUTE`（預設 168h）、`SESSION_IDLE`（24h）、`COOKIE_SECURE`（true） | 保留，加進 `Settings`（compose 與 `.env-example` 已有，2c） | 3b |
-| 48 | `PASSWORD_HIBP_CHECK` | 步驟 5 | 5 |
+| 48 | `PASSWORD_HIBP_CHECK` | 保留（`Settings`、`SeedSettings`） | 5c |
 | 49 | `seed-admin`：`ADMIN_ACCOUNT`、`ADMIN_PASSWORD`（可用 `_FILE`，`make seed` 用 `/dev/stdin`）、以契約的 `CreateUserRequest` 驗證輸入（訊息只寫變數名與規則，不帶值）、`EnsureAdmin`、輸出訊息；根目錄 `make seed` | 保留；改寫：用 3a 產生的 `contract_models.CreateUserRequest` 驗證（`gen-check` 保證與契約同步），錯誤用 `errors(include_input=False)`，不讀契約檔，所以計畫 3b 範圍 (c) 的「契約路徑」不再需要決定（Go 讀內嵌契約是因為 oapi-codegen 不產生驗證程式） | 3c |
 | 51 | 契約 `pattern` 的語意：Go 的 kin-openapi 用 RE2，`$` 只匹配字串結尾 | 改寫：openapi-core 經 jsonschema 用 Python `re.search`，`$` 也匹配結尾換行之前，`"abc\n"` 會通過 `CreateUserRequest.account` 的 `^[A-Za-z0-9_.-]+$`（審查者實測；DB 的 CHECK 也擋不住）。OpenAPI 規定 `pattern` 是 ECMA-262 方言，`$` 只匹配結尾，所以修 openapi-core 這一層的 `pattern` 判斷，回 `pattern` 欄位錯誤；先寫會失敗的測試（`"abc\n"` 回 422、`pattern`） | 3b |
-| 50 | `recover-admin` 與 `make recover-admin` | 步驟 5 | 5 |
+| 50 | `recover-admin` 與 `make recover-admin` | 保留（`app.main.recover`；和 `seed-admin` 共用 `run_admin_command` 與建 `AuthService` 的組裝，session 期限改成 `SessionLimits` 預設值，不再傳） | 5c |
 
 ## 測試對照
 
@@ -105,7 +105,7 @@
 | `blocklist_test.go` `TestContains`；`config_test.go` `TestConfigDefaults`、`TestCookieNameFollowsSecure`、`TestConfigSessionIdleNotAboveAbsolute` | 3b | 不需資料庫 |
 | `config_test.go` `TestLoadSeed` | 3c | |
 | `throttle_test.go` `TestSignInThrottlePerClient` | 3b | 另一個位址登入同一帳號不受影響；加 IPv6 同 /64 不同位址共用節流 |
-| `TestCreateUserBreachedPassword` | 5 | HIBP |
+| `TestCreateUserBreachedPassword` | 5c | `test_create_user_breached_password`（db）；不需資料庫的部分在 `test_hibp.py` |
 | `TestCreateSession`、`TestCreateSessionWrongPassword`、`TestCreateSessionUnknownAccountRunsHash`、`TestCreateSessionIssuesNewToken`、`TestCreateSessionMixedCaseAccount`、`TestPasswordNormalized`、`TestCreateSessionDisabledAccount`、`TestCreateSessionReturnsSession` | 3b | 停用帳號用 SQL 設定（`SetDisabled` 在步驟 5） |
 | `TestMe`、`TestMeWithoutCookie`、`TestMeWithUnknownToken`、`TestInvalidSessionCookieCleared`、`TestMeIgnoresBearer`、`TestMeDisabledAccount`、`TestMeAfterUserDeleted`、`TestSessionIdleExpiry`、`TestSessionAbsoluteExpiry`、`TestShortIdleLimitKeepsUsedSession` | 3b | |
 | `TestDeleteCurrentSessionClearsCookie`、`TestDeleteCurrentSessionRevokes` | 3b | |
@@ -114,7 +114,7 @@
 | `TestOperationAccessEnforced` | 3b | 對契約的每個操作：沒 session 時非 public 回 401；admin 部分在步驟 5 |
 | `TestAdminOperationsChecksTable` | 3b | 改寫成 #38 的啟動檢查測試：缺標記、多標記、public 與契約不符、少 route、多 route、參數名不同 |
 | `TestLoginThrottlePerAccount`、`TestLoginThrottleConcurrent`、`TestLoginThrottleSchedule`、`TestRateLimitAuthOperations` | 3b | |
-| `TestCredentialsNeverLogged`、`TestSecurityEventsLogged` | 3b | 去掉 HIBP 與 `authz.denied` 的部分，步驟 5 補回 |
+| `TestCredentialsNeverLogged`、`TestSecurityEventsLogged` | 3b、5c | 3b 去掉 HIBP 與 `authz.denied` 的部分，5c 補回 |
 | `TestArgon2Hash`、`TestArgonConcurrencyBounded` | 3b | 不需資料庫，本機跑；加「等待者被取消後並行數仍不超過上限」 |
 | （新增）認證 middleware 的位置 | 3b | 密鑰不符但帶 cookie 的請求回 403，且沒有查 DB |
 | `TestCrossOriginPostRejected` | 3b | 不需資料庫；加一案：`Origin` 等於 `APP_ORIGIN` 時放行 |

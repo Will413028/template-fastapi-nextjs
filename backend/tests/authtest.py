@@ -14,10 +14,11 @@ from sqlalchemy import text
 from apitest import PEER, checked_client, contract, deps
 from app.main.factory import Modules, create_app
 from app.modules.auth.dependencies import Auth, SessionCookie
-from app.modules.auth.service import AuthService
+from app.modules.auth.service import AuthService, BreachCheck, SessionLimits
 from app.modules.auth.service.passwords import Argon2Params, PasswordHasher
 from app.modules.items.service import ItemsService
 from app.platform.db import Database, create_engine
+from app.platform.hibp import HIBPError
 from app.web.origin import OriginPolicy
 from app.web.ratelimit import IPLimiter
 
@@ -195,6 +196,26 @@ class AuthAPI:
         return portal.call(coroutine_function, *args)
 
 
+# "breached passphrase" in full-width letters, which NFKC folds to ASCII
+FULL_WIDTH = "".join(chr(ord(c) + 0xFEE0) if c != " " else c for c in "breached passphrase")
+
+
+class FakeBreach:
+    """A breached-password check (app.modules.auth.service.BreachCheck) that answers answer, or fails when failing,
+    and records the passwords it was asked about."""
+
+    def __init__(self, *, answer: bool = False, failing: bool = False) -> None:
+        self.answer, self.failing = answer, failing
+        self.checked: list[str] = []
+
+    async def breached(self, password: str) -> bool:
+        self.checked.append(password)
+        if self.failing:
+            msg = "hibp: range API down"
+            raise HIBPError(msg)
+        return self.answer
+
+
 @contextlib.contextmanager
 def auth_api(
     postgres: Server,
@@ -202,6 +223,7 @@ def auth_api(
     per_min: int = 1000,
     absolute: timedelta = timedelta(days=7),
     idle: timedelta = timedelta(days=1),
+    breach: BreachCheck | None = None,
 ) -> Generator[AuthAPI]:
     """The real app over a new migrated database. Sign-up and sign-in are limited to per_min per address on a stopped
     clock; the site's secret is configured but not required, so a test can send X-Real-IP with it."""
@@ -209,7 +231,9 @@ def auth_api(
     database = Database.open(db.app)
     clock = Clock()
     hasher = CountingHasher()
-    service = AuthService(database.engine, session_absolute=absolute, session_idle=idle, hasher=hasher, now=clock)
+    service = AuthService(
+        database.engine, sessions=SessionLimits(absolute=absolute, idle=idle), hasher=hasher, breach=breach, now=clock
+    )
     app = create_app(
         dataclasses.replace(
             deps(contract()),

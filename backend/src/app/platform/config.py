@@ -126,6 +126,8 @@ class Settings:
     session_idle: timedelta = DEFAULT_SESSION_IDLE
     # false only for local development over http
     cookie_secure: bool = True
+    # check new passwords against Have I Been Pwned (app.platform.hibp)
+    password_hibp_check: bool = False
 
     @property
     def session_cookie_name(self) -> str:
@@ -168,6 +170,7 @@ class Settings:
             # production is always behind HTTPS (Vercel); a cookie without Secure or the __Host- prefix there is a
             # misconfiguration (.env-example and docs/deploy-vps.md: COOKIE_SECURE MUST be true in production)
             env.fail("COOKIE_SECURE must be true when MODE=prod")
+        hibp = env.parse("PASSWORD_HIBP_CHECK", default=False, parse=_parse_bool)
         env.raise_problems()
         return cls(
             mode=mode,
@@ -179,6 +182,7 @@ class Settings:
             session_absolute=absolute,
             session_idle=idle,
             cookie_secure=cookie_secure,
+            password_hibp_check=hibp,
         )
 
 
@@ -204,13 +208,15 @@ class MigrateSettings:
 
 @dataclass(frozen=True, slots=True)
 class SeedSettings:
-    """What `app seed-admin` needs: the database as serve connects to it, and the admin account to create.
-    ADMIN_PASSWORD is normally ADMIN_PASSWORD_FILE=/dev/stdin (the root Makefile's seed target), so the password never
+    """What `app seed-admin` and `app recover-admin` need: the database as serve connects to it, the admin account,
+    and whether new passwords are checked against Have I Been Pwned as serve does. ADMIN_PASSWORD is normally
+    ADMIN_PASSWORD_FILE=/dev/stdin (the root Makefile's seed and recover-admin targets), so the password never
     sits on a command line or in an environment variable."""
 
     database: DatabaseSettings
     admin_account: str
     admin_password: str
+    password_hibp_check: bool = False
 
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> Self:
@@ -219,11 +225,13 @@ class SeedSettings:
         password = env.required("DATABASE_PASSWORD")
         account = env.required("ADMIN_ACCOUNT")
         admin_password = env.required("ADMIN_PASSWORD")
+        hibp = env.parse("PASSWORD_HIBP_CHECK", default=False, parse=_parse_bool)
         env.raise_problems()
         return cls(
             database=DatabaseSettings(url=url, password=password, max_conns=1),
             admin_account=account,
             admin_password=admin_password,
+            password_hibp_check=hibp,
         )
 
 

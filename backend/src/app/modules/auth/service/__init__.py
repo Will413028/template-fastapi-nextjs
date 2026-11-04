@@ -20,13 +20,15 @@ import logging
 import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, Protocol
 
 from app.modules.auth import repository
 from app.modules.auth.service.passwords import PasswordHasher, is_common_password, normalize_password
 from app.platform import pagination
 from app.platform import principal as principal_module
+from app.platform.config import DEFAULT_SESSION_ABSOLUTE, DEFAULT_SESSION_IDLE
 from app.platform.errors import AppError, Kind
+from app.platform.hibp import HIBPError
 from app.platform.principal import Principal, session_invalid
 
 if TYPE_CHECKING:
@@ -49,11 +51,12 @@ CODE_LOGIN_THROTTLED = "login_throttled"
 CODE_LAST_ADMIN = "last_admin"
 CODE_REAUTHENTICATION_REQUIRED = "reauthentication_required"
 
-# Audit actions (audit_events.action, models.AUDIT_ACTIONS); admin.recovered arrives with step 5c.
+# Audit actions (audit_events.action, models.AUDIT_ACTIONS).
 AUDIT_USER_DISABLED = "user.disabled"
 AUDIT_USER_ENABLED = "user.enabled"
 AUDIT_USER_DELETED = "user.deleted"
 AUDIT_USER_UNLOCKED = "user.unlocked"
+AUDIT_ADMIN_RECOVERED = "admin.recovered"
 
 # How recently the session must have signed in for an operation that cannot be undone, such as deleting the account:
 # a stolen or forgotten session alone is not enough (OWASP ASVS 5.0 V6, re-authentication before sensitive operations).
@@ -73,6 +76,30 @@ THROTTLE_TTL = timedelta(hours=24)
 TOUCH_EVERY = timedelta(minutes=1)
 
 logger = logging.getLogger(__name__)
+
+
+class BreachCheck(Protocol):
+    """Whether a password appears in known breaches (app.platform.hibp.HIBPClient); HIBPError means the check could
+    not answer."""
+
+    async def breached(self, password: str) -> bool: ...
+
+
+@dataclass(frozen=True, slots=True)
+class SessionLimits:
+    """A session ends absolute after sign-in, or idle after its last use (ADR api-and-auth-baseline D4); serve passes
+    SESSION_ABSOLUTE and SESSION_IDLE (app.platform.config checks them), the admin commands, which issue no session,
+    the defaults."""
+
+    absolute: timedelta = DEFAULT_SESSION_ABSOLUTE
+    idle: timedelta = DEFAULT_SESSION_IDLE
+
+
+DEFAULT_SESSION_LIMITS = SessionLimits()
+
+
+class NoSuchAdminError(Exception):
+    """recover_admin's account does not exist or is not an admin."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -238,21 +265,22 @@ def _session_info(row: Row[uuid.UUID, datetime, datetime, datetime]) -> SessionI
 
 
 class AuthService:
-    """session_absolute and session_idle are SESSION_ABSOLUTE and SESSION_IDLE (app.platform.config checks them);
-    now is the clock for sessions and sign-in throttling."""
+    """breach is the optional breached-password check (PASSWORD_HIBP_CHECK; None skips it); now is the clock for
+    sessions and sign-in throttling."""
 
     def __init__(
         self,
         engine: AsyncEngine,
         *,
-        session_absolute: timedelta,
-        session_idle: timedelta,
+        sessions: SessionLimits = DEFAULT_SESSION_LIMITS,
         hasher: PasswordHasher | None = None,
+        breach: BreachCheck | None = None,
         now: Callable[[], datetime] = _now,
     ) -> None:
         self._engine = engine
-        self._absolute = session_absolute
-        self._idle = session_idle
+        self._breach = breach
+        self._absolute = sessions.absolute
+        self._idle = sessions.idle
         self._hasher = hasher or PasswordHasher()
         self._now = now
         # verified against when the account does not exist, so an unknown account costs the same hash as a wrong
@@ -295,6 +323,33 @@ class AuthService:
                 conn, account=key, password_hash=password_hash, role=ROLE_ADMIN
             )
         return row is not None
+
+    async def recover_admin(self, account: str, password: str) -> None:
+        """The break-glass path for an admin who is disabled, locked out or has lost the password: sets a new
+        password, enables the account, deletes its sessions and trusted devices and forgets every failed sign-in
+        counted for it, audited as admin.recovered by the operator (actor None). It changes only an existing admin;
+        it never creates or promotes an account (NoSuchAdminError). The caller has checked the input like
+        ensure_admin's."""
+        key = account_key(account)
+        async with self._engine.connect() as conn:
+            found = await repository.get_login_user(conn, key)
+        # checked before the password, so a mistyped account is reported as such and costs no hash or HIBP query;
+        # the update below checks the role again
+        if found is None or found[2] != ROLE_ADMIN:
+            raise NoSuchAdminError
+        password_hash = await self._new_password_hash(password)
+        async with self._engine.begin() as conn:
+            user_id = await repository.recover_admin(conn, account=key, password_hash=password_hash)
+            if user_id is None:
+                raise NoSuchAdminError
+            await _end_everywhere(conn, user_id)
+            await repository.clear_login_throttles(conn, key)
+            await repository.insert_audit_event(
+                conn,
+                repository.AuditRecord(
+                    at=self._now(), actor_id=None, action=AUDIT_ADMIN_RECOVERED, target_id=user_id, request_id=None
+                ),
+            )
 
     async def authenticate(self, token: str) -> Authenticated:
         """The user of the session token: the session must be within its absolute and idle limits and its user
@@ -545,15 +600,25 @@ class AuthService:
 
     async def _new_password_hash(self, password: str) -> str:
         """Checks and hashes a new password, outside any transaction: hashing takes tens of milliseconds and must not
-        hold a connection. The list is the rule the contract cannot express."""
+        hold a connection. The list and, when enabled, the breach check are the rules the contract cannot express. A
+        breach-check failure lets the password through: an outage of the external service must not stop sign-ups."""
         normalized = normalize_password(password)
-        if is_common_password(normalized):
+        if is_common_password(normalized) or await self._breached(normalized):
             raise AppError.invalid(
                 pointer="/password",
                 code=CODE_TOO_COMMON,
                 detail="password is on the list of common or breached passwords",
             )
         return await self._hasher.hash(normalized)
+
+    async def _breached(self, normalized: str) -> bool:
+        if self._breach is None:
+            return False
+        try:
+            return await self._breach.breached(normalized)
+        except HIBPError as err:
+            logger.warning("breached-password check failed; accepting the password", extra={"error": str(err)})
+            return False
 
     async def _new_session(self, conn: AsyncConnection, user_id: uuid.UUID) -> NewSession:
         now = self._now()

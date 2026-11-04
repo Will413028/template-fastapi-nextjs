@@ -9,19 +9,19 @@
 | POST | `/users` | `createUser` | 改寫 | 3 | 完成（3b） |
 | GET | `/users` | `listUsers` | 改寫 | 5 | 完成 |
 | GET | `/users/me` | `getCurrentUser` | 改寫 | 3 | 完成（3b） |
-| DELETE | `/users/me` | `deleteCurrentUser` | 改寫 | 3 | 未開始 |
+| DELETE | `/users/me` | `deleteCurrentUser` | 改寫 | 3 | 完成 |
 | GET | `/users/{id}` | `getUser` | 改寫 | 3（2026-11-03 從 5 移入：`createUser` 的 201 `Location` 指向它） | 完成（3b） |
 | PATCH | `/users/{id}` | `patchUser` | 改寫 | 5 | 完成 |
 | DELETE | `/users/{id}` | `deleteUser` | 改寫 | 5 | 完成 |
-| GET | `/users/{id}/sign-in-lock` | `getSignInLock` | 改寫 | 5 | 未開始 |
-| DELETE | `/users/{id}/sign-in-lock` | `deleteSignInLock` | 改寫 | 5 | 未開始 |
+| GET | `/users/{id}/sign-in-lock` | `getSignInLock` | 改寫 | 5 | 完成 |
+| DELETE | `/users/{id}/sign-in-lock` | `deleteSignInLock` | 改寫 | 5 | 完成 |
 | POST | `/sessions` | `createSession` | 改寫 | 3 | 完成（3b） |
-| GET | `/sessions` | `listSessions` | 改寫 | 3 | 未開始 |
-| DELETE | `/sessions` | `deleteAllSessions` | 改寫 | 3 | 未開始 |
+| GET | `/sessions` | `listSessions` | 改寫 | 3 | 完成 |
+| DELETE | `/sessions` | `deleteAllSessions` | 改寫 | 3 | 完成 |
 | GET | `/sessions/current` | `getCurrentSession` | 改寫 | 3 | 完成（3b） |
 | DELETE | `/sessions/current` | `deleteCurrentSession` | 改寫 | 3 | 完成（3b） |
 | GET | `/sessions/{id}` | `getSession` | 改寫 | 3 | 完成（3b） |
-| DELETE | `/sessions/{id}` | `deleteSession` | 改寫 | 3 | 未開始 |
+| DELETE | `/sessions/{id}` | `deleteSession` | 改寫 | 3 | 完成 |
 | POST | `/items` | `createItem` | 改寫 | 4 | 完成 |
 | GET | `/items` | `listItems` | 改寫 | 4 | 完成 |
 | GET | `/items/{id}` | `getItem` | 改寫 | 4 | 完成 |
@@ -36,8 +36,8 @@
 |---|---|---|---|
 | `serve` | 改寫（uvicorn 啟動） | 1 | 完成 |
 | `migrate` | 改寫成 Alembic（D2） | 2a | 完成 |
-| `seed-admin` | 改寫 | 3 | 未開始 |
-| `recover-admin` | 改寫 | 5 | 未開始 |
+| `seed-admin` | 改寫 | 3 | 完成 |
+| `recover-admin` | 改寫 | 5 | 完成 |
 | `healthcheck` | 改寫（容器 healthcheck 用） | 1 | 完成 |
 
 ## 非後端檔案（照搬，起點 commit `560106d`）
@@ -92,7 +92,7 @@
 | `.github/workflows/ci.yml:84-101` rename job | setup-go、`go vet`、module path 檢查 | 改成 Python | 6 | 未開始 |
 | `.github/workflows/ci.yml` backend job | Go 工具鏈 | 改成 Python | 1 | 完成 |
 | `.github/workflows/security.yml:12` | 註解寫死 `Will413028/template-go-nextjs` | 換 repo 名 | 1 | 完成 |
-| 根目錄 `Makefile` 的 `migration`、`generate-migration`、`seed`、`recover-admin` | 呼叫 Go 後端子命令 | 改成 Python 子命令 | 2a、3、5 | 進行中（`migration`、`generate-migration` 在 2a 完成） |
+| 根目錄 `Makefile` 的 `migration`、`generate-migration`、`seed`、`recover-admin` | 呼叫 Go 後端子命令 | 改成 Python 子命令 | 2a、3、5 | 完成 |
 | `scripts/check_commit_policy.py:27` | 寫死 `backend/.golangci.yml` | 改成 Python lint 設定檔 | 1 | 完成 |
 | `scripts/check_locks.py:25`、`--go-test-report` | Go suppression 正規式與報告格式 | 改成 Python | 1 | 完成 |
 | `lefthook.yml` backend 段 | gofmt、golangci-lint | 改成 ruff、pyright | 1 | 完成 |

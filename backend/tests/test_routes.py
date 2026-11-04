@@ -10,7 +10,7 @@ from starlette.routing import Mount
 
 from apitest import contract, deps, stub_contract
 from app.main.factory import create_app
-from app.main.routes import UNIMPLEMENTED, RouteContractError, check_routes, contract_operations
+from app.main.routes import RouteContractError, check_routes, contract_operations
 from app.web.access import PUBLIC, SIGNED_IN
 from authfake import FakeAuthService, fake_app, fake_modules
 
@@ -20,7 +20,6 @@ if TYPE_CHECKING:
     from fastapi.params import Depends
 
 ME = ("GET", "/users/me")
-SIGN_IN = ("POST", "/sessions")
 
 
 def api(*routes: tuple[str, str, list[Depends]], extra: Callable[[FastAPI], None] | None = None) -> FastAPI:
@@ -39,26 +38,37 @@ def api(*routes: tuple[str, str, list[Depends]], extra: Callable[[FastAPI], None
     return app
 
 
-def others(*keep: tuple[str, str]) -> frozenset[tuple[str, str]]:
-    """Every operation but keep, as UNIMPLEMENTED."""
-    return frozenset(contract_operations(contract())) - set(keep)
+def full(
+    *routes: tuple[str, str, list[Depends]],
+    drop: tuple[tuple[str, str], ...] = (),
+    extra: Callable[[FastAPI], None] | None = None,
+) -> FastAPI:
+    """An app that routes every operation of the contract with its right marker, except that routes replace the
+    operations they name and drop leaves operations out."""
+    replaced = {(method, path) for method, path, _ in routes} | set(drop)
+    rest = [
+        (method, path, [PUBLIC if public else SIGNED_IN])
+        for (method, path), public in contract_operations(contract()).items()
+        if (method, path) not in replaced
+    ]
+    return api(*rest, *routes, extra=extra)
 
 
-def problems(app: FastAPI, unimplemented: frozenset[tuple[str, str]]) -> str:
+def problems(app: FastAPI) -> str:
     with pytest.raises(RouteContractError) as raised:
-        check_routes(app, contract(), unimplemented=unimplemented)
+        check_routes(app, contract())
     return str(raised.value)
 
 
 def test_routes_that_match_the_contract_pass() -> None:
-    app = api(("GET", "/users/me", [SIGNED_IN]), ("POST", "/sessions", [PUBLIC]))
-    assert check_routes(app, contract(), unimplemented=others(ME, SIGN_IN)) == {ME, SIGN_IN}
+    app = full(("GET", "/users/me", [SIGNED_IN]), ("POST", "/sessions", [PUBLIC]))
+    assert check_routes(app, contract()) == contract_operations(contract()).keys()
 
 
-def test_the_real_app_routes_every_operation_not_listed_as_unimplemented() -> None:
+def test_the_real_app_routes_every_operation() -> None:
     routed = check_routes(fake_app(FakeAuthService()), contract())
     assert ME in routed  # the walk found the included router's routes
-    assert routed | UNIMPLEMENTED == contract_operations(contract()).keys()
+    assert routed == contract_operations(contract()).keys()
 
 
 def test_the_app_is_not_built_when_its_routes_and_contract_disagree() -> None:
@@ -68,41 +78,32 @@ def test_the_app_is_not_built_when_its_routes_and_contract_disagree() -> None:
 
 
 def test_an_operation_without_a_route() -> None:
-    assert "GET /api/users/me has no route" in problems(api(), others(ME))
+    assert problems(full(drop=(ME,))) == "GET /api/users/me has no route"
 
 
 def test_a_route_that_is_not_an_operation() -> None:
-    app = api(("GET", "/widgets", [SIGNED_IN]))
-    assert "GET /api/widgets is routed but is not an operation" in problems(app, others())
+    app = full(("GET", "/widgets", [SIGNED_IN]))
+    assert problems(app) == "GET /api/widgets is routed but is not an operation of the contract"
 
 
 def test_a_path_parameter_with_another_name() -> None:
-    message = problems(api(("GET", "/users/{user_id}", [SIGNED_IN])), others(("GET", "/users/{id}")))
+    message = problems(full(("GET", "/users/{user_id}", [SIGNED_IN]), drop=(("GET", "/users/{id}"),)))
     assert "GET /api/users/{user_id} is routed but is not an operation" in message
     assert "GET /api/users/{id} has no route" in message
 
 
 @pytest.mark.parametrize(("dependencies", "count"), [([], 0), ([PUBLIC, SIGNED_IN], 2)])
 def test_a_route_needs_exactly_one_access_marker(dependencies: list[Depends], count: int) -> None:
-    message = problems(api(("GET", "/users/me", dependencies)), others(ME))
+    message = problems(full(("GET", "/users/me", dependencies)))
     assert f"GET /api/users/me has {count} access markers" in message
 
 
 def test_public_routes_are_the_operations_the_contract_makes_public() -> None:
     assert "GET /api/users/me: the route says public True, the contract False" in problems(
-        api(("GET", "/users/me", [PUBLIC])), others(ME)
+        full(("GET", "/users/me", [PUBLIC]))
     )
     assert "POST /api/sessions: the route says public False, the contract True" in problems(
-        api(("POST", "/sessions", [SIGNED_IN])), others(SIGN_IN)
-    )
-
-
-def test_unimplemented_lists_only_operations_without_a_route() -> None:
-    assert "GET /api/users/me has a route but is still listed" in problems(
-        api(("GET", "/users/me", [SIGNED_IN])), others()
-    )
-    assert "UNIMPLEMENTED lists GET /api/widgets, which is not an operation" in problems(
-        api(), others() | {("GET", "/widgets")}
+        full(("POST", "/sessions", [SIGNED_IN]))
     )
 
 
@@ -114,12 +115,12 @@ def test_nothing_is_routed_outside_the_api_but_the_health_checks() -> None:
         @app.get("/health")
         async def health() -> None: ...
 
-    assert "/metrics is routed outside /api" in problems(api(extra=metrics), others())
+    assert "/metrics is routed outside /api" in problems(full(extra=metrics))
 
     def mount(app: FastAPI) -> None:
         app.routes.append(Mount("/static", app=FastAPI(openapi_url=None)))
 
-    assert "/static/{path} is not an API route" in problems(api(extra=mount), others())
+    assert "/static/{path} is not an API route" in problems(full(extra=mount))
 
 
 def test_every_writable_path_has_a_get() -> None:

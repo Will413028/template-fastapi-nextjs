@@ -67,6 +67,21 @@ seed:
 	printf '%s' "$$pw" | $(COMPOSE) exec -T -e ADMIN_ACCOUNT -e ADMIN_PASSWORD_FILE=/dev/stdin \
 		backend app seed-admin
 
+# Gives an existing admin a new password, enables it, signs it out everywhere and clears its sign-in throttling
+# (app recover-admin): the way back when every admin is disabled, locked out or has lost the password. It never
+# creates or promotes an account. The password travels as for seed:
+#   make recover-admin ADMIN_ACCOUNT=admin
+.PHONY: recover-admin
+recover-admin: export ADMIN_ACCOUNT := $(ADMIN_ACCOUNT)
+recover-admin:
+	@test -n "$$ADMIN_ACCOUNT" || { echo "usage: make recover-admin ADMIN_ACCOUNT=<name> (the new password is read from the terminal or stdin)"; exit 1; }
+	@if [ -t 0 ]; then \
+		trap 'stty echo' EXIT INT TERM; printf 'New password for %s: ' "$$ADMIN_ACCOUNT" >&2; stty -echo; \
+		IFS= read -r pw; stty echo; echo >&2; \
+	else IFS= read -r pw; fi; \
+	printf '%s' "$$pw" | $(COMPOSE) exec -T -e ADMIN_ACCOUNT -e ADMIN_PASSWORD_FILE=/dev/stdin \
+		backend app recover-admin
+
 # --- Logs ---
 
 .PHONY: logs

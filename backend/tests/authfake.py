@@ -51,7 +51,7 @@ class FakeAuthService(AuthService):
     """Knows one session, TOKEN for ALICE, and counts the lookups."""
 
     def __init__(self) -> None:
-        super().__init__(NO_DATABASE, session_absolute=timedelta(days=7), session_idle=timedelta(days=1))
+        super().__init__(NO_DATABASE)
         self.lookups = 0
         self.signed_out: list[str | None] = []
         self.cleanups = 0

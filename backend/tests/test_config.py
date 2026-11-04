@@ -7,6 +7,7 @@ from app.platform.config import ConfigError, HttpSettings, MigrateSettings, Seed
 
 if TYPE_CHECKING:
     import pathlib
+    from collections.abc import Callable
 
 DB_URL = "postgres://app@db.example:5432/app?sslmode=verify-full"
 SECRET = "s" * 43
@@ -220,6 +221,16 @@ def test_seed_reads_the_admin_and_the_database(tmp_path: pathlib.Path) -> None:
     settings = SeedSettings.from_env(env)
     assert (settings.admin_account, settings.admin_password) == ("root", "a long enough password")
     assert (settings.database.url, settings.database.password) == (DB_URL, "pw")
+
+
+@pytest.mark.parametrize("load", [Settings.from_env, SeedSettings.from_env])
+def test_the_breach_check_is_off_unless_asked_for(load: Callable[[dict[str, str]], Settings | SeedSettings]) -> None:
+    # serve and the admin commands read PASSWORD_HIBP_CHECK alike, so a new password meets the same rules
+    env = SERVE | {"ADMIN_ACCOUNT": "root", "ADMIN_PASSWORD": "a long enough password"}
+    assert load(env).password_hibp_check is False
+    assert load(env | {"PASSWORD_HIBP_CHECK": "true"}).password_hibp_check is True
+    with pytest.raises(ConfigError, match="PASSWORD_HIBP_CHECK is malformed"):
+        load(env | {"PASSWORD_HIBP_CHECK": "yes"})
 
 
 def test_seed_names_each_missing_admin_variable() -> None:

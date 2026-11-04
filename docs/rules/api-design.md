@@ -119,7 +119,7 @@ raise HTTPException(status_code=409)
 
 ## 分層
 
-- 每個模組的 route 在 `app/modules/<m>/router.py`（`APIRouter(prefix="/api")`，由 `app.main.factory` 掛上）：解 request、呼叫 service、轉成 `app.web.contract_models` 的契約模型，不寫業務邏輯，不 import sqlalchemy（`.importlinter` 的 `sql-below-the-router`）。route 的路徑與方法必須和契約的 operation 一一對應，路徑參數同名（契約寫 `{id}`，參數就叫 `id`）；`app/main/routes.py` 在啟動時檢查，還沒實作的 operation 列在它的 `UNIMPLEMENTED`（`test_routes.py`）。
+- 每個模組的 route 在 `app/modules/<m>/router.py`（`APIRouter(prefix="/api")`，由 `app.main.factory` 掛上）：解 request、呼叫 service、轉成 `app.web.contract_models` 的契約模型，不寫業務邏輯，不 import sqlalchemy（`.importlinter` 的 `sql-below-the-router`）。route 的路徑與方法必須和契約的 operation 一一對應，路徑參數同名（契約寫 `{id}`，參數就叫 `id`）；`app/main/routes.py` 在啟動時檢查，每個 operation 都要有 route（`test_routes.py`）。
 - service 不 import fastapi、starlette（`http-stays-at-the-edge`），也不 import 其他模組（`modules-independent`）；分層由 `backend/.importlinter` 檢查，見 `AGENTS.md`「Backend layers」。
 - 目前使用者由 route 的依賴取得（`app.web.access` 的 `SignedIn`，或 auth 模組的 `Current`），再**顯式**當參數傳給 service；service 不讀 request 或 context。
 - 模組之間共用、但不碰 HTTP 的 helper（分頁 cursor）放在 `app.platform`（`pagination.py`）。

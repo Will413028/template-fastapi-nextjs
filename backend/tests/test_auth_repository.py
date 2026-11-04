@@ -94,6 +94,7 @@ def test_every_query_builds() -> None:
         "lock_enabled_admins": repository.lock_enabled_admins,
         "list_users": lambda c: repository.list_users(c, after=ID, rows=2),
         "set_user_disabled": lambda c: repository.set_user_disabled(c, ID, disabled=True),
+        "recover_admin": lambda c: repository.recover_admin(c, account="root", password_hash=STORED_HASH),
         "delete_user": lambda c: repository.delete_user(c, ID),
         "insert_audit_event": lambda c: repository.insert_audit_event(
             c, repository.AuditRecord(at=NOW, actor_id=None, action="user.deleted", target_id=ID, request_id=None)
@@ -142,6 +143,17 @@ def test_unlocking_clears_every_count_of_the_account() -> None:
     where = run(lambda c: repository.clear_login_throttles(c, "a")).partition("WHERE")[2]
     assert "sign_in_throttles.account_key = " in where
     assert "client_key" not in where
+
+
+def test_recovery_changes_only_an_admin() -> None:
+    # recover-admin never promotes an account (Go version: users.sql RecoverAdmin)
+    changes, _, where = run(lambda c: repository.recover_admin(c, account="root", password_hash=STORED_HASH)).partition(
+        "WHERE"
+    )
+    assert "users.account = " in where
+    assert "users.role = " in where
+    assert "is_disabled=" in changes
+    assert "updated_at=now()" in changes
 
 
 def test_deleting_an_account_locks_the_enabled_admins() -> None:

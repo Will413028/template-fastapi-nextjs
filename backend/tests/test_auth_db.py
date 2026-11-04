@@ -17,7 +17,17 @@ import pytest
 from apitest import assert_problem
 from app.main.logs import configure_logging
 from authfake import ADMIN_OPERATIONS
-from authtest import DEVICE_COOKIE, LONG_ENOUGH, START, AuthAPI, auth_api, session_token, set_cookie
+from authtest import (
+    DEVICE_COOKIE,
+    FULL_WIDTH,
+    LONG_ENOUGH,
+    START,
+    AuthAPI,
+    FakeBreach,
+    auth_api,
+    session_token,
+    set_cookie,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -103,6 +113,18 @@ def test_create_user_no_composition_rule(api: AuthAPI) -> None:
 def test_create_user_common_password(api: AuthAPI) -> None:
     # on the list (SecLists Pwdb), 15 characters
     assert field_errors(api.sign_up("alice", "demon1q2w3e4r5t")) == [("/password", "password_too_common")]
+
+
+def test_create_user_breached_password(postgres: Server) -> None:
+    # Go version: auth_test.go TestCreateUserBreachedPassword; the check sees the NFKC form
+    breach = FakeBreach(answer=True)
+    with auth_api(postgres, breach=breach) as api:
+        assert field_errors(api.sign_up("alice", FULL_WIDTH)) == [("/password", "password_too_common")]
+        assert breach.checked == ["breached passphrase"]
+        # an unreachable breach service does not block sign-ups
+        breach.failing = True
+        assert api.sign_up("alice").status_code == 201
+        assert api.sql("SELECT account FROM users") == [("alice",)]
 
 
 # sign-in
@@ -849,9 +871,15 @@ def logs() -> Generator[io.StringIO]:
     client_log.setLevel(client_level)
 
 
-def test_credentials_never_reach_the_log(api: AuthAPI, logs: io.StringIO) -> None:
-    # passwords and session tokens, at any level, on success and failure paths: sign-up, wrong and right sign-in, a
-    # validation error and a malformed body carrying the password, an unknown token, and sign-out
+def test_credentials_never_reach_the_log(postgres: Server, logs: io.StringIO) -> None:
+    # passwords and session tokens, at any level, on success and failure paths: sign-up with a failing breach check,
+    # wrong and right sign-in, a validation error and a malformed body carrying the password, an unknown token, and
+    # sign-out
+    with auth_api(postgres, breach=FakeBreach(failing=True)) as api:
+        _credentials_never_reach_the_log(api, logs)
+
+
+def _credentials_never_reach_the_log(api: AuthAPI, logs: io.StringIO) -> None:
     secret_part = uuid.uuid4().hex
     canary = f"canary {secret_part} phrase"
     stray = uuid.uuid4().hex
@@ -869,6 +897,7 @@ def test_credentials_never_reach_the_log(api: AuthAPI, logs: io.StringIO) -> Non
 
     out = logs.getvalue()
     assert any(json.loads(line).get("path") == "/api/sessions" for line in out.splitlines()), out
+    assert "breached-password check failed" in out
     for what, value in (
         ("password", secret_part),
         ("sign-up session", session_token(sign_up)),
@@ -884,6 +913,7 @@ def test_security_events_are_logged_with_the_user(api: AuthAPI, logs: io.StringI
     api.sign_in("alice", WRONG)
     api.sign_in("nobody", WRONG)
     _, token = api.must_sign_in("alice")
+    api.do("GET", "/api/users", token)  # an admin operation
     api.do("DELETE", "/api/sessions/current", token)
     events: list[tuple[str, str, str]] = []
     for line in logs.getvalue().splitlines():
@@ -896,6 +926,7 @@ def test_security_events_are_logged_with_the_user(api: AuthAPI, logs: io.StringI
         ("auth.sign_in_failed", alice["id"], "invalid_credentials"),
         ("auth.sign_in_failed", "", "unknown_account"),
         ("auth.sign_in", alice["id"], ""),
+        ("authz.denied", alice["id"], ""),
         ("auth.sign_out", alice["id"], ""),
     ]
 

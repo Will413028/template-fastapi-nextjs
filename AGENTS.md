@@ -2,7 +2,7 @@
 
 Fullstack monorepo template with a FastAPI backend and a Next.js frontend. The frontend deploys to Vercel, which rewrites `/api/*` to the backend on one origin; the backend and PostgreSQL run with Docker Compose on a VM and are reached through a Cloudflare Tunnel.
 
-Status: modules in progress. The backend serves `GET /health`, `GET /health/ready` and sixteen of the contract's operations (sign-up, sign-in, sign-out, the current user and session, reading a user and a session, listing and revoking sessions, signing out everywhere, deleting one's own account, and the items CRUD), with the `serve`, `migrate`, `healthcheck` and `seed-admin` commands (`make seed` creates the admin); the operations not routed yet are listed in `backend/src/app/main/routes.py` `UNIMPLEMENTED`, and each module adds its own.
+Status: modules in progress. The backend serves `GET /health`, `GET /health/ready` and every operation of the contract (accounts, sessions, the admin's user management and sign-in locks, and the items CRUD), with the `serve`, `migrate`, `healthcheck`, `seed-admin` and `recover-admin` commands (`make seed` creates the admin, `make recover-admin` gives an existing admin a new password); `backend/src/app/main/routes.py` refuses to start when an operation has no route.
 
 ## Verification
 
@@ -67,6 +67,7 @@ make up-prod                        # Start the VM stack with the Cloudflare Tun
 make down                           # Stop stack
 make down-v                         # Stop stack and remove volumes
 make seed ADMIN_ACCOUNT=admin       # Create the admin account in the running stack (password from the terminal or stdin)
+make recover-admin ADMIN_ACCOUNT=admin  # Give an existing admin a new password, enable it, sign it out everywhere
 make migration                      # Apply the revisions to the stack's database (app migrate)
 make generate-migration MSG=x       # Generate a revision from the models (needs Docker)
 make build                          # Build Docker images

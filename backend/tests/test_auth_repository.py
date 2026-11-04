@@ -42,6 +42,9 @@ class _NoRows:
     def scalar_one_or_none(self) -> None:
         return None
 
+    def scalar_one(self) -> int:
+        return 1
+
     def one(self) -> tuple[uuid.UUID, datetime, datetime, datetime]:
         return (ID, NOW, NOW, NOW)
 
@@ -96,6 +99,15 @@ def test_every_query_builds() -> None:
             c, repository.AuditRecord(at=NOW, actor_id=None, action="user.deleted", target_id=ID, request_id=None)
         ),
         "delete_stale_login_throttles": lambda c: repository.delete_stale_login_throttles(c, NOW),
+        "clear_login_throttles": lambda c: repository.clear_login_throttles(c, "alice"),
+        "count_untrusted_attempt": lambda c: repository.count_untrusted_attempt(c, account_key="alice", now=NOW),
+        "get_untrusted_failures": lambda c: repository.get_untrusted_failures(c, "alice"),
+        "insert_trusted_device": lambda c: repository.insert_trusted_device(
+            c, token_hash=b"x" * 32, user_id=ID, now=NOW, expires_at=NOW
+        ),
+        "get_trusted_device": lambda c: repository.get_trusted_device(c, b"x" * 32, NOW),
+        "delete_user_trusted_devices": lambda c: repository.delete_user_trusted_devices(c, ID),
+        "delete_expired_trusted_devices": lambda c: repository.delete_expired_trusted_devices(c, NOW),
     }
     functions = {
         name
@@ -118,11 +130,18 @@ def test_the_throttle_waits_in_whole_minutes() -> None:
 
 
 def test_signing_in_clears_only_that_clients_count() -> None:
-    # plan D10: the owner signing in elsewhere does not lift the wait an attacker built up at another address
+    # plan D10: the owner signing in elsewhere does not lift the wait an attacker built up at another address; the
+    # account-wide count ('') goes with it (NIST SP 800-63B-4 3.2.2)
     sql = run(lambda c: repository.clear_login_throttle(c, account_key="a", client_key="ip:1"))
     where = sql.partition("WHERE")[2]
     assert "sign_in_throttles.account_key = " in where
-    assert "sign_in_throttles.client_key = " in where
+    assert "sign_in_throttles.client_key IN (" in where
+
+
+def test_unlocking_clears_every_count_of_the_account() -> None:
+    where = run(lambda c: repository.clear_login_throttles(c, "a")).partition("WHERE")[2]
+    assert "sign_in_throttles.account_key = " in where
+    assert "client_key" not in where
 
 
 def test_deleting_an_account_locks_the_enabled_admins() -> None:

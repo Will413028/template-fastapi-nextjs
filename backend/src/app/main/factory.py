@@ -35,8 +35,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# How often serve deletes expired sessions and stale sign-in throttles (AuthService.cleanup). One task in the one
-# uvicorn process: the stack runs one backend replica (plan D6); more would only repeat idempotent deletes.
+# How often serve deletes expired sessions and trusted devices and stale sign-in throttles (AuthService.cleanup). One
+# task in the one uvicorn process: the stack runs one backend replica (plan D6); more would only repeat idempotent
+# deletes.
 CLEANUP_EVERY_SECONDS = 3600.0
 
 # Below app healthcheck's 2 s client timeout: a pool exhausted by real requests answers 503 instead of hanging.
@@ -96,7 +97,11 @@ async def _clean_up_every(auth: Auth, seconds: float) -> None:
         else:
             logger.info(
                 "auth cleanup",
-                extra={"sessions_deleted": counts.sessions, "throttles_deleted": counts.throttles},
+                extra={
+                    "sessions_deleted": counts.sessions,
+                    "throttles_deleted": counts.throttles,
+                    "devices_deleted": counts.devices,
+                },
             )
         await asyncio.sleep(seconds)
 

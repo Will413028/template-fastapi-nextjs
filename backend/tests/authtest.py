@@ -31,6 +31,7 @@ if TYPE_CHECKING:
     from dbtest import Server, TestDatabase
 
 COOKIE = "__Host-session"
+DEVICE_COOKIE = "__Host-device"
 # the Go version's goodPassword; a name ruff S105 does not read as a hardcoded secret
 LONG_ENOUGH = "a long enough password"
 SECRET = "s" * 43
@@ -134,7 +135,7 @@ class AuthAPI:
         by follow_location."""
         sent = {"Sec-Fetch-Site": "same-origin"} | (headers or {})
         if token:
-            sent["Cookie"] = f"{COOKIE}={token}"
+            sent["Cookie"] = "; ".join(filter(None, (f"{COOKIE}={token}", sent.get("Cookie"))))
         response = self.client.request(method, path, json=json, headers=sent)
         self.client.cookies.clear()  # each request carries only the cookie the test gives it
         self.follow_location(response, token)
@@ -155,10 +156,19 @@ class AuthAPI:
         return self.do("POST", "/api/users", json={"account": account, "password": password})
 
     def sign_in(
-        self, account: str, password: str = LONG_ENOUGH, token: str = "", *, address: str | None = None
+        self,
+        account: str,
+        password: str = LONG_ENOUGH,
+        token: str = "",
+        *,
+        address: str | None = None,
+        device: str = "",
     ) -> httpx2.Response:
-        """Sign-in from the test client's address, or from address as the site reports it (X-Real-IP)."""
-        headers = {"X-Origin-Secret": SECRET, "X-Real-IP": address} if address else None
+        """Sign-in from the test client's address, or from address as the site reports it (X-Real-IP), with the
+        device cookie when device is not empty."""
+        headers = {"X-Origin-Secret": SECRET, "X-Real-IP": address} if address else {}
+        if device:
+            headers["Cookie"] = f"{DEVICE_COOKIE}={device}"
         return self.do("POST", "/api/sessions", token, json={"account": account, "password": password}, headers=headers)
 
     def me(self, token: str) -> httpx2.Response:
@@ -207,7 +217,8 @@ def auth_api(
             origin=OriginPolicy(secrets=(SECRET,), required=False),
             limiter=IPLimiter(per_min, lambda: 1_000_000.0),
             modules=Modules(
-                auth=Auth(service, SessionCookie(name=COOKIE, secure=True)), items=ItemsService(database.engine)
+                auth=Auth(service, SessionCookie(name=COOKIE, device_name=DEVICE_COOKIE, secure=True)),
+                items=ItemsService(database.engine),
             ),
         )
     )

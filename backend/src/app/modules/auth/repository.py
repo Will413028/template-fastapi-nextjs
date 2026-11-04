@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 from sqlalchemy import Integer, Row, case, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 
-from app.modules.auth.models import AuditEvent, Session, SignInThrottle, User
+from app.modules.auth.models import AuditEvent, Session, SignInThrottle, TrustedDevice, User
 
 if TYPE_CHECKING:
     import uuid
@@ -24,6 +24,9 @@ if TYPE_CHECKING:
 USER_COLUMNS = (User.id, User.account, User.role, User.is_disabled, User.created_at)
 # what the API shows of a session (service.SessionInfo)
 SESSION_COLUMNS = (Session.id, Session.created_at, Session.last_used_at, Session.expires_at)
+
+# the sign_in_throttles client_key of the account-wide count of clients without a trusted device
+UNTRUSTED = ""
 
 # From the 5th consecutive failure on, the next attempt waits 2^(failures - 5) minutes, at most an hour.
 THROTTLE_FREE_ATTEMPTS = 5
@@ -238,11 +241,67 @@ async def get_login_throttle(conn: AsyncConnection, *, account_key: str, client_
 
 
 async def clear_login_throttle(conn: AsyncConnection, *, account_key: str, client_key: str) -> None:
-    """Forgets the count of one client for the account: after that client signs in. Other clients keep theirs, so the
-    owner signing in elsewhere does not lift the wait an attacker has built up (plan D10)."""
+    """Forgets the count of one client for the account and the account-wide count: after that client signs in. Other
+    clients keep theirs, so the owner signing in elsewhere does not lift the wait an attacker has built up (plan D10);
+    the account-wide count does not tell clients apart, and a success resets it (NIST SP 800-63B-4 3.2.2)."""
     await conn.execute(
-        delete(SignInThrottle).where(SignInThrottle.account_key == account_key, SignInThrottle.client_key == client_key)
+        delete(SignInThrottle).where(
+            SignInThrottle.account_key == account_key, SignInThrottle.client_key.in_((client_key, UNTRUSTED))
+        )
     )
+
+
+async def clear_login_throttles(conn: AsyncConnection, account_key: str) -> None:
+    """Forgets every count for the account, from all clients: an admin unlock or recover-admin (plan D10)."""
+    await conn.execute(delete(SignInThrottle).where(SignInThrottle.account_key == account_key))
+
+
+async def count_untrusted_attempt(conn: AsyncConnection, *, account_key: str, now: datetime) -> int:
+    """Counts an attempt from a client without a trusted device for the account, across all such clients (the row
+    with client_key UNTRUSTED), and returns the count including this one."""
+    stmt = insert(SignInThrottle).values(
+        account_key=account_key, client_key=UNTRUSTED, failures=1, next_allowed_at=None, updated_at=now
+    )
+    stmt = stmt.on_conflict_do_update(
+        index_elements=[SignInThrottle.account_key, SignInThrottle.client_key],
+        set_={"failures": SignInThrottle.failures + 1, "updated_at": stmt.excluded.updated_at},
+    ).returning(SignInThrottle.failures)
+    return (await conn.execute(stmt)).scalar_one()
+
+
+async def get_untrusted_failures(conn: AsyncConnection, account_key: str) -> int:
+    """The account-wide count count_untrusted_attempt keeps; 0 without a row."""
+    stmt = select(SignInThrottle.failures).where(
+        SignInThrottle.account_key == account_key, SignInThrottle.client_key == UNTRUSTED
+    )
+    return (await conn.execute(stmt)).scalar_one_or_none() or 0
+
+
+async def insert_trusted_device(
+    conn: AsyncConnection, *, token_hash: bytes, user_id: uuid.UUID, now: datetime, expires_at: datetime
+) -> None:
+    await conn.execute(
+        insert(TrustedDevice).values(token_hash=token_hash, user_id=user_id, created_at=now, expires_at=expires_at)
+    )
+
+
+async def get_trusted_device(conn: AsyncConnection, token_hash: bytes, now: datetime) -> Row[uuid.UUID, str] | None:
+    """The unexpired device of the token and its user's account key, so the caller can tell whether it belongs to the
+    account signing in."""
+    stmt = (
+        select(TrustedDevice.id, User.account)
+        .join(User, User.id == TrustedDevice.user_id)
+        .where(TrustedDevice.token_hash == token_hash, TrustedDevice.expires_at > now)
+    )
+    return (await conn.execute(stmt)).one_or_none()
+
+
+async def delete_user_trusted_devices(conn: AsyncConnection, user_id: uuid.UUID) -> None:
+    await conn.execute(delete(TrustedDevice).where(TrustedDevice.user_id == user_id))
+
+
+async def delete_expired_trusted_devices(conn: AsyncConnection, now: datetime) -> int:
+    return (await conn.execute(delete(TrustedDevice).where(TrustedDevice.expires_at <= now))).rowcount
 
 
 async def delete_stale_login_throttles(conn: AsyncConnection, before: datetime) -> int:

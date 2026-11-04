@@ -34,11 +34,17 @@ def test_serve_defaults_are_production() -> None:
 
 
 @pytest.mark.parametrize(
-    ("secure", "name"), [("true", "__Host-session"), ("false", "session"), ("1", "__Host-session")]
+    ("secure", "names"),
+    [
+        ("true", ("__Host-session", "__Host-device")),
+        ("false", ("session", "device")),
+        ("1", ("__Host-session", "__Host-device")),
+    ],
 )
-def test_cookie_name_follows_secure(secure: str, name: str) -> None:
+def test_cookie_names_follow_secure(secure: str, names: tuple[str, str]) -> None:
     # the __Host- prefix requires Secure, so local development over http drops it
-    assert Settings.from_env(SERVE | {"MODE": "dev", "COOKIE_SECURE": secure}).session_cookie_name == name
+    settings = Settings.from_env(SERVE | {"MODE": "dev", "COOKIE_SECURE": secure})
+    assert (settings.session_cookie_name, settings.device_cookie_name) == names
 
 
 def test_session_idle_may_equal_absolute() -> None:

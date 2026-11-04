@@ -30,27 +30,34 @@ _SCOPE_KEY = "app.auth"
 
 @dataclass(frozen=True, slots=True)
 class SessionCookie:
-    """Every cookie the API sets: HttpOnly so scripts cannot read it, Path=/ and no Domain (the __Host- prefix needs
-    both), SameSite=Lax, Secure unless COOKIE_SECURE=false for local development over http. name follows secure
-    (app.platform.config.Settings.session_cookie_name)."""
+    """Every cookie the API sets, the session cookie (name) and the trusted-device cookie (device_name): HttpOnly so
+    scripts cannot read it, Path=/ and no Domain (the __Host- prefix needs both), Secure unless COOKIE_SECURE=false
+    for local development over http. The names follow secure (app.platform.config.Settings.session_cookie_name and
+    device_cookie_name)."""
 
     name: str
+    device_name: str
     secure: bool
 
     def set(self, token: str, max_age: timedelta) -> str:
         """The Set-Cookie value for a new session, with Max-Age its absolute lifetime."""
-        return self._cookie(token, int(max_age.total_seconds()))
+        return self._cookie(self.name, token, int(max_age.total_seconds()), "Lax")
 
     def clear(self) -> str:
         """The Set-Cookie value that removes the session cookie."""
-        return self._cookie("", 0)
+        return self._cookie(self.name, "", 0, "Lax")
 
-    def _cookie(self, value: str, max_age: int) -> str:
+    def device(self, token: str, max_age: timedelta) -> str:
+        """The Set-Cookie value for a newly trusted browser: SameSite=Strict, since only a same-site sign-in reads
+        it, and Max-Age the device's lifetime."""
+        return self._cookie(self.device_name, token, int(max_age.total_seconds()), "Strict")
+
+    def _cookie(self, name: str, value: str, max_age: int, same_site: str) -> str:
         # value is a token this server made (base64url) or empty: nothing to quote
-        attributes = [f"{self.name}={value}", "Path=/", f"Max-Age={max_age}", "HttpOnly"]
+        attributes = [f"{name}={value}", "Path=/", f"Max-Age={max_age}", "HttpOnly"]
         if self.secure:
             attributes.append("Secure")
-        attributes.append("SameSite=Lax")
+        attributes.append(f"SameSite={same_site}")
         return "; ".join(attributes)
 
 
@@ -65,9 +72,10 @@ class Auth:
 @dataclass(frozen=True, slots=True)
 class RequestSession:
     """The session cookie the request carried (valid or not, for sign-in and sign-out), what it authenticated, the
-    cookie's settings, and the service the routes call."""
+    device cookie it carried (for sign-in), the cookies' settings, and the service the routes call."""
 
     token: str | None
+    device_token: str | None
     authenticated: Authenticated | None
     cookie: SessionCookie
     service: AuthService
@@ -87,7 +95,8 @@ class AuthenticateMiddleware:
         if scope["type"] != "http" or not (path == "/api" or path.startswith("/api/")):
             await self.app(scope, receive, send)
             return
-        token = self._token(scope)
+        cookies = self._cookies(scope)
+        token = cookies.get(self.cookie.name) or None
         authenticated: Authenticated | None = None
         if token:
             try:
@@ -97,7 +106,11 @@ class AuthenticateMiddleware:
                     raise
                 send = self._clearing_cookie(send)
         scope[_SCOPE_KEY] = RequestSession(
-            token=token, authenticated=authenticated, cookie=self.cookie, service=self.service
+            token=token,
+            authenticated=authenticated,
+            device_token=cookies.get(self.cookie.device_name) or None,
+            cookie=self.cookie,
+            service=self.service,
         )
         reset_token = set_principal(authenticated.principal if authenticated else None)
         try:
@@ -105,12 +118,13 @@ class AuthenticateMiddleware:
         finally:
             reset_principal(reset_token)
 
-    def _token(self, scope: Scope) -> str | None:
+    @staticmethod
+    def _cookies(scope: Scope) -> dict[str, str]:
         cookies: dict[str, str] = {}
         for name, value in scope["headers"]:
             if name == b"cookie":
                 cookies |= cookie_parser(value.decode("latin-1"))
-        return cookies.get(self.cookie.name) or None
+        return cookies
 
     def _clearing_cookie(self, send: Send) -> Send:
         """send, adding the Set-Cookie that clears the dead session cookie unless the response sets that cookie

@@ -1,5 +1,5 @@
 """Accounts and sessions against PostgreSQL (Go version: internal/httpapi/auth_test.go, auth_resources_test.go,
-throttle_test.go TestSignInThrottlePerClient, internal/modules/auth/service_test.go TestLoginThrottleSchedule and
+throttle_test.go, internal/modules/auth/service_test.go TestLoginThrottleSchedule, TestCleanup and
 TestShortIdleLimitKeepsUsedSession). CI only (make test-db). The HTTP behaviour that needs no database is in
 test_auth_http.py.
 """
@@ -17,7 +17,7 @@ import pytest
 from apitest import assert_problem
 from app.main.logs import configure_logging
 from authfake import ADMIN_OPERATIONS
-from authtest import LONG_ENOUGH, START, AuthAPI, auth_api, session_token, set_cookie
+from authtest import DEVICE_COOKIE, LONG_ENOUGH, START, AuthAPI, auth_api, session_token, set_cookie
 
 if TYPE_CHECKING:
     from collections.abc import Generator
@@ -598,10 +598,11 @@ def test_an_admin_deletes_a_user(api: AuthAPI) -> None:
     assert code(stale, 403, "/problems/forbidden") == "reauthentication_required"
 
 
-# every admin operation that changes state, with the audit action it leaves; the sign-in lock joins in step 5b
+# every admin operation that changes state, with the audit action it leaves
 AUDITED: dict[tuple[str, str], tuple[str, str]] = {
     ("PATCH", "/users/{id}"): ("user.disabled", '{"is_disabled": true}'),
     ("DELETE", "/users/{id}"): ("user.deleted", ""),
+    ("DELETE", "/users/{id}/sign-in-lock"): ("user.unlocked", ""),
 }
 
 
@@ -718,6 +719,100 @@ def test_successful_sign_ins_do_not_build_up_a_wait(api: AuthAPI) -> None:
         assert api.sign_in("alice").status_code == 201, f"sign-in {attempt + 1}"
 
 
+# the account-wide lock and trusted devices (Go version: throttle_test.go; ADR account-abuse-and-lifecycle D4)
+
+
+def device_cookie(response: httpx2.Response) -> dict[str, str] | None:
+    """The device cookie response sets, None without one."""
+    found = set_cookie(response, DEVICE_COOKIE)
+    assert len(found) <= 1
+    return found[0] if found else None
+
+
+def lock_out(api: AuthAPI, account: str, n: int) -> None:
+    """n failed sign-ins for account, each from its own address, so only the account-wide count can stop them."""
+    for i in range(n):
+        address = f"198.51.{i // 200}.{i % 200 + 1}"
+        response = api.sign_in(account, WRONG, address=address)
+        assert response.status_code == 401, f"failure {i + 1} = {response.status_code} {response.text}"
+
+
+def test_untrusted_clients_are_locked_but_a_trusted_device_is_not(api: AuthAPI) -> None:
+    # after 100 failures (NIST SP 800-63B 3.2.2) clients the account does not know are refused, but a browser that
+    # signed in before still gets in, and its sign-in clears the account-wide count
+    api.must_sign_up("alice")
+    response = api.sign_in("alice", address="203.0.113.1")
+    device = device_cookie(response)
+    assert response.status_code == 201
+    assert device is not None
+    assert {k: v for k, v in device.items() if k != "value"} == {
+        "path": "/",
+        "max-age": str(180 * 24 * 3600),
+        "httponly": "",
+        "secure": "",
+        "samesite": "Strict",
+    }
+    lock_out(api, "alice", 99)
+    assert api.sign_in("alice", address="192.0.2.10").status_code == 201  # and the count starts over
+    lock_out(api, "alice", 100)
+    locked = api.sign_in("alice", address="192.0.2.11")
+    assert code(locked, 429, "/problems/rate-limited") == "login_throttled"
+    assert locked.headers["retry-after"] == "3600"
+    trusted = api.sign_in("alice", address="192.0.2.12", device=device["value"])
+    assert trusted.status_code == 201, trusted.text
+    assert device_cookie(trusted) is None  # already trusted: no second device
+    assert api.sign_in("alice", address="192.0.2.13").status_code == 201
+
+
+def test_a_device_cookie_is_per_account(api: AuthAPI) -> None:
+    api.must_sign_up("alice")
+    api.must_sign_up("mallory")
+    device = device_cookie(api.sign_in("mallory", address="203.0.113.1"))
+    assert device is not None
+    lock_out(api, "alice", 100)
+    assert_problem(api.sign_in("alice", address="203.0.113.1", device=device["value"]), 429, "/problems/rate-limited")
+
+
+@pytest.mark.parametrize("how", ["sign_out_all", "disable"])
+def test_signing_out_everywhere_and_disabling_forget_devices(api: AuthAPI, how: str) -> None:
+    user, _ = api.must_sign_up("alice")
+    response = api.sign_in("alice", address="203.0.113.1")
+    device = device_cookie(response)
+    assert device is not None
+    if how == "sign_out_all":
+        assert api.do("DELETE", "/api/sessions", session_token(response)).status_code == 204
+    else:
+        _, admin = must_admin(api)
+        assert patch_user(api, admin, user["id"], {"is_disabled": True}).status_code == 200
+        assert patch_user(api, admin, user["id"], {"is_disabled": False}).status_code == 200
+    assert api.sql("SELECT 1 FROM trusted_devices WHERE user_id = :id", id=uuid.UUID(user["id"])) == []
+    lock_out(api, "alice", 100)
+    assert_problem(api.sign_in("alice", address="203.0.113.1", device=device["value"]), 429, "/problems/rate-limited")
+
+
+def test_an_admin_sees_and_lifts_the_lock(api: AuthAPI) -> None:
+    _, admin = must_admin(api)
+    alice, _ = api.must_sign_up("alice")
+    path = f"/api/users/{alice['id']}/sign-in-lock"
+    assert api.do("GET", path, admin).json() == {"locked": False, "failures": 0}
+    lock_out(api, "alice", 100)
+    for _ in range(5):
+        api.sign_in("alice", WRONG, address="198.51.0.1")  # one address also waits
+    assert api.do("GET", path, admin).json() == {"locked": True, "failures": 105}
+    assert api.do("DELETE", path, admin).status_code == 204
+    # every count of the account goes, the per-client waits too (plan D10)
+    assert api.sql("SELECT 1 FROM sign_in_throttles WHERE account_key = 'alice'") == []
+    assert api.sign_in("alice", address="198.51.0.1").status_code == 201
+    assert api.do("GET", path, admin).json() == {"locked": False, "failures": 0}
+
+
+def test_the_sign_in_lock_of_a_missing_user_is_not_found(api: AuthAPI) -> None:
+    _, admin = must_admin(api)
+    path = f"/api/users/{uuid.uuid4()}/sign-in-lock"
+    assert_problem(api.do("GET", path, admin), 404, "/problems/not-found")
+    assert_problem(api.do("DELETE", path, admin), 404, "/problems/not-found")
+
+
 @pytest.mark.parametrize("operation", ["createUser", "createSession"])
 def test_sign_up_and_sign_in_are_limited_per_address(postgres: Server, operation: str) -> None:
     with auth_api(postgres, per_min=2) as api:
@@ -822,8 +917,15 @@ def test_cleanup_deletes_expired_sessions_and_stale_throttles(api: AuthAPI) -> N
     api.must_sign_up("fresh")
     api.sign_in("ghost2", WRONG)
     counts = api.call(api.service.cleanup)
-    assert (counts.sessions, counts.throttles) == (1, 1)  # the idle ones (step 5 adds the account-wide row)
+    # the idle ones; a failed sign-in keeps two rows, its client's and the account-wide count
+    assert (counts.sessions, counts.throttles, counts.devices) == (1, 2, 0)
     assert [r.account for r in api.sql("SELECT u.account FROM sessions s JOIN users u ON u.id = s.user_id")] == [
         "fresh"
     ]
-    assert [r.account_key for r in api.sql("SELECT account_key FROM sign_in_throttles")] == ["ghost2"]
+    assert [r.account_key for r in api.sql("SELECT account_key FROM sign_in_throttles")] == ["ghost2", "ghost2"]
+    # a trusted device lasts 180 days
+    assert api.sign_in("fresh").status_code == 201
+    api.clock.advance(timedelta(days=179))
+    assert api.call(api.service.cleanup).devices == 0
+    api.clock.advance(timedelta(days=2))
+    assert api.call(api.service.cleanup).devices == 1

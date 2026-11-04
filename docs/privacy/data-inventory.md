@@ -30,7 +30,7 @@
 | Request id、method、path、status、處理時間 | backend access log；同一個請求的每行日誌都帶 `request_id` | 追蹤 | 見「日誌」 | 讀得到日誌的人 |
 | User agent | backend 不記（`backend/src/app/web/access_log.py` 沒有這個欄位）。Vercel 與 Cloudflare 各自記錄經過它們的請求，可能含 `User-Agent`、完整 URI 與來源位址（推論，兩家的平台日誌；內容與保留期間依各自的方案與設定） | 平台的請求日誌 | 見「日誌」 | 讀得到日誌的人 |
 | 送給 HIBP 的密碼雜湊前綴 | 只在 `PASSWORD_HIBP_CHECK=true`（預設 false）時：正規化後密碼的 SHA-1 前 5 個 hex 字元，帶 `Add-Padding: true`（`backend/internal/platform/hibp/hibp.go`）。測試：`TestBreached` | 註冊與 `seed-admin` 時的外洩密碼檢查 | backend 不儲存；處理者端的保留依它的政策 | Have I Been Pwned |
-| 信任的裝置 | `trusted_devices`：裝置 cookie token 的 SHA-256、id、user id、建立與到期時間 | 本人曾登入過的瀏覽器不受帳號層級的鎖影響 | 180 天後到期並由每小時的清理刪除；全部登出、停用、救援、刪除帳號時刪除。測試：`TestCleanup`、`TestSignOutEverywhereForgetsDevices` | 原始 token 只有瀏覽器（HttpOnly）；雜湊只有 DB 角色 |
+| 信任的裝置 | `trusted_devices`：裝置 cookie token 的 SHA-256、id、user id、建立與到期時間 | 本人曾登入過的瀏覽器不受帳號層級的鎖影響 | 180 天後到期並由每小時的清理刪除；全部登出、停用、救援、刪除帳號時刪除。測試：`test_cleanup_deletes_expired_sessions_and_stale_throttles`、`test_signing_out_everywhere_and_disabling_forget_devices`（`test_auth_db.py`） | 原始 token 只有瀏覽器（HttpOnly）；雜湊只有 DB 角色 |
 | 稽核紀錄 | `audit_events`：時間、執行者的 user id（主機上的指令為空）、動作、對象的 user id、request id；不存帳號名 | 追查誰停用、啟用、刪除、解鎖了哪個帳號 | 只能新增與讀取（app 角色沒有 UPDATE、DELETE）。超過 365 天的列在下一次 `app migrate`（每次部署）時刪除：長期沒有部署時會留得更久（表的 comment，`internal/platform/migrate`）；帳號刪除後紀錄仍在，只剩 id | 只有 DB 角色，沒有 API |
 | 建立 admin 時的帳號名 | `seed-admin` 印到 stdout（`backend/src/app/main/seed.py`） | 回饋給操作者 | 看操作者的終端機或 job 輸出存到哪 | 操作者 |
 

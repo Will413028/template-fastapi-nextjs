@@ -72,7 +72,7 @@ def test_only_the_cookie_authenticates() -> None:
 
 @pytest.mark.parametrize(
     ("cookie", "other"),
-    [(SECURE, "session"), (SessionCookie(name="session", secure=False), "__Host-session")],
+    [(SECURE, "session"), (SessionCookie(name="session", device_name="device", secure=False), "__Host-session")],
 )
 def test_the_cookie_name_follows_cookie_secure(cookie: SessionCookie, other: str) -> None:
     # COOKIE_SECURE=false names the cookie `session` (the __Host- prefix needs Secure); 2b's check knew only the other
@@ -149,7 +149,17 @@ def test_session_cookie_attributes() -> None:
         "__Host-session=tok; Path=/; Max-Age=604800; HttpOnly; Secure; SameSite=Lax"
     )
     assert SECURE.clear() == "__Host-session=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax"
-    assert SessionCookie(name="session", secure=False).clear() == "session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax"
+    assert (
+        SessionCookie(name="session", device_name="device", secure=False).clear()
+        == "session=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax"
+    )
+
+
+def test_device_cookie_attributes() -> None:
+    # SameSite=Strict: only a same-site sign-in reads it (Go version: auth.go Cookie.device)
+    assert SECURE.device("dev", timedelta(days=180)) == (
+        "__Host-device=dev; Path=/; Max-Age=15552000; HttpOnly; Secure; SameSite=Strict"
+    )
 
 
 def test_the_current_session_is_not_taken_for_a_session_id() -> None:
@@ -188,4 +198,4 @@ def test_serve_cleans_up_on_a_schedule_until_shutdown(caplog: pytest.LogCaptureF
     assert "auth cleanup failed" in messages
     done = [r for r in caplog.records if r.getMessage() == "auth cleanup"]
     assert done
-    assert (done[0].__dict__["sessions_deleted"], done[0].__dict__["throttles_deleted"]) == (1, 2)
+    assert [done[0].__dict__[k] for k in ("sessions_deleted", "throttles_deleted", "devices_deleted")] == [1, 2, 3]

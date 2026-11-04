@@ -52,7 +52,14 @@ def run(environ: Mapping[str, str] | None) -> int:
                 docs=settings.mode == "dev",
                 limiter=IPLimiter(settings.auth_rate_limit_per_min, time.monotonic),
                 modules=Modules(
-                    auth=Auth(auth, SessionCookie(name=settings.session_cookie_name, secure=settings.cookie_secure)),
+                    auth=Auth(
+                        auth,
+                        SessionCookie(
+                            name=settings.session_cookie_name,
+                            device_name=settings.device_cookie_name,
+                            secure=settings.cookie_secure,
+                        ),
+                    ),
                     items=ItemsService(database.engine),
                 ),
             )

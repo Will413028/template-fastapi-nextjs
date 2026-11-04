@@ -191,6 +191,9 @@
 - [ ] **5b. trusted devices 與帳號鎖定**（被擋於：5a）
   - 範圍：附件第 27、30（刪 devices）、32（清過期 devices）、34 列；`getSignInLock`、`deleteSignInLock`；加回 `clear_login_throttles`（第 28 列，D10）。
   - 驗收：對照 `throttle_test.go` 其餘與 `service_test.go` 的 devices 與鎖定案例；mutation：把鎖定門檻加大，鎖定測試要失敗。
+  - 執行中的決定與偏離（2026-11-04）：
+    - 裝置 cookie 名稱由 `Settings.device_cookie_name` 決定（跟 session cookie 同規則），`SessionCookie` 多一個 `device_name` 欄位與 `device()`；`sign_in` 回傳 `SignedIn`（user、session、device）。
+    - `/code-review medium` 9 項（blocking 0）：修 1（威脅模型仍寫 `_client_key`）；駁回 5：信任裝置登入成功也把帳號合計歸零（ADR D4 2026-11-04 修訂與 D10 的 B 寫明，C 已被否決）、被拒的嘗試也更新 `updated_at` 使「一天沒有嘗試」延後（ADR 的字面意思，D10 C 已記這個性質）、鎖定狀態只靠每小時清理過期（最多晚 1 小時，與 Go 版相同）、鎖定拒絕前已計入該來源的退避（Go 版同順序）、`SessionCookie` 名稱（nit）；記錄 3（皆與 Go 版相同）：一個瀏覽器只有一個裝置 cookie，兩個帳號共用同一瀏覽器時互相覆蓋信任——觸發條件：有多帳號共用瀏覽器的需求時改成 cookie 存多個 token；不帶 cookie 的客戶端每次成功都新增一列 `trusted_devices`、沒有每人上限——觸發條件：任一使用者的裝置列超過 100 時加上限或去重；一次登入開 4–5 次連線——觸發條件：登入延遲或連線池等待出現在監控時合併成一個交易。
 - [ ] **5c. recover-admin、HIBP 與收掉「尚未實作」集合**（被擋於：5b）
   - 範圍：`recover-admin` 與 `make recover-admin`（附件第 14、50 列），和 `seed-admin` 共用建 `AuthService` 的組裝；HIBP 與 `PASSWORD_HIBP_CHECK`（第 11、48 列；用標準庫 HTTP，不加依賴；要加依賴就停下問）；刪掉 `UNIMPLEMENTED`；補回 `TestCredentialsNeverLogged`、`TestSecurityEventsLogged` 的 HIBP 與 `authz.denied` 部分。
   - 驗收：對照 `TestRecoverAdmin`、`TestCreateUserBreachedPassword`；mutation：HIBP 失敗改成拒絕，失敗放行的測試要失敗。
@@ -281,6 +284,7 @@
 | 4 items | 完成 | CI：run `41716291944` 五個 job 全綠（77 個 db 測試、332 個非 db 測試）。本機：`make -C backend check` exit 0。本機 mutation（`red-proof.py`，baseline 與 canary 先過）5 個全被殺：get／list／update／delete 各拿掉 owner 條件、update 不設 `updated_at`（`test_items_repository.py`）。審查：`/code-review` 10 項（修 6：威脅模型補 items 列、指南不提私人工具、dependency 改 async、拿掉多餘的 state 防呆、Item 依欄位名建立、指南搬到 `docs/rules/add-module.md`；駁回 4：UUIDv7 排序與 Go 版和 sessions 相同、`Modules` 一起建是刻意（items 需要 auth）、共用的不連線 engine 沒有測試會連、Location 字面值與 auth 一致）；契約對照審查 0 blocking、2 nit（指南私人工具已修；`sleep(0.01)` 駁回：防同一微秒）。 | db 層的 owner mutation 沒推 mutation 分支跑（本機的查詢結構測試已涵蓋同一個拿掉 owner 條件的改動） | 下一步：5 |
 | 5 帳號濫用與管理 | 進行中（5a 完成） | | | |
 | 5a ADMIN 標記與 admin 操作 | 完成 | CI：run `41722671968` 五個 job 全綠（84 個 db 測試、335 個非 db 測試）、Security run `41722671961` 全綠。本機：`make -C backend check` exit 0、`check_locks.py` 通過、pre-push 全過；先寫的 `test_a_user_who_is_not_an_admin_is_refused_and_it_is_logged` 在實作前 3 個參數都失敗（405）。本機 mutation（`red-proof.py`，baseline 與 canary 先過）2 個全被殺：`admin` 不檢查角色、`listUsers` 標記換成 `SIGNED_IN`。CI mutation：`_keep_an_admin` 永不拒絕（PR #16，run `41723074893`，4 個預期的 db 測試失敗：唯一 admin 不能停用、並行停用留一個、admin 刪除、唯一 admin 刪自己）。審查：`/code-review medium` 8 項（blocking 0）：修 3（角色常數共用 `app.platform.principal.ROLE_ADMIN`、同一交易的 audit 時間與重新驗證用同一個 `now`、過時註解）、駁回 5（admin 停用或刪除自己時不清 cookie：下個請求 middleware 會清，Go 版相同；重複停用也寫 audit、每次停用都鎖 admin 列、停用不寫應用日誌：與 Go 版 `SetDisabled` 相同） | 第 2 輪審查沒跑：修正是重構，由既有測試與 CI 證明 | `d8272a2`（拆分）、`6827c63`；下一步：5b |
+| 5b trusted devices 與帳號鎖定 | 程式完成待驗收 | 本機：`make -C backend check` exit 0（339 個非 db 測試）、`check_locks.py` 通過；先寫的非 db 測試在實作前無法載入（`SessionCookie` 沒有 `device_name`）。本機 mutation（`red-proof.py`）：成功只清該來源不含帳號合計、裝置 cookie 改 `Lax`、`deleteSignInLock` 標記換成 `SIGNED_IN`，全被殺；從 `ADMIN_OPERATIONS` 拿掉解鎖在本機存活（只由 db 測試的 `set(AUDITED)` 抓）。審查：`/code-review medium`，處理見 5b 的「執行中的決定與偏離」 | 90 個 db 測試與 CI mutation（鎖定門檻加大、登出全部不刪裝置）等 CI | 待填 |
 | 6 rename | 未開始 | | | |
 | 7 漂移檢查 | 未開始 | | | |
 | 8 收尾 | 未開始 | | | |

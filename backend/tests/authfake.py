@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
     from app.web.origin import OriginPolicy
 
-SECURE = SessionCookie(name="__Host-session", secure=True)
+SECURE = SessionCookie(name="__Host-session", device_name="__Host-device", secure=True)
 ALICE = User(
     id=uuid.UUID("01900000-0000-7000-8000-000000000001"),
     account="alice",
@@ -33,8 +33,14 @@ ALICE = User(
 SESSION_ID = uuid.UUID("01900000-0000-7000-8000-0000000000aa")
 TOKEN = "t" * 43
 
-# the operations only admins may call (Go version: authz.go operationAccess); step 5b adds the sign-in lock
-ADMIN_OPERATIONS = (("GET", "/users"), ("PATCH", "/users/{id}"), ("DELETE", "/users/{id}"))
+# the operations only admins may call (Go version: authz.go operationAccess)
+ADMIN_OPERATIONS = (
+    ("GET", "/users"),
+    ("PATCH", "/users/{id}"),
+    ("DELETE", "/users/{id}"),
+    ("GET", "/users/{id}/sign-in-lock"),
+    ("DELETE", "/users/{id}/sign-in-lock"),
+)
 
 
 # an engine that never connects: nothing that would reach the database runs in these tests
@@ -76,7 +82,7 @@ class FakeAuthService(AuthService):
         if self.cleanups in self.cleanup_fails:
             msg = "the database is down"
             raise OSError(msg)
-        return CleanupCounts(sessions=1, throttles=2)
+        return CleanupCounts(sessions=1, throttles=2, devices=3)
 
 
 def fake_modules(service: FakeAuthService | None = None, cookie: SessionCookie = SECURE) -> Modules:

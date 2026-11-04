@@ -132,6 +132,11 @@ class Settings:
         """The `__Host-` prefix requires Secure, so a cookie that is not Secure drops it."""
         return "__Host-session" if self.cookie_secure else "session"
 
+    @property
+    def device_cookie_name(self) -> str:
+        """The trusted-device cookie, named by the same rule as the session cookie."""
+        return "__Host-device" if self.cookie_secure else "device"
+
     @classmethod
     def from_env(cls, environ: Mapping[str, str] | None = None) -> Self:
         env = _Env(os.environ if environ is None else environ)

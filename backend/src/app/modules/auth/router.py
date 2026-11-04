@@ -60,7 +60,7 @@ def _issued(response: Response, location: str, cookie: str) -> None:
     response.headers.append("Set-Cookie", cookie)
 
 
-def _client_key() -> str:
+def _address_key() -> str:
     """Where a sign-in comes from, for its throttle: the address the rate limit uses (IPv4, or the IPv6 /64). The
     connection always has one over TCP; without one every client would share the "unknown" bucket."""
     client = current_client()
@@ -81,11 +81,18 @@ async def create_user(
 async def create_session(
     body: api.CreateSessionRequest, service: Service, session: CurrentSession, response: Response
 ) -> api.Session:
-    user, new = await service.sign_in(
-        body.account, body.password, previous_token=session.token, client_key=_client_key()
+    signed_in = await service.sign_in(
+        body.account,
+        body.password,
+        previous_token=session.token,
+        address_key=_address_key(),
+        device_token=session.device_token,
     )
+    new = signed_in.session
     _issued(response, f"/api/sessions/{new.info.id}", session.cookie.set(new.token, new.max_age))
-    return _session(new.info, user, new.info.id)
+    if signed_in.device is not None:
+        response.headers.append("Set-Cookie", session.cookie.device(signed_in.device.token, signed_in.device.max_age))
+    return _session(new.info, signed_in.user, new.info.id)
 
 
 @router.delete("/sessions/current", status_code=status.HTTP_204_NO_CONTENT, dependencies=[PUBLIC])
@@ -144,6 +151,20 @@ async def list_users(
     """Admins only. The contract has already checked limit's range (app.web.contract)."""
     page = await service.list_users(limit=limit, cursor=cursor)
     return api.UserPage(users=[_user(u) for u in page.users], next_cursor=page.next_cursor)
+
+
+@router.get("/users/{id}/sign-in-lock")
+async def get_sign_in_lock(id: uuid.UUID, service: Service, _admin: Admin) -> api.SignInLock:
+    """Admins only."""
+    lock = await service.sign_in_lock(id)
+    return api.SignInLock(locked=lock.locked, failures=lock.failures)
+
+
+@router.delete("/users/{id}/sign-in-lock", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_sign_in_lock(id: uuid.UUID, service: Service, principal: Admin) -> Response:
+    """Admins only."""
+    await service.unlock_sign_in(principal, id, request_id=current_request_id())
+    return _no_content()
 
 
 @router.get("/users/{id}")

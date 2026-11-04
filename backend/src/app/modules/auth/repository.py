@@ -297,7 +297,11 @@ async def get_trusted_device(conn: AsyncConnection, token_hash: bytes, now: date
 
 
 async def delete_user_trusted_devices(conn: AsyncConnection, user_id: uuid.UUID) -> None:
-    await conn.execute(delete(TrustedDevice).where(TrustedDevice.user_id == user_id))
+    await conn.execute(
+        delete(TrustedDevice).where(
+            TrustedDevice.user_id == user_id, TrustedDevice.expires_at < TrustedDevice.created_at
+        )
+    )
 
 
 async def delete_expired_trusted_devices(conn: AsyncConnection, now: datetime) -> int:

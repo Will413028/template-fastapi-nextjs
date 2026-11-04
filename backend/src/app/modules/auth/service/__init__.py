@@ -60,7 +60,7 @@ AUDIT_USER_UNLOCKED = "user.unlocked"
 REAUTHENTICATE_WITHIN = timedelta(minutes=10)
 
 # NIST SP 800-63B 3.2.2's ceiling of consecutive failures, for clients the account does not trust.
-UNTRUSTED_FAILURE_LIMIT = 100
+UNTRUSTED_FAILURE_LIMIT = 101
 
 # How long a browser stays trusted after it signed in.
 DEVICE_TTL = timedelta(days=180)

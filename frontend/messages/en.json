@@ -15,11 +15,11 @@
     "dashboard": "Dashboard"
   },
   "home": {
-    "title": "template-go-nextjs",
-    "description": "A production-ready fullstack template with Next.js, Go, and Docker Compose."
+    "title": "template-fastapi-nextjs",
+    "description": "A production-ready fullstack template with Next.js, FastAPI, and Docker Compose."
   },
   "footer": {
-    "brand": "template-go-nextjs",
+    "brand": "template-fastapi-nextjs",
     "home": "Home",
     "copyright": "All rights reserved."
   },

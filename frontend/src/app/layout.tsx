@@ -3,23 +3,23 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: {
-    default: "template-go-nextjs",
-    template: "%s | template-go-nextjs",
+    default: "template-fastapi-nextjs",
+    template: "%s | template-fastapi-nextjs",
   },
   description:
-    "A production-ready fullstack template with Next.js, Go, and Docker Compose.",
+    "A production-ready fullstack template with Next.js, FastAPI, and Docker Compose.",
   openGraph: {
-    title: "template-go-nextjs",
+    title: "template-fastapi-nextjs",
     description:
-      "A production-ready fullstack template with Next.js, Go, and Docker Compose.",
+      "A production-ready fullstack template with Next.js, FastAPI, and Docker Compose.",
     type: "website",
     locale: "en",
   },
   twitter: {
     card: "summary",
-    title: "template-go-nextjs",
+    title: "template-fastapi-nextjs",
     description:
-      "A production-ready fullstack template with Next.js, Go, and Docker Compose.",
+      "A production-ready fullstack template with Next.js, FastAPI, and Docker Compose.",
   },
   robots: {
     index: true,

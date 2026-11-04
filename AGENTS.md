@@ -52,7 +52,7 @@ The backend is a modular monolith organized by feature. `backend/.importlinter` 
 ├── docker-compose.yml      # VM stack (postgres + backend; cloudflared with --profile tunnel)
 ├── docker-compose.dev.yml  # Dev overrides (compose watch, frontend dev server on 127.0.0.1:3000)
 ├── Makefile                # Docker Compose shortcuts
-├── scripts/                # Repo tooling (init_env, quality locks, commit policy)
+├── scripts/                # Repo tooling (rename, init_env, quality locks, commit policy)
 └── .env-example            # Environment variable template
 ```
 
@@ -60,6 +60,7 @@ The backend is a modular monolith organized by feature. `backend/.importlinter` 
 
 ```bash
 # Docker Compose (from root)
+make rename NAME=my-project         # Rename a fresh clone (database, roles, image, packages, brand; REPO=owner/repo)
 make init-env                       # Create .env and the database password files in .secrets/
 make dev                            # Start dev stack (compose watch) on http://localhost:3000
 make up                             # Start the VM stack without the tunnel (detached)

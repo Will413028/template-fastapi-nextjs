@@ -1,117 +1,137 @@
 #!/usr/bin/env python3
-"""Rename a fresh clone of the template: Docker image, package and database names, branding, and the Go module path.
+"""Rename a fresh clone of the template: database and role names, Docker image, package names, GitHub repository and branding.
 
-Usage: python3 scripts/rename.py <name> [--module <go module path>]
-Run from the repository root. The module path defaults to github.com/Will413028/<name>/backend. Every import of the
-old module path is rewritten and `go build ./...` checks the result. Review the changes with `git diff`.
+Usage: python3 scripts/rename.py <name> [--repo <owner/repo>]
+Run from the repository root of an unrenamed clone. The repository defaults to Will413028/<name>. Before changing
+anything the script checks that every tracked file naming the placeholder is in one of the lists below (or KEPT), so a
+failed run leaves the clone untouched. Review the changes with `git diff`.
 """
 
 import argparse
 import pathlib
 import re
-import shutil
 import subprocess
 import sys
 
-DEFAULT_MODULE = "github.com/Will413028/{name}/backend"
-BRAND = "template-go-nextjs"
-OLD_NAME = "template-go-nextjs"
-OLD_DB = "template_go_nextjs"
-# Files that hold the database, role and image names. After the replacements none of them may still name OLD_DB.
-STACK_FILES = ("docker-compose.yml", ".env-example", "backend/.env-example", ".github/workflows/ci.yml")
+OLD_NAME = "template-fastapi-nextjs"
+OLD_DB = "template_fastapi_nextjs"
+OLD_REPO = f"Will413028/{OLD_NAME}"
+DEFAULT_REPO = "Will413028/{name}"
+# Files that hold the database, role and image names (database names are unquoted identifiers: no hyphens).
+STACK_FILES = (
+    "docker-compose.yml",
+    ".env-example",
+    ".github/workflows/ci.yml",
+    "backend/tests/dbtest.py",
+    "docs/rules/database-design.md",
+    "docs/privacy/data-inventory.md",
+)
+# Package names: <name>-backend (uv) and <name>-frontend (pnpm); uv.lock repeats the backend's.
+PACKAGE_FILES = ("backend/pyproject.toml", "backend/uv.lock", "frontend/package.json")
+# Links to the GitHub repository.
+REPO_FILES = ("SECURITY.md", ".github/workflows/security.yml")
 BRAND_FILES = (
     "frontend/src/app/layout.tsx",
     "frontend/messages/en.json",
     "frontend/messages/zh-TW.json",
+    "frontend/README.md",
     "backend/api/openapi.yaml",
+    "backend/src/app/platform/hibp.py",
     "AGENTS.md",
     "README.md",
 )
-# Text files under backend/ that may name the module path (imports, depguard rules).
-MODULE_FILE_SUFFIXES = (".go", ".yml", ".yaml")
+# May keep naming the template: the plans record its history, and this script and its test name the placeholder.
+KEPT = ("docs/plans/", "scripts/rename.py", "scripts/test_rename.py")
 NAME_PATTERN = re.compile(r"[a-z](?:[a-z0-9-]*[a-z0-9])?")
+# PostgreSQL limits identifiers to 63 bytes; the longest one built from the name is <db>_owner.
+MAX_NAME = 63 - len("_owner")
+# The database name is an unquoted identifier: PostgreSQL's reserved key words cannot be one
+# (https://www.postgresql.org/docs/current/sql-keywords-appendix.html, column "PostgreSQL", reserved).
+RESERVED = frozenset(
+    "all analyse analyze and any array as asc asymmetric authorization binary both case cast check collate collation "
+    "column concurrently constraint create cross current_catalog current_date current_role current_schema current_time "
+    "current_timestamp current_user default deferrable desc distinct do else end except false fetch for foreign freeze "
+    "from full grant group having ilike in initially inner intersect into is isnull join lateral leading left like "
+    "limit localtime localtimestamp natural not notnull null offset on only or order outer overlaps placing primary "
+    "references returning right select session_user similar some symmetric system_user table tablesample then to "
+    "trailing true union unique user using variadic verbose when where window with".split()
+)
+REPO_PATTERN = re.compile(r"[A-Za-z0-9-]+/[A-Za-z0-9._-]+")
+PLACEHOLDER = re.compile(rf"{OLD_NAME}|{OLD_DB}")
 
 
-def update(path: pathlib.Path, change) -> bool:
+LISTED = frozenset(STACK_FILES + PACKAGE_FILES + REPO_FILES + BRAND_FILES)
+
+
+def update(path: pathlib.Path, change) -> None:
     text = path.read_text(encoding="utf-8")
     new = change(text)
-    if new == text:
-        return False
-    path.write_text(new, encoding="utf-8")
-    print(f"Updated {path}")
-    return True
+    if new != text:
+        path.write_text(new, encoding="utf-8")
+        print(f"Updated {path}")
 
 
-def rename_stack(text: str, name: str, db: str) -> str:
-    text = text.replace(f"{OLD_NAME}-backend", f"{name}-backend")
-    # OLD_DB, OLD_DB_owner, OLD_DB_app: the database and its roles (unquoted identifiers, no hyphens)
-    return re.sub(rf"\b{OLD_DB}(?=_owner\b|_app\b|\b)", db, text)
-
-
-def rename_module(backend: pathlib.Path, old: str, new: str) -> list[pathlib.Path]:
-    subprocess.run(["go", "mod", "edit", "-module", new], cwd=backend, check=True)
-    print(f"Updated {backend / 'go.mod'}")
-    # the old path itself or one of its packages, never a longer path that only starts with it
-    pattern = re.compile(re.escape(old) + r"(?=[/\"`\s]|$)", re.M)
-    changed = []
-    for path in sorted(backend.rglob("*")):
-        rel = path.relative_to(backend)
-        if not path.is_file() or path.suffix not in MODULE_FILE_SUFFIXES or rel.parts[0] == "bin":
+def leftovers(root: pathlib.Path) -> list[str]:
+    files = subprocess.run(
+        ["git", "ls-files", "-z"], cwd=root, check=True, capture_output=True, text=True
+    ).stdout.split("\0")
+    found = []
+    for rel in files:
+        path = root / rel
+        if not rel or rel.startswith(KEPT) or rel in LISTED or not path.is_file():
             continue
-        if update(path, lambda t: pattern.sub(new, t)):
-            changed.append(path)
-    return changed
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        found += [f"{rel}:{n}" for n, line in enumerate(text.splitlines(), 1) if PLACEHOLDER.search(line)]
+    return found
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("name", help="lowercase letters, digits and hyphens, e.g. my-project")
-    parser.add_argument("--module", help=f"Go module path (default {DEFAULT_MODULE})")
+    parser.add_argument("--repo", help=f"GitHub owner/repo (default {DEFAULT_REPO})")
     args = parser.parse_args()
 
     name = args.name
     if not NAME_PATTERN.fullmatch(name):
         parser.error(f"invalid name {name!r}: use lowercase letters, digits and hyphens, starting with a letter")
+    repo = args.repo or DEFAULT_REPO.format(name=name)
+    if not REPO_PATTERN.fullmatch(repo):
+        parser.error(f"invalid repository {repo!r}: use owner/repo")
     db = name.replace("-", "_")
-    module = args.module or DEFAULT_MODULE.format(name=name)
+    if len(name) > MAX_NAME or db in RESERVED or OLD_NAME in name:
+        parser.error(
+            f"invalid name {name!r}: at most {MAX_NAME} characters, not a PostgreSQL reserved word, not containing {OLD_NAME}"
+        )
     root = pathlib.Path.cwd()
-    backend = root / "backend"
-    if not (backend / "go.mod").exists():
-        parser.error("backend/go.mod not found; run from the repository root")
-    if shutil.which("go") is None:
-        parser.error("go not found on PATH (version in backend/go.mod)")
-    print(f"Renaming project to {name!r} (Go module {module})...")
-
-    for rel in STACK_FILES:
-        path = root / rel
-        update(path, lambda t: rename_stack(t, name, db))
-        if OLD_DB in path.read_text(encoding="utf-8"):
-            print(f"error: {rel} still names {OLD_DB}; update scripts/rename.py", file=sys.stderr)
-            return 1
-    update(root / "frontend/package.json", lambda t: t.replace(f"{OLD_NAME}-frontend", f"{name}-frontend"))
-    update(backend / "internal/platform/config/config.go", lambda t: t.replace(f'"{OLD_NAME}"', f'"{name}"'))
-    repo = re.match(r"github\.com/[^/]+/[^/]+", module)
-    if repo:
-        update(root / "SECURITY.md", lambda t: t.replace(f"github.com/Will413028/{OLD_NAME}", repo.group()))
-    else:
-        print("note: the module path is not on github.com; update the advisory link in SECURITY.md by hand")
-    for rel in BRAND_FILES:
-        update(root / rel, lambda t: t.replace(BRAND, name))
-
-    old_module = subprocess.run(
-        ["go", "list", "-m"], cwd=backend, check=True, capture_output=True, text=True
-    ).stdout.strip()
-    if old_module != module:
-        changed = rename_module(backend, old_module, module)
-        # a new path can sort differently against the other imports in its group
-        go_files = [str(p) for p in changed if p.suffix == ".go"]
-        if go_files:
-            subprocess.run(["gofmt", "-w", *go_files], check=True)
-
-    print("Checking the backend builds: go build ./...")
-    if subprocess.run(["go", "build", "./..."], cwd=backend, check=False).returncode != 0:
-        print("error: go build failed after the rename", file=sys.stderr)
+    if not (root / "backend/pyproject.toml").exists():
+        parser.error("backend/pyproject.toml not found; run from the repository root")
+    if OLD_NAME not in (root / "backend/pyproject.toml").read_text(encoding="utf-8"):
+        parser.error("this clone is already renamed")
+    found = leftovers(root)
+    if found:
+        print(
+            f"error: these lines name {OLD_NAME} or {OLD_DB} in files scripts/rename.py does not list; add the files"
+            " to a list there and run again (nothing was changed):",
+            file=sys.stderr,
+        )
+        print("\n".join(f"  {line}" for line in found), file=sys.stderr)
         return 1
+    print(f"Renaming project to {name!r} (repository {repo})...")
+
+    for rel in REPO_FILES:
+        update(root / rel, lambda t: t.replace(OLD_REPO, repo))
+    for rel in STACK_FILES:
+        # the database and its roles (<db>_owner, <db>_app)
+        update(root / rel, lambda t: t.replace(OLD_DB, db))
+    for rel in STACK_FILES + PACKAGE_FILES + BRAND_FILES:
+        update(root / rel, lambda t: t.replace(OLD_NAME, name))
+    for rel in sorted(LISTED):
+        if PLACEHOLDER.search((root / rel).read_text(encoding="utf-8")):
+            print(f"error: {rel} still names the placeholder after the rename; fix scripts/rename.py", file=sys.stderr)
+            return 1
     print("Done! Review the changes with: git diff")
     print("An existing .env keeps the old database and role names; compare it with .env-example.")
     return 0

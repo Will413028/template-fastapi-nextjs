@@ -106,6 +106,13 @@ logs-postgres:
 status:
 	$(COMPOSE) ps
 
+.PHONY: rename
+rename:
+ifndef NAME
+	$(error NAME is required. Usage: make rename NAME=my-project [REPO=owner/repo])
+endif
+	@python3 scripts/rename.py "$(NAME)" $(if $(REPO),--repo "$(REPO)")
+
 .PHONY: init-env
 init-env:
 	@python3 scripts/init_env.py

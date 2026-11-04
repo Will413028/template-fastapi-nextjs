@@ -1,5 +1,5 @@
 {
-  "name": "template-go-nextjs-frontend",
+  "name": "template-fastapi-nextjs-frontend",
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@12.14.0",

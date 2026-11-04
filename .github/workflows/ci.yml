@@ -90,6 +90,28 @@ jobs:
           else range="$HEAD_SHA"; fi  # a new branch whose first commit is the root commit
           python3 scripts/check_commit_policy.py --range "$range"
 
+  # A derived project starts with `make rename`; afterwards the backend still passes its lock check and tests (rename.py
+  # itself fails when a tracked file it does not list names the placeholder). Skipped once the project is renamed.
+  rename:
+    name: Rename smoke test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - id: placeholder
+        run: if grep -q template-fastapi-nextjs backend/pyproject.toml; then echo "found=true" >> "$GITHUB_OUTPUT"; fi
+      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        if: steps.placeholder.outputs.found == 'true'
+        with:
+          version-file: backend/pyproject.toml
+          enable-cache: false
+      - if: steps.placeholder.outputs.found == 'true'
+        run: make rename NAME=ci-probe
+      - if: steps.placeholder.outputs.found == 'true'
+        run: make sync && uv lock --check && make test
+        working-directory: backend
+
   # Builds the production backend image and starts the stack the VM runs (no tunnel: CI has no token).
   stack:
     name: Compose stack (image + migrate + health)
@@ -194,7 +216,7 @@ jobs:
     # The only required check on main: it passes when every other job in this workflow succeeded or was skipped.
     name: gate (ci)
     if: always()
-    needs: [backend, policy, stack, frontend]
+    needs: [backend, policy, rename, stack, frontend]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}

@@ -18,6 +18,7 @@ Fullstack monorepo template for new web projects: the Python sibling of `templat
 ## Quick Start
 
 ```bash
+make rename NAME=my-project  # once per new project: database, image, package and brand names (REPO=owner/repo)
 make init-env        # .env from .env-example, database passwords in .secrets/
 make dev             # backend rebuilt on change, Next.js dev server: http://localhost:3000
 make -C backend sync check

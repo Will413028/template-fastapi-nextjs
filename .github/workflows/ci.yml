@@ -27,7 +27,7 @@ jobs:
           # migrations-immutable compares revisions with the merge-base of HEAD and the event's base
           fetch-depth: 0
           persist-credentials: false
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version-file: backend/pyproject.toml
           enable-cache: false
@@ -129,7 +129,7 @@ jobs:
           fi
           grep -F 'github.com/ci-owner/ci-probe-fork/security/advisories/new' SECURITY.md ||
             { echo "SECURITY.md does not link to ci-owner/ci-probe-fork"; exit 1; }
-      - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         with:
           version-file: ${{ runner.temp }}/ci-probe/backend/pyproject.toml
           enable-cache: false
@@ -145,7 +145,7 @@ jobs:
         working-directory: ${{ runner.temp }}/ci-probe
       # pnpm/setup refuses a path outside the workspace: it sets up pnpm from the template's frontend (same lockfile),
       # and the generated project installs from the warm store
-      - uses: pnpm/setup@a0881977cd8ea73b1ed212236c99ca10dcc80cf4 # v3.1.1
+      - uses: pnpm/setup@fa36a5ef7dcdefc3a7cb25655c122e00cf6e636e # v3.1.2
         with:
           working-directory: frontend
           runtime: node@26
@@ -228,7 +228,7 @@ jobs:
           persist-credentials: false
       # Node.js 26 and the pnpm version in package.json's packageManager, then pnpm install --frozen-lockfile with the
       # store cached. pnpm/setup succeeds pnpm/action-setup for pnpm 11 and newer.
-      - uses: pnpm/setup@a0881977cd8ea73b1ed212236c99ca10dcc80cf4 # v3.1.1
+      - uses: pnpm/setup@fa36a5ef7dcdefc3a7cb25655c122e00cf6e636e # v3.1.2
         with:
           working-directory: frontend
           runtime: node@26

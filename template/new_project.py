@@ -34,13 +34,10 @@ OLD_NAME = "template-fastapi-nextjs"
 OLD_DB = OLD_NAME.replace("-", "_")
 OLD_REPO = f"Will413028/{OLD_NAME}"
 DEFAULT_OWNER = "Will413028"
-# Paths (prefixes) the export leaves out: the generator, its tests and the derived files' sources; the plans; the
-# drift check against template-go-nextjs, which only the template runs.
+# Paths (prefixes) the export leaves out: the generator, its tests and the derived files' sources; the plans.
 EXCLUDED = (
     "template/",
     "docs/plans/",
-    "scripts/check_go_drift.py",
-    "scripts/test_check_go_drift.py",
 )
 # template/derived/<path> replaces <path> in the output.
 DERIVED = "template/derived/"

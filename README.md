@@ -1,6 +1,6 @@
 # template-fastapi-nextjs
 
-Fullstack monorepo template for new web projects: the Python sibling of `template-go-nextjs`, with the same HTTP contract and the same Next.js frontend.
+Fullstack monorepo template for new web projects: a FastAPI backend that started from `template-go-nextjs` at `560106d` (its HTTP contract and Next.js frontend) and evolves on its own since.
 
 **Backend:** FastAPI (modular monolith organized by feature, hand-written OpenAPI contract, uv)
 **Frontend:** Next.js 16 (App Router, TypeScript, Tailwind v4, shadcn/ui, i18n, generated API client), deployed to Vercel

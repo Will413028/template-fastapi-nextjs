@@ -1,5 +1,5 @@
 ---
-title: FastAPI 版後端：契約優先、SQLAlchemy async＋Alembic、按功能分模組，與 Go 版共用前端與契約
+title: FastAPI 版後端：契約優先、SQLAlchemy async＋Alembic、按功能分模組，以 template-go-nextjs@560106d 為分家點
 date: 2026-11-05
 review-date: 2027-05-05
 status: active
@@ -7,15 +7,15 @@ supersedes: "2026-10-18-go-backend.md（Go 版範本的後端 ADR，不適用本
 tags: [fullstack-template, decision, fastapi, postgresql, migration]
 ---
 
-# FastAPI 版後端：契約優先、SQLAlchemy async＋Alembic、按功能分模組，與 Go 版共用前端與契約
+# FastAPI 版後端：契約優先、SQLAlchemy async＋Alembic、按功能分模組，以 template-go-nextjs@560106d 為分家點
 
 ## Context
 
-這個 repo 是 template-go-nextjs 的 Python 兄弟：同一個 HTTP 契約、同一個 Next.js 前端，backend 改用 FastAPI。規格是 template-go-nextjs@560106d。用 `make new` 產生的專案和範本沒有連結，所以這裡的每個預設都是衍生專案的起點。
+這個 repo 從 template-go-nextjs@560106d 分出來：當時的 HTTP 契約與 Next.js 前端照搬，backend 改用 FastAPI，規格是那個 commit 的行為。之後 Go 版改用 Protobuf＋Connect（Go 版 ADR `2026-11-03-api-contract-protobuf-connect.md`），兩版從此各自演進（D8）。用 `make new` 產生的專案和範本沒有連結，所以這裡的每個預設都是衍生專案的起點。
 
 **約束**：
 
-- `external`：Will 要一個 Python 後端的範本，且前端與契約要和 Go 版相同，兩邊的前端修正可以互相搬（2026-11-03）。
+- `external`：Will 要一個 Python 後端的範本，前端與契約起點和 Go 版相同（2026-11-03）；Go 版換成 Connect 後，Will 決定不跟，維持 OpenAPI（2026-11-05）。
 - `external`：範本沒有部署、沒有線上資料，沒有相容性窗口要顧。
 - `inherited`：Go 版的 schema 規則（型別、主鍵、DB 角色；Go 版 ADR go-backend D3、D5）。仍成立：理由來自 PostgreSQL wiki 與 OWASP，和語言無關；兩版的 schema 要相同，由測試守住。
 
@@ -26,7 +26,7 @@ tags: [fullstack-template, decision, fastapi, postgresql, migration]
 - **Migration**：基準是 Alembic（SQLAlchemy 的標準 migration 工具，[Alembic 文件](https://alembic.sqlalchemy.org/)）；另一個選項是沿用 Go 版的 Atlas、`schema.sql` 與 6 支 migration。
 - **資料存取**：基準是 SQLAlchemy 2.0 async；另一個選項是 psycopg 3 加手寫 SQL（最接近 Go 版的 sqlc）。
 - **分層**：基準是按功能分模組的模組化單體（[zhanymkanov/fastapi-best-practices](https://github.com/zhanymkanov/fastapi-best-practices)、Netflix Dispatch）；照 Go 版集中 HTTP（`app.http` 放全部 router）；六角形架構（Cosmic Python）。
-- **與 Go 版的共用檔**：共用檔清單加比對腳本、週回顧時跑；或 CI 每次比對 Go 版 `dev`。
+- **與 Go 版的關係**（Go 版改用 Connect 之後）：跟上 Connect（proto 照搬、Python Connect server、前端照搬）；以 `560106d` 分家、維持 OpenAPI；先不決定。
 - **前端 E2E**：不加（同 Go 版，靠 CI stack job 的登入流程）；或加 Playwright。
 
 ## Decision
@@ -38,9 +38,7 @@ tags: [fullstack-template, decision, fastapi, postgresql, migration]
 - **D5 分層**：`app.main` > `app.modules.<name>`（`router` > `service` > 可選的 `repository` > `models`，模組互不 import）> `app.web` > `app.platform`，由 import-linter 的 `layers`、`independence`、`acyclic_siblings`、`forbidden` 合約守住，`ignore_imports` 為 0。跨模組經 `app.platform`，外鍵用字串 `"users.id"`、不用 ORM relationship。
 - **D6 型別與主鍵**（沿用 Go 版）：主鍵 `uuid DEFAULT uuidv7()`，JSON 裡是字串；文字欄 `text`，有長度限制時加 CHECK；狀態與 role 欄 `text` 加 `CHECK (x IN (...))`；時間一律 `timestamptz`。
 - **D7 DB 角色**（沿用 Go 版）：`POSTGRES_USER` 只用於初始化與維運；`app migrate` 用 `<app>_owner`（擁有 database 與 `public`，非 superuser）；`serve`、`seed-admin`、`recover-admin` 用 `<app>_app`（只有 DML）。授權由 `app migrate` 每次套用後冪等執行；密碼以 compose secret 掛檔、經 `*_FILE` 讀取。
-<!-- >>> template-only -->
-- **D8 共用檔**：`scripts/check_go_drift.py` 列出共用檔（`frontend/` 全部、契約、幾個 repo 檔），和 Go 版某個 commit 比對（品牌名稱先替換），刻意的差異列在 EXCEPTIONS 並附理由。週回顧時跑，不進 CI。
-<!-- <<< template-only -->
+- **D8 與 Go 版分家**（2026-11-05 修訂，取代原本的共用檔比對腳本）：`560106d` 是最後的共同點，不再比對共用檔；Go 版之後的前端修正需要時手動挑著搬。
 - **D9 E2E**：不加；CI stack job 用 backend image 跑 `scripts/stack_auth_smoke.py` 的登入流程。
 
 ## Rationale
@@ -50,18 +48,13 @@ tags: [fullstack-template, decision, fastapi, postgresql, migration]
 - **D4**：SQLAlchemy 是 Python 生態最完整的選擇；不選 psycopg 手寫 SQL，因為對應與交易都要自己處理。代價：查詢不像 sqlc 那樣逐條可審閱，複雜查詢放 repository 層。
 - **D5**：Go 版集中 HTTP 是因為 oapi-codegen 只產生一個 `ServerInterface`，D1 下的 Python 沒有這個限制；集中會讓改一個功能要動兩處。六角形架構對 CRUD 規模是多出來的樣板。代價：分層靠 import-linter 合約維護，新增模組要照 `docs/rules/add-module.md`。
 - **D6、D7**：UUIDv7 不洩漏資料量、對 B-tree 友善；CHECK 讓資料完整性由資料庫保證（[PostgreSQL wiki「Don't Do This」](https://wiki.postgresql.org/wiki/Don%27t_Do_This)）。應用程式帳號只有最小權限、不擁有資料庫（OWASP Database Security Cheat Sheet）。代價：ID 16 bytes 且透露建立時間；多一個 `app migrate` 子指令與兩組密碼。
-<!-- >>> template-only -->
-- **D8**：不選 CI 每次比對 Go 版 `dev`：Go 版一改，這邊 CI 就紅，而那不是這個 repo 的錯。代價：漂移最晚在週回顧才看到。
-<!-- <<< template-only -->
+- **D8**：不跟 Connect：Go 版選 Connect 的決定性理由是和 hawkr 共用一套工具，那個理由對 Python 不成立，技術上 OpenAPI 與 Connect 相近；跟上要重寫 21 個操作的 HTTP 層與測試，Python Connect 實作的成熟度也沒查證。原本的比對腳本（只在週回顧跑）在 Go 版換契約後滿版差異，剩下真正共用的只有 LICENSE、`SECURITY.md`、`security.yml` 這類，不值得一支腳本，所以刪掉。代價：兩版前端漸行漸遠，Go 版的修正要人記得去看。
 - **D9**：E2E 的 CI 時間與維護成本高，Go 版也沒有，兩版會不對稱。代價：UI 流程沒有自動化測試，靠 vitest 與 stack job 的 API 層登入流程。
 
 ## Expected Outcome
 
 <!-- >>> template-only -->
 - 用 `make new` 產生的新專案，`make -C backend check` 與 `pnpm test` 直接綠燈，repo 裡不殘留佔位名稱（CI generate job）。
-<!-- <<< template-only -->
-<!-- >>> template-only -->
-- 前端與契約只在 EXCEPTIONS 列出的地方和 Go 版不同（`check_go_drift.py` 乾淨）。
 <!-- <<< template-only -->
 - 不符合長度、enum 的資料在 request 驗證與資料庫兩層都寫不進去。
 
@@ -74,9 +67,7 @@ tags: [fullstack-template, decision, fastapi, postgresql, migration]
 ## Revocation Triggers
 
 - FastAPI 或 openapi-core 能從手寫契約直接產生 route 與驗證（不必兩套）→ 重新評估 D1、D2。
-<!-- >>> template-only -->
-- Go 版改了契約格式（例如改用 Protobuf）→ D8 的共用範圍與「契約相同」的前提要重新決定。
-<!-- <<< template-only -->
+- 有 Python 專案要和 hawkr 共用 Connect 契約工具 → 重新評估 D8（改用 Connect）。
 - 某模組要同步呼叫另一模組 → D5 加 `<m>/api.py` 與 `protected` 合約；業務規則超出 CRUD → 只對它改成 ports and adapters。
 - 衍生專案用 managed Postgres（initdb 不執行）→ D7 的角色改由 runbook 建立。
 
@@ -85,7 +76,7 @@ tags: [fullstack-template, decision, fastapi, postgresql, migration]
 ## Related
 
 <!-- >>> template-only -->
-- 來源：FastAPI 版計畫 `docs/plans/2026-11-03-fastapi-template.md` 的 D1–D5、D7、D8（Will 2026-11-03 拍板），spike 結果 `docs/plans/2026-11-03-fastapi-template/spike.md`。
+- 來源：FastAPI 版計畫 `docs/plans/2026-11-03-fastapi-template.md` 的 D1–D5、D7（Will 2026-11-03 拍板）與 D11（Will 2026-11-05，D8 的修訂），spike 結果 `docs/plans/2026-11-03-fastapi-template/spike.md`。
 <!-- <<< template-only -->
 - 取代：Go 版 ADR `docs/adr/2026-10-18-go-backend.md`（本 repo 已刪除，原文在 template-go-nextjs@560106d）。
 - 同批：[部署拓樸](2026-11-05-vercel-rewrite-and-cloudflare-tunnel.md)；[API 與認證基準](2026-10-18-api-and-auth-baseline.md)。

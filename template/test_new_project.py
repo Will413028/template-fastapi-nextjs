@@ -58,8 +58,6 @@ def make_template(root: pathlib.Path, files: dict[str, str]) -> pathlib.Path:
 BASE_FILES = {
     "package.json": f'{{"name": "{NAME}"}}\n',
     "backend/pyproject.toml": f'[project]\nname = "{NAME}-backend"\n',
-    "scripts/check_go_drift.py": f"# compares with template-go-nextjs, {NAME} side\n",
-    "scripts/test_check_go_drift.py": "# its tests\n",
     "SECURITY.md": f"report at https://github.com/{REPO}/security/advisories/new\n",
     "docker-compose.yml": f"POSTGRES_DB: {DB}\nAPP_USER: {DB}_app\n",
     "README.md": f"# {NAME}\ntemplate readme: make new\n",
@@ -125,8 +123,6 @@ class GenerateTest(unittest.TestCase):
         _, dest, _ = self.generate()
         self.assertFalse((dest / "template").exists())
         self.assertFalse((dest / "docs/plans").exists())
-        self.assertFalse((dest / "scripts/check_go_drift.py").exists())
-        self.assertFalse((dest / "scripts/test_check_go_drift.py").exists())
         self.assertEqual(self.read(dest, "README.md"), "# my-app\nderived readme\n")
         self.assertEqual(self.read(dest, ".github/workflows/ci.yml"), "jobs:\n  app: {}\n")
 
@@ -263,11 +259,6 @@ class GenerateTest(unittest.TestCase):
             ("docs/notes.md", "[plan](../docs/plans/x.md)\n", "../docs/plans"),
             ("notes.md", "run ./template/x\n", "./template"),
             ("notes.md", "run make new NAME=x\n", "make new NAME="),
-            (
-                "docs/notes.md",
-                "see `scripts/check_go_drift.py`\n",
-                "scripts/check_go_drift.py",
-            ),
         )
         for number, (rel, text, ref) in enumerate(cases):
             with self.subTest(rel=rel, text=text):

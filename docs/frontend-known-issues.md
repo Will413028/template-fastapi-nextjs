@@ -19,11 +19,11 @@
 **Decision:** The session is an opaque token in an HttpOnly cookie set by the backend
 (`__Host-session`, or `session` when `COOKIE_SECURE=false`); JS never reads it.
 **Why:** HttpOnly cookies cannot be read by XSS. localStorage or JS-readable cookies can be stolen.
-**Trade-off:** The frontend and the API must share one origin (Caddy routes `/api`), so the cookie
+**Trade-off:** The frontend and the API must share one origin (Vercel's rewrite in production, `next dev`'s rewrite in development, route `/api`), so the cookie
 needs no Domain and the client sends it without `credentials: "include"`.
 
 ### CSRF: Fetch Metadata in the Backend (implemented)
-**Decision:** The backend wraps every route in Go's `http.CrossOriginProtection`, which rejects
+**Decision:** The backend's `CrossOriginMiddleware` (`backend/src/app/web/cross_origin.py`) rejects
 cross-origin state-changing requests (403) using `Sec-Fetch-Site` and `Origin`. No CSRF token.
 **Why:** `SameSite=Lax` alone is not a CSRF defense (OWASP CSRF Prevention Cheat Sheet): a sibling
 subdomain is the same site, and Lax still sends cookies on top-level cross-site GET navigations.
@@ -39,7 +39,7 @@ client needs its origin allowed in the backend, not a frontend change.
 ### Testing Strategy
 **Decision:** Vitest + React Testing Library for unit/integration tests.
 **Why:** Vitest is faster than Jest, native ESM support, good Next.js compatibility.
-**Trade-off:** No E2E tests; the CI compose job only checks with curl that Caddy serves the API and the pages on one origin.
+**Trade-off:** No E2E tests; the CI stack job only runs the sign-in flow against the API (`scripts/stack_auth_smoke.py`).
 Trigger for adding Playwright: the first user flow beyond sign-up, sign-in and sign-out, or a regression
 that unit tests and the compose job both missed.
 

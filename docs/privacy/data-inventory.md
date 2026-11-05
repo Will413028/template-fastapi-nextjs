@@ -2,13 +2,13 @@
 
 範本儲存、記錄或送出的個人資料：為什麼要、留多久、誰讀得到。描述的是出貨時的程式碼；衍生專案新增欄位、資料表或外部處理者時，在同一個改動裡更新這份文件。同一批資料的威脅與緩解：[威脅建模](../security/threat-model-auth.md)。
 
-路徑相對於 repo 根目錄；`auth/` 指 `backend/src/app/modules/auth/`，測試在 `backend/tests/`。還沒移植的部分（稽核紀錄的保留、錯誤日誌）仍指 Go 版 `template-go-nextjs@560106d` 的檔案（`httpapi/` 是它的 `backend/internal/httpapi/`）。標「推論」的項目依據的是函式庫或工具的文件預設值，不是這個 repo 的程式碼。
+路徑相對於 repo 根目錄；`auth/` 指 `backend/src/app/modules/auth/`，測試在 `backend/tests/`。標「推論」的項目依據的是函式庫或工具的文件預設值，不是這個 repo 的程式碼。
 
 ## 誰讀得到資料庫
 
 | 讀取者 | 權限 | 出處 |
 |---|---|---|
-| App 角色（`DB_APP_USER`，預設 `template_fastapi_nextjs_app`） | `public` 每張表的 SELECT、INSERT、UPDATE、DELETE；`serve` 與 `seed-admin` 使用 | `deploy/postgres/initdb/10-roles.sh`、`backend/internal/platform/migrate/migrate.go` |
+| App 角色（`DB_APP_USER`，預設 `template_fastapi_nextjs_app`） | `public` 每張表的 SELECT、INSERT、UPDATE、DELETE；`serve` 與 `seed-admin` 使用 | `deploy/postgres/initdb/10-roles.sh`、`backend/src/app/main/migrate.py` |
 | Owner 角色（`DB_OWNER_USER`，預設 `template_fastapi_nextjs_owner`） | 擁有資料庫與 `public`；只有 `app migrate` 使用 | `10-roles.sh` |
 | Superuser（`POSTGRES_USER`） | 全部；初始化、維護與 `docs/deploy-vps.md` 第 7 節的備份腳本 | `10-roles.sh`、`docker-compose.yml` |
 | 主機上能操作 Docker 的人 | 容器日誌與 volume | `docker-compose.yml` |
@@ -31,7 +31,7 @@
 | User agent | backend 不記（`backend/src/app/web/access_log.py` 沒有這個欄位）。Vercel 與 Cloudflare 各自記錄經過它們的請求，可能含 `User-Agent`、完整 URI 與來源位址（推論，兩家的平台日誌；內容與保留期間依各自的方案與設定） | 平台的請求日誌 | 見「日誌」 | 讀得到日誌的人 |
 | 送給 HIBP 的密碼雜湊前綴 | 只在 `PASSWORD_HIBP_CHECK=true`（預設 false）時：正規化後密碼的 SHA-1 前 5 個 hex 字元，帶 `Add-Padding: true`（`backend/src/app/platform/hibp.py`）。測試：`test_only_the_prefix_leaves_and_a_listed_suffix_is_breached`（`test_hibp.py`） | 註冊、`seed-admin` 與 `recover-admin` 時的外洩密碼檢查 | backend 不儲存；處理者端的保留依它的政策 | Have I Been Pwned |
 | 信任的裝置 | `trusted_devices`：裝置 cookie token 的 SHA-256、id、user id、建立與到期時間 | 本人曾登入過的瀏覽器不受帳號層級的鎖影響 | 180 天後到期並由每小時的清理刪除；全部登出、停用、救援、刪除帳號時刪除。測試：`test_cleanup_deletes_expired_sessions_and_stale_throttles`、`test_signing_out_everywhere_and_disabling_forget_devices`（`test_auth_db.py`） | 原始 token 只有瀏覽器（HttpOnly）；雜湊只有 DB 角色 |
-| 稽核紀錄 | `audit_events`：時間、執行者的 user id（主機上的指令為空）、動作、對象的 user id、request id；不存帳號名 | 追查誰停用、啟用、刪除、解鎖了哪個帳號 | 只能新增與讀取（app 角色沒有 UPDATE、DELETE）。超過 365 天的列在下一次 `app migrate`（每次部署）時刪除：長期沒有部署時會留得更久（表的 comment，`internal/platform/migrate`）；帳號刪除後紀錄仍在，只剩 id | 只有 DB 角色，沒有 API |
+| 稽核紀錄 | `audit_events`：時間、執行者的 user id（主機上的指令為空）、動作、對象的 user id、request id；不存帳號名 | 追查誰停用、啟用、刪除、解鎖了哪個帳號 | 只能新增與讀取（app 角色沒有 UPDATE、DELETE）。超過 365 天的列在下一次 `app migrate`（每次部署）時刪除：長期沒有部署時會留得更久（表的 comment `append-only: retain 365 days by …`，`backend/src/app/main/migrate.py`）；帳號刪除後紀錄仍在，只剩 id | 只有 DB 角色，沒有 API |
 | 建立或救援 admin 時的帳號名 | `seed-admin`、`recover-admin` 印到 stdout（`backend/src/app/main/seed.py`） | 回饋給操作者 | 看操作者的終端機或 job 輸出存到哪 | 操作者 |
 
 ## 瀏覽器端儲存
@@ -49,7 +49,7 @@
 **記了什麼**
 
 - Backend：每個請求一行，含 `method`、`path`（不含 query string）、`status`、`duration_ms`、`client_ip`、`request_id`。`MODE=prod` 時是 JSON，其他是文字，寫到 stderr（`backend/src/app/main/logs.py`）；health 檢查記在 debug 級別，預設不輸出。路徑裡有資源 id，例如 session 或使用者的 UUID。
-- Backend 錯誤：非預期錯誤記 `method`、`path` 與錯誤文字（`httpapi/problem.go`）。HIBP 查詢失敗記一行 warning，錯誤只有例外類別、訊息或 HTTP 狀態，不含雜湊前綴（`backend/src/app/platform/hibp.py`，`test_an_unreachable_server_is_no_answer`）。
+- Backend 錯誤：非預期錯誤記 `method`、`path` 與錯誤文字（`backend/src/app/web/errors.py`）。HIBP 查詢失敗記一行 warning，錯誤只有例外類別、訊息或 HTTP 狀態，不含雜湊前綴（`backend/src/app/platform/hibp.py`，`test_an_unreachable_server_is_no_answer`）。
 - 密碼與 session token 不會出現在任何級別的日誌：`test_credentials_never_reach_the_log`（`test_auth_db.py`）。
 - 清理：只記刪掉的筆數。
 - 安全事件：註冊、登入成功與失敗（原因，帳號存在時帶 user id，不記送出的帳號名）、登出、被拒絕的 admin 操作（`authz.denied`，`backend/src/app/web/access.py`，另帶 `operation`），各一行帶 `event` 與 `user_id`（`auth/service/__init__.py`，`test_security_events_are_logged_with_the_user`）。
@@ -66,7 +66,7 @@
 |---|---|---|
 | 查閱 | 本人可讀自己的帳號（`getCurrentUser`）與 session（`listSessions`） | 沒有一次匯出 items 或其他模組資料的方式 |
 | 更正 | 沒有：沒有改帳號名或密碼的 operation | 使用者需要更正資料時，衍生專案要補 |
-| 刪除 | 本人在設定頁輸入密碼後刪除帳號（重新登入，再 `DELETE /api/users/me`；session 必須是 10 分鐘內登入的）；admin 用 `DELETE /api/users/{id}`。資料庫刪掉帳號、session 與每個模組擁有的列（指向 `users` 的 FK 都是 `CASCADE` 或 `SET NULL`，`TestForeignKeysToUsersAllowDeletion`）。`sign_in_throttles` 以帳號名為鍵，24 小時內過期。測試：`TestDeleteCurrentUser`、`TestAdminDeletesUser` | 備份保留 7 天，期間仍有被刪帳號的資料；日誌依輪替設定過期。衍生專案在 PostgreSQL 以外存放使用者資料（檔案、搜尋索引）時，要在刪除帳號時一併處理 |
+| 刪除 | 本人在設定頁輸入密碼後刪除帳號（重新登入，再 `DELETE /api/users/me`；session 必須是 10 分鐘內登入的）；admin 用 `DELETE /api/users/{id}`。資料庫刪掉帳號、session 與每個模組擁有的列（指向 `users` 的 FK 都是 `CASCADE` 或 `SET NULL`，`test_foreign_keys_to_users_allow_deleting_the_account`）。`sign_in_throttles` 以帳號名為鍵，24 小時內過期。測試：`test_delete_current_user`、`test_an_admin_deletes_a_user`（`test_auth_db.py`）、`test_deleting_the_account_deletes_its_items`（`test_items_db.py`） | 備份保留 7 天，期間仍有被刪帳號的資料；日誌依輪替設定過期。衍生專案在 PostgreSQL 以外存放使用者資料（檔案、搜尋索引）時，要在刪除帳號時一併處理 |
 | 限制處理 | admin 停用（`patchUser`） | 範本無 |
 
 ## 何時更新這份文件

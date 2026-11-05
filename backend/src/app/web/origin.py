@@ -1,5 +1,5 @@
 """Where a request comes from (D3 in docs/adr/2026-11-05-vercel-rewrite-and-cloudflare-tunnel.md,
-replacing the Go version's TRUSTED_PROXIES).
+which has no list of trusted proxy addresses).
 
 The backend is reachable through the Cloudflare Tunnel by anyone who learns its address, so no header is believed
 just because it arrived. Vercel's rewrite and the frontend's server-side calls add X-Origin-Secret; only a request

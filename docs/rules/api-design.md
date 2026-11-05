@@ -1,6 +1,6 @@
 # API Design Rules
 
-本專案的 API 是 contract-first：`backend/api/openapi.yaml`（OpenAPI 3.0.3）是 API 形狀與限制的唯一來源，HTTP 層在 `backend/internal/httpapi`，業務邏輯在 `backend/internal/modules/<m>` 的 service。決策來源見 [ADR api-and-auth](../adr/2026-10-18-api-and-auth-baseline.md) 與 [ADR FastAPI 版後端](../adr/2026-11-05-fastapi-backend-stack.md)。
+本專案的 API 是 contract-first：`backend/api/openapi.yaml`（OpenAPI 3.0.3）是 API 形狀與限制的唯一來源，HTTP 層在 `backend/src/app/modules/<m>/router.py`（共用的在 `backend/src/app/web/`），業務邏輯在同一模組的 service。決策來源見 [ADR api-and-auth](../adr/2026-10-18-api-and-auth-baseline.md) 與 [ADR FastAPI 版後端](../adr/2026-11-05-fastapi-backend-stack.md)。
 
 ## 契約是唯一來源
 
@@ -65,7 +65,7 @@ return gen.CreateItem201JSONResponse{Body: toItem(it), Headers: gen.CreateItem20
 - ID 是 UUID 字串；時間是 RFC 3339 UTC（handler 輸出前呼叫 `.UTC()`）。
 - 回應一律帶 `id`；有 `updated_at` 的資源同時回 `created_at` 與 `updated_at`。
 - 敏感欄位（`password_hash`、session token 與其雜湊）**NEVER** 出現在任何 response schema。
-- 可為 null 的欄位在 response schema 宣告成 required + `nullable: true`，Go 端用 `nullable.Nullable[T]` 並一律設值（`items.go` 的 `optional`），不讓欄位消失。
+- 可為 null 的欄位在 response schema 宣告成 required + `nullable: true`，回應模型一律設值（`None` 也照送），不讓欄位消失。
 
 ## 分頁
 
@@ -73,24 +73,26 @@ return gen.CreateItem201JSONResponse{Body: toItem(it), Headers: gen.CreateItem20
 - `cursor` 是 opaque 字串，由 `app.platform.pagination.encode_cursor` 產生（最後一筆 id 的 base64url），client 原樣傳回，**NEVER** 自行組或解析。不合法的 cursor 回 422。
 - 不提供總數（不跑 `COUNT(*)`）。排序以 UUIDv7 的 `id DESC`（等於建立時間新到舊），查詢多取一筆判斷是否有下一頁：`page_rows`、`trim_page`（`app.platform.pagination`）。
 - 需要頁碼的後台表格才另外用 offset 實作，且只限該 endpoint（ADR api-and-auth D2 Rationale）。
-- 契約的 `default` 不會被 validator 填入，handler 的預設值要和契約一致並有測試（`TestDefaultPageSizeMatchesContract`）。
+- 契約的 `default` 不會被 validator 填入，handler 的預設值要和契約一致並有測試（`test_the_default_limit_is_the_contracts`，`test_pagination.py`）。
 
 ## 部分更新（PATCH）
 
 - PATCH 收 `application/merge-patch+json`（RFC 7396；ADR api-and-auth D2）：沒送的欄位不改，送 `null` 清成 NULL。
 - 不可為 null 的欄位在 patch schema 不加 `nullable`，送 `null` 回 422 `null_not_allowed`。
-- 可清空的欄位在 Go 端用 `nullable.Nullable[T]` 區分「沒送」與「送 null」，並把「有沒有送」明確傳給 query。
+- 可清空的欄位用產生的模型裡的 `pydantic.MISSING` 區分「沒送」與「送 null」，並把「有沒有送」明確傳給 service；repository 只 SET 有送的欄位。
 
-```go
-// 正確：internal/httpapi/items.go，SetDescription 區分沒送與 null
-p := items.Patch{Title: req.Body.Title, SetDescription: req.Body.Description.IsSpecified(), Description: fromNullable(req.Body.Description)}
+```python
+# 正確：backend/src/app/modules/items/router.py，set_description 區分沒送與 null
+patch = Patch(
+    title=None if body.title is MISSING else body.title,
+    set_description=body.description is not MISSING,
+    description=None if body.description is MISSING else body.description,
+)
 ```
 
-```sql
--- 正確：internal/modules/items/queries/items.sql
-SET title       = coalesce(sqlc.narg('title'), title),
-    description = CASE WHEN @set_description::boolean THEN sqlc.narg('description') ELSE description END,
-    updated_at  = now()
+```python
+# 正確：backend/src/app/modules/items/repository.py，values 只含有送的欄位
+update(Item).where(Item.id == item_id, Item.owner_id == owner_id).values(**values, updated_at=func.now())
 ```
 
 ## 錯誤（RFC 9457）
@@ -134,23 +136,23 @@ raise HTTPException(status_code=409)
 
 ### Session 撤銷（新增功能必須遵守）
 
-- 停用帳號時，在同一個 transaction 撤銷該使用者的所有 session（Go 版 `auth.Service.SetDisabled` 呼叫 `DeleteUserSessions`；步驟 5 移植停用功能時照做）。
-- **之後新增任何會改變使用者 role 或密碼的功能，必須在同一個 transaction 撤銷該使用者的所有 session**（ADR api-and-auth D4）。範本目前沒有這兩個功能，這條規則是給之後新增時遵守的，並且要有測試：改完後該使用者原有的 cookie 都回 401（寫法比照 `TestAdminDisablesUserRevokesSessions`）。
+- 停用帳號時，在同一個 transaction 撤銷該使用者的所有 session（`auth/service` 的 `set_disabled` 呼叫 repository 的 `delete_user_sessions`）。
+- **之後新增任何會改變使用者 role 或密碼的功能，必須在同一個 transaction 撤銷該使用者的所有 session**（ADR api-and-auth D4）。範本目前沒有這兩個功能，這條規則是給之後新增時遵守的，並且要有測試：改完後該使用者原有的 cookie 都回 401（寫法比照 `test_an_admin_disables_a_user_and_ends_their_sessions`，`test_auth_db.py`）。
 
 ## 授權
 
 - role 只有 `admin` 和 `user`（`app.modules.auth.service` 的 `ROLE_ADMIN`、`ROLE_USER`），註冊預設 `user`，admin 只能用 `seed-admin` 建立（ADR api-and-auth D7）。
-- 使用者擁有的資源，**每個查詢**都帶 owner 條件（`.where(Item.id == item_id, Item.owner_id == caller.id)`）；別人的資源回 404，不回 403，不透露它存在（Go 版 `TestGetOtherUsersItem`，步驟 4 移植）。
+- 使用者擁有的資源，**每個查詢**都帶 owner 條件（`.where(Item.id == item_id, Item.owner_id == caller.id)`）；別人的資源回 404，不回 403，不透露它存在（`test_another_users_item_is_not_found_like_a_missing_one`，`test_items_db.py`）。
 - UPDATE 與 DELETE 回報影響的列（`.returning(...)` 加 `one_or_none()`，或結果的 `rowcount`），0 列回 404，不可靜默成功。
-- 每個 route 都要剛好帶一個 `app.web.access` 的存取標記，寫明誰能呼叫：`dependencies=[PUBLIC]`，或用 `SIGNED_IN`／`SignedIn` 參數（步驟 5 加 admin 的標記）；缺標記、多標記、或「公開」與契約的 `security: []` 不一致時 server 不會啟動（`app/main/routes.py`、`test_routes.py`）。admin 的 operation 在 route 執行前回 403 `insufficient_role`（Go 版 `requireRole`，步驟 5 移植）。
-- 授權分三處，依「判斷需要什麼」選一處：只看是否登入的寫在契約的 `security`；只看 role 的寫在 route 的存取標記（步驟 5）；要看呼叫者與資源的關係的（例如 `GET /api/users/{id}` 的「本人或 admin」）寫在 service 或查詢條件，非授權者回 404（`AuthService.user`、`test_another_users_account_is_not_found_like_a_missing_one`）。
+- 每個 route 都要剛好帶一個 `app.web.access` 的存取標記，寫明誰能呼叫：`dependencies=[PUBLIC]`，或用 `SIGNED_IN`／`SignedIn` 參數、`ADMIN`／`Admin`；缺標記、多標記、或「公開」與契約的 `security: []` 不一致時 server 不會啟動（`app/main/routes.py`、`test_routes.py`）。admin 的 operation 在 route 執行前回 403 `insufficient_role`（`app/web/access.py` 的 `admin`）。
+- 授權分三處，依「判斷需要什麼」選一處：只看是否登入的寫在契約的 `security`；只看 role 的寫在 route 的存取標記；要看呼叫者與資源的關係的（例如 `GET /api/users/{id}` 的「本人或 admin」）寫在 service 或查詢條件，非授權者回 404（`AuthService.user`、`test_another_users_account_is_not_found_like_a_missing_one`）。
 - **NEVER** 先查出資源再在 handler 比對 owner：條件必須在 SQL 裡。
 
 ## 限流
 
 - per-IP 限流以 route 套用：在 route 的 `dependencies` 加 `app.web.ratelimit.RATE_LIMITED`（目前是 `createUser`、`createSession`），次數由 `AUTH_RATE_LIMIT_PER_MIN` 設定。它在契約驗證之後才執行，被驗證擋下的請求不扣額度。
 - 超限回 429 `/problems/rate-limited` 加 `Retry-After`（`Kind.RATE_LIMITED` 的 `retry_after`）。
-- 登入另有依「帳號＋來源」的節流（`sign_in_throttles`，來源是 `limit_key` 的位址），不論帳號是否存在都記錄（ADR api-and-auth D6、ADR account-abuse-and-lifecycle D4）；帳號層級的上限在步驟 5 移植。
+- 登入另有依「帳號＋來源」的節流（`sign_in_throttles`，來源是 `limit_key` 的位址），不論帳號是否存在都記錄（ADR api-and-auth D6、ADR account-abuse-and-lifecycle D4），加上只擋陌生來源的帳號層級上限（`auth/service` 的 `UNTRUSTED_FAILURE_LIMIT`）。
 
 ## Query 參數
 

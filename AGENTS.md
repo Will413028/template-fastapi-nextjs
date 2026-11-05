@@ -109,7 +109,7 @@ pnpm gen:api          # Regenerate API types from backend/api/openapi.yaml
 
 - Frontend (Next.js App Router, feature-based, next-intl, generated API client): `frontend/AGENTS.md`.
 - Adding a backend module: `docs/rules/add-module.md` (the items module is the worked example).
-- Decisions: `docs/adr/`. Some documents under `docs/` still describe the Go template's Caddy deployment; they are being rewritten.
+- Decisions: `docs/adr/`. Deployment (Vercel, the VM, the Cloudflare Tunnel) and the first-deploy checklist: `docs/deploy-vps.md`.
 - `docker-compose.yml` runs what the VM runs and publishes no port. `docker-compose.dev.yml` adds the frontend dev server on `127.0.0.1:3000`, whose development rewrite forwards `/api` to the backend.
 
 ## Design Rules

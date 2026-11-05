@@ -1,6 +1,6 @@
 """Per-address rate limits (Go version: internal/httpapi/ratelimit_test.go).
 
-The Go version believes X-Forwarded-For from TRUSTED_PROXIES; here the client address is X-Real-IP only on a request
+No proxy address is trusted; the client address is X-Real-IP only on a request
 whose X-Origin-Secret matches (D3 in
 docs/adr/2026-11-05-vercel-rewrite-and-cloudflare-tunnel.md), and the connection's address
 otherwise.

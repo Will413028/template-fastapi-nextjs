@@ -96,7 +96,7 @@ class User(Base):
 ## 時間戳記
 
 - 對外的資源表（API 回傳 `updated_at` 的）都有 `created_at`、`updated_at timestamptz NOT NULL DEFAULT now()`。
-- **這些表的每個 UPDATE 查詢都明寫 `updated_at = now()`**（SQLAlchemy：`.values(..., updated_at=func.now())`），不靠 trigger，也不由 Python 傳值；並有測試覆蓋（Go 版 `TestUpdatedAtChanges`，步驟 4 移植）（ADR FastAPI 版後端 D6）。
+- **這些表的每個 UPDATE 查詢都明寫 `updated_at = now()`**（SQLAlchemy：`.values(..., updated_at=func.now())`），不靠 trigger，也不由 Python 傳值；並有測試覆蓋（`test_updated_at_changes`，`test_items_db.py`；`test_an_update_sets_updated_at_in_the_database`，`test_items_repository.py`）（ADR FastAPI 版後端 D6）。
 - 例外：內部的狀態表可以由 service 傳入時間，讓測試控制時鐘（`sign_in_throttles.updated_at` 與 `sessions.last_used_at`、`created_at`、`expires_at` 由 service 的 `now` 傳入，限流與期限的測試因此不用等真實時間；`app/modules/auth/repository.py`）。
 - 連線的 `TimeZone` 固定為 UTC。
 

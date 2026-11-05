@@ -14,7 +14,7 @@ pnpm gen:api        # regenerate src/lib/api/schema.d.ts from backend/api/openap
 
 The browser calls the API on its own origin under `/api`. `pnpm dev` on the host
 forwards `/api` to `API_URL` (default `http://localhost:8000`, see `.env.example`);
-in Docker, Caddy does that routing.
+on Vercel, the `/api` rewrite in `vercel.json` does (see `docs/deploy-vps.md`).
 
 See [`AGENTS.md`](./AGENTS.md) for architecture, the auth flow, and conventions.
-Normally you run the whole stack from the repo root with `make dev` / `make up`.
+Normally you run the whole stack from the repo root with `make dev`.

@@ -23,7 +23,12 @@ from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Literal, Protocol
 
 from app.modules.auth import repository
-from app.modules.auth.service.passwords import PasswordHasher, is_common_password, normalize_password
+from app.modules.auth.service.passwords import (
+    PASSWORD_MIN_LENGTH,
+    PasswordHasher,
+    is_common_password,
+    normalize_password,
+)
 from app.platform import pagination
 from app.platform import principal as principal_module
 from app.platform.config import DEFAULT_SESSION_ABSOLUTE, DEFAULT_SESSION_IDLE
@@ -46,6 +51,7 @@ ROLE_USER: Role = "user"
 CODE_ACCOUNT_TAKEN = "account_taken"
 # the name leaves out "password" so ruff S105 does not take the value for one
 CODE_TOO_COMMON = "password_too_common"
+CODE_TOO_SHORT = "too_short"
 CODE_INVALID_CREDENTIALS = "invalid_credentials"
 CODE_LOGIN_THROTTLED = "login_throttled"
 CODE_LAST_ADMIN = "last_admin"
@@ -603,6 +609,12 @@ class AuthService:
         hold a connection. The list and, when enabled, the breach check are the rules the contract cannot express. A
         breach-check failure lets the password through: an outage of the external service must not stop sign-ups."""
         normalized = normalize_password(password)
+        if len(normalized) < PASSWORD_MIN_LENGTH:
+            raise AppError.invalid(
+                pointer="/password",
+                code=CODE_TOO_SHORT,
+                detail=f"password is under {PASSWORD_MIN_LENGTH} characters after NFKC normalization",
+            )
         if is_common_password(normalized) or await self._breached(normalized):
             raise AppError.invalid(
                 pointer="/password",

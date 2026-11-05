@@ -67,8 +67,10 @@ class CreateUserRequest(BaseModel):
     """
     password: Annotated[str, Field(max_length=128, min_length=15)]
     """
-    15 to 128 characters (code points), no composition rules (NIST SP 800-63B-4). A password on the common or
-    breached password list is rejected with code `password_too_common`.
+    15 to 128 characters (code points), no composition rules (NIST SP 800-63B-4). The minimum also applies after
+    NFKC normalization, which can shorten a password (`e` plus a combining acute becomes `é`): a password under 15
+    characters after it is rejected with code `too_short`. A password on the common or breached password list
+    is rejected with code `password_too_common`.
 
     """
 

@@ -105,6 +105,13 @@ def test_create_user_password_too_short(api: AuthAPI) -> None:
     assert field_errors(api.sign_up("alice", "fourteen chars")) == [("/password", "too_short")]
 
 
+def test_create_user_password_too_short_after_nfkc(api: AuthAPI) -> None:
+    # 16 times e plus a combining acute: 32 code points as sent, 8 after NFKC (é), the form that is hashed
+    password = "e\u0301" * 16
+    assert field_errors(api.sign_up("alice", password)) == [("/password", "too_short")]
+    assert api.sql("SELECT count(*) FROM users") == [(0,)]
+
+
 def test_create_user_no_composition_rule(api: AuthAPI) -> None:
     # NIST SP 800-63B-4 forbids composition rules: a long all-lowercase password is fine
     assert api.sign_up("alice", "onlylowercaseletters").status_code == 201

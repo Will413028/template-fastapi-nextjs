@@ -26,8 +26,14 @@ if TYPE_CHECKING:
 
 def normalize_password(password: str) -> str:
     """NFKC, applied before a password is checked against the list or hashed, so the same password typed with
-    full-width or half-width characters is the same password. The contract's length limits count the raw input."""
+    full-width or half-width characters is the same password. The contract's limits count the raw input; the service
+    also counts the minimum on this form, which can be shorter (e plus a combining acute becomes one é)."""
     return unicodedata.normalize("NFKC", password)
+
+
+# NIST SP 800-63B-4: at least 15 characters, counted on the normalized form that is hashed. It equals the contract's
+# password minimum, which tests/test_passwords.py checks.
+PASSWORD_MIN_LENGTH = 15
 
 
 @functools.cache

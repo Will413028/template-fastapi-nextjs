@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, override
 
-from sqlalchemy import text
+from sqlalchemy import event, text
 
 from apitest import PEER, checked_client, contract, deps
 from app.main.factory import Modules, create_app
@@ -115,6 +115,19 @@ def session_token(response: httpx2.Response) -> str:
     return issued[0]["value"]
 
 
+class QueryCounter:
+    """Counts the statements the app's engine sends to the database."""
+
+    def __init__(self, database: Database) -> None:
+        self._lock = threading.Lock()
+        self.n = 0
+        event.listen(database.engine.sync_engine, "before_cursor_execute", self._count)
+
+    def _count(self, *_: object) -> None:
+        with self._lock:
+            self.n += 1
+
+
 @dataclass
 class AuthAPI:
     client: TestClient
@@ -122,6 +135,14 @@ class AuthAPI:
     db: TestDatabase
     clock: Clock
     hasher: CountingHasher
+    queries: QueryCounter
+
+    def count_queries(self, send: Callable[[], httpx2.Response]) -> int:
+        """How many statements send's request runs; the response must be a 200."""
+        before = self.queries.n
+        response = send()
+        assert response.status_code == 200, response.text
+        return self.queries.n - before
 
     def do(
         self,
@@ -247,4 +268,4 @@ def auth_api(
         )
     )
     with checked_client(app, against=contract(), peer=PEER) as client:
-        yield AuthAPI(client=client, service=service, db=db, clock=clock, hasher=hasher)
+        yield AuthAPI(client=client, service=service, db=db, clock=clock, hasher=hasher, queries=QueryCounter(database))

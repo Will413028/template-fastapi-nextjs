@@ -38,7 +38,8 @@ def git(cwd: pathlib.Path, *args: str) -> str:
         check=True,
         capture_output=True,
         text=True,
-        env={**os.environ, **GIT_ENV},
+        # never the GIT_DIR a hook running these tests exports: it would point the commands at the real repository
+        env={**{k: v for k, v in os.environ.items() if not k.startswith("GIT_")}, **GIT_ENV},
     ).stdout
 
 
@@ -95,6 +96,20 @@ class GenerateTest(unittest.TestCase):
 
     def read(self, dest: pathlib.Path, rel: str) -> str:
         return (dest / rel).read_text(encoding="utf-8")
+
+    def test_a_git_hooks_environment_does_not_reach_another_repository(self):
+        # a git hook exports GIT_DIR (and in a linked worktree more); generate() and its git calls must ignore it
+        outer = self.root / "outer"
+        outer.mkdir()
+        git(outer, "init", "-q", "-b", "dev")
+        git(outer, "commit", "-q", "--allow-empty", "-m", "outer")
+        hook_env = {"GIT_DIR": str(outer / ".git"), "GIT_INDEX_FILE": str(outer / ".git/index")}
+        src = make_template(self.root, BASE_FILES)
+        with mock.patch.dict(os.environ, hook_env):
+            new_project.generate(src, self.root / "out", "my-app", "acme/my-app")
+        self.assertEqual(git(outer, "config", "core.bare").strip(), "false")
+        self.assertEqual(git(outer, "rev-list", "--all", "--count").strip(), "1")
+        self.assertEqual(git(self.root / "out", "rev-list", "--all", "--count").strip(), "1")
 
     def test_replaces_each_token_in_contents_and_names(self):
         _, dest, _ = self.generate()

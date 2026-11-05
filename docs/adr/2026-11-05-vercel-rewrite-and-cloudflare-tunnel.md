@@ -43,7 +43,7 @@ Go 版範本（template-go-nextjs@560106d）把前端、backend 與 PostgreSQL �
 
 ## Expected Outcome
 
-- 瀏覽器只看到一個網域；`__Host-session` cookie、CSP `connect-src 'self'` 與 CSRF 防護和 Go 版相同，前端程式只有部署設定與伺服器端帶密鑰的差異（`scripts/check_go_drift.py` 的 EXCEPTIONS）。
+- 瀏覽器只看到一個網域；`__Host-session` cookie、CSP `connect-src 'self'` 與 CSRF 防護和 Go 版相同，前端程式只有部署設定與伺服器端帶密鑰的差異。
 - 沒有帶正確密鑰的請求偽造不了限流用的 client IP。
 - VM 沒有發佈任何 port（CI stack job 檢查）。
 
@@ -64,6 +64,8 @@ Go 版範本（template-go-nextjs@560106d）把前端、backend 與 PostgreSQL �
 
 ## Related
 
+<!-- >>> template-only -->
 - 來源：FastAPI 版計畫 `docs/plans/2026-11-03-fastapi-template.md` 的 D6（Will 2026-11-03 拍板；Vercel 文件 [Rewrites](https://vercel.com/docs/routing/rewrites)、[Request headers](https://vercel.com/docs/headers/request-headers) 由 subagent 於當天讀取）。
+<!-- <<< template-only -->
 - 部分取代：[API 與認證基準](2026-10-18-api-and-auth-baseline.md)（各段標有 2026-11-05 修訂）。
 - 部署步驟與第一次部署檢查清單：`docs/deploy-vps.md`。

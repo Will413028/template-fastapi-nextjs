@@ -1,7 +1,7 @@
 """The HTTP contract, backend/api/openapi.yaml, loaded with openapi-core.
 
 openapi-core's own Starlette integration needs its [starlette] extra, which pins starlette below 1.1 and resolves to a
-release with known vulnerabilities (docs/plans/2026-11-03-fastapi-template.md, step 2), so ContractRequest is the
+release with known vulnerabilities (checked when the contract validation was added), so ContractRequest is the
 adapter instead: it implements openapi-core's Request protocol from an ASGI request.
 """
 
@@ -32,7 +32,7 @@ if TYPE_CHECKING:
     from starlette.types import Scope
 
 # openapi-core reads the contract's servers entry (/api) against this origin; the Host header plays no part, because
-# the backend does not know which name the browser used (D6).
+# the backend does not know which name the browser used (ADR vercel-rewrite-and-cloudflare-tunnel).
 _ORIGIN = "http://backend"
 
 # The JSON media types the contract uses: request bodies, and problems for the tests that validate responses.

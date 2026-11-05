@@ -4,8 +4,9 @@ CrossOriginProtection, docs/adr/2026-10-18-api-and-auth-baseline.md D5).
 Browsers say where a request comes from in Sec-Fetch-Site; same-origin and none (the address bar, a bookmark) pass,
 anything else is refused. A browser too old to send it still sends Origin, which must then be the site's origin
 (APP_ORIGIN): the Go version compares it with Host, but the Host the backend receives is not the name the browser used
-(D6). A request with neither header is not from a browser (curl, the frontend's server-side calls) and passes; the
-session cookie's SameSite=Lax is the other layer. GET, HEAD and OPTIONS change nothing and are not checked.
+(ADR vercel-rewrite-and-cloudflare-tunnel). A request with neither header is not from a browser (curl, the frontend's
+server-side calls) and passes; the session cookie's SameSite=Lax is the other layer. GET, HEAD and OPTIONS change
+nothing and are not checked.
 """
 
 from typing import TYPE_CHECKING

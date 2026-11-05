@@ -36,8 +36,8 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # How often serve deletes expired sessions and trusted devices and stale sign-in throttles (AuthService.cleanup). One
-# task in the one uvicorn process: the stack runs one backend replica (plan D6); more would only repeat idempotent
-# deletes.
+# task in the one uvicorn process: the stack runs one backend replica (ADR vercel-rewrite-and-cloudflare-tunnel); more
+# would only repeat idempotent deletes.
 CLEANUP_EVERY_SECONDS = 3600.0
 
 # Below app healthcheck's 2 s client timeout: a pool exhausted by real requests answers 503 instead of hanging.

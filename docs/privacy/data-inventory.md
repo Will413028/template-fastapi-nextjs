@@ -2,7 +2,7 @@
 
 範本儲存、記錄或送出的個人資料：為什麼要、留多久、誰讀得到。描述的是出貨時的程式碼；衍生專案新增欄位、資料表或外部處理者時，在同一個改動裡更新這份文件。同一批資料的威脅與緩解：[威脅建模](../security/threat-model-auth.md)。
 
-路徑相對於 repo 根目錄；`auth/` 指 `backend/src/app/modules/auth/`，測試在 `backend/tests/`。還沒移植的部分（稽核紀錄的保留、錯誤日誌）仍指 Go 版 `template-go-nextjs@560106d` 的檔案（`httpapi/` 是它的 `backend/internal/httpapi/`），由計畫步驟 5、7 改寫。標「推論」的項目依據的是函式庫或工具的文件預設值，不是這個 repo 的程式碼。
+路徑相對於 repo 根目錄；`auth/` 指 `backend/src/app/modules/auth/`，測試在 `backend/tests/`。還沒移植的部分（稽核紀錄的保留、錯誤日誌）仍指 Go 版 `template-go-nextjs@560106d` 的檔案（`httpapi/` 是它的 `backend/internal/httpapi/`）。標「推論」的項目依據的是函式庫或工具的文件預設值，不是這個 repo 的程式碼。
 
 ## 誰讀得到資料庫
 
@@ -24,7 +24,7 @@
 | 角色、停用狀態、建立與更新時間 | `users.role`、`is_disabled`、`created_at`、`updated_at` | 授權、帳號狀態 | 直到該列被刪 | `updated_at` 只有 DB 角色；其餘本人與 admin 可透過 API 讀 |
 | Session token | 只在 cookie；資料庫存 token 的 SHA-256（`sessions.token_hash`） | 驗證請求 | cookie 的 `Max-Age` 是絕對期限。這些情況會刪掉該列：登出、全部登出、撤銷單一 session、帶著它重新登入、使用者被停用、使用者被刪（`ON DELETE CASCADE`）、每小時清理過期的 session（serve 啟動時與之後每小時，`auth/service/__init__.py` `cleanup`） | 原始 token 只有瀏覽器（HttpOnly）；雜湊只有 DB 角色 |
 | Session 中繼資料 | `sessions.id`、`user_id`、`created_at`、`last_used_at`（最多每分鐘寫一次）、`expires_at` | 列出與撤銷 session；idle 與絕對期限 | 同 session 那列。超過 `expires_at` 或閒置超過 `SESSION_IDLE` 的列每小時清掉（同上）。測試：`test_cleanup_deletes_expired_sessions_and_stale_throttles` | 本人，只限自己的 session；admin 沒有 session API；DB 角色 |
-| 登入嘗試紀錄 | `sign_in_throttles`：`account_key` = 送出的帳號名轉小寫，不論帳號是否存在；`client_key` = 來源位址（IPv6 截到 /64）或信任裝置的 id，帳號合計那列為空字串；另有 `failures`、`next_allowed_at`、`updated_at` | 依「帳號＋來源」節流，與帳號層級的鎖 | 登入成功時刪掉該帳號在這個來源的列（其他來源的列保留，計畫 D10），admin 解鎖時刪掉該帳號的所有列，或最後一次嘗試 24 小時後由每小時的清理刪除。測試：`test_signing_in_clears_only_that_clients_wait`、`test_cleanup_deletes_expired_sessions_and_stale_throttles` | DB 角色；admin 經 `GET /api/users/{id}/sign-in-lock` 只看得到是否鎖定與失敗次數。注意：打錯的帳號名、或誤把密碼打進帳號欄，會在這裡留最多 24 小時 |
+| 登入嘗試紀錄 | `sign_in_throttles`：`account_key` = 送出的帳號名轉小寫，不論帳號是否存在；`client_key` = 來源位址（IPv6 截到 /64）或信任裝置的 id，帳號合計那列為空字串；另有 `failures`、`next_allowed_at`、`updated_at` | 依「帳號＋來源」節流，與帳號層級的鎖 | 登入成功時刪掉該帳號在這個來源的列（其他來源的列保留，ADR account-abuse-and-lifecycle D4），admin 解鎖時刪掉該帳號的所有列，或最後一次嘗試 24 小時後由每小時的清理刪除。測試：`test_signing_in_clears_only_that_clients_wait`、`test_cleanup_deletes_expired_sessions_and_stale_throttles` | DB 角色；admin 經 `GET /api/users/{id}/sign-in-lock` 只看得到是否鎖定與失敗次數。注意：打錯的帳號名、或誤把密碼打進帳號欄，會在這裡留最多 24 小時 |
 | Items（範例模組） | `items.title`、`items.description`、`owner_id` | 範例的使用者內容；自由文字可能含個資 | `deleteItem` 刪除；帳號刪除時一起刪（`ON DELETE CASCADE`） | 只有擁有者（每個查詢帶擁有者條件，`backend/src/app/modules/items/repository.py`，`tests/test_items_repository.py` 守住）；DB 角色 |
 | Client IP | backend access log 的 `client_ip`：請求帶相符的 `X-Origin-Secret` 時是 Vercel 設定的 `X-Real-IP`，否則是連線來源位址（`backend/src/app/web/origin.py`）；每 IP 限流放在程式記憶體，IPv6 截到 /64（`backend/src/app/web/ratelimit.py`） | 追蹤、限流 | 日誌：見「日誌」。記憶體：閒置 1 分鐘的 bucket 會丟掉，重啟就全部消失 | 讀得到日誌的人 |
 | Request id、method、path、status、處理時間 | backend access log；同一個請求的每行日誌都帶 `request_id` | 追蹤 | 見「日誌」 | 讀得到日誌的人 |

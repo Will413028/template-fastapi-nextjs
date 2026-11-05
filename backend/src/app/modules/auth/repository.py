@@ -256,8 +256,9 @@ async def get_login_throttle(conn: AsyncConnection, *, account_key: str, client_
 
 async def clear_login_throttle(conn: AsyncConnection, *, account_key: str, client_key: str) -> None:
     """Forgets the count of one client for the account and the account-wide count: after that client signs in. Other
-    clients keep theirs, so the owner signing in elsewhere does not lift the wait an attacker has built up (plan D10);
-    the account-wide count does not tell clients apart, and a success resets it (NIST SP 800-63B-4 3.2.2)."""
+    clients keep theirs, so the owner signing in elsewhere does not lift the wait an attacker has built up (ADR
+    account-abuse-and-lifecycle D4); the account-wide count does not tell clients apart, and a success resets it (NIST
+    SP 800-63B-4 3.2.2)."""
     await conn.execute(
         delete(SignInThrottle).where(
             SignInThrottle.account_key == account_key, SignInThrottle.client_key.in_((client_key, UNTRUSTED))
@@ -266,7 +267,8 @@ async def clear_login_throttle(conn: AsyncConnection, *, account_key: str, clien
 
 
 async def clear_login_throttles(conn: AsyncConnection, account_key: str) -> None:
-    """Forgets every count for the account, from all clients: an admin unlock or recover-admin (plan D10)."""
+    """Forgets every count for the account, from all clients: an admin unlock or recover-admin (ADR
+    account-abuse-and-lifecycle D4)."""
     await conn.execute(delete(SignInThrottle).where(SignInThrottle.account_key == account_key))
 
 

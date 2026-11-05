@@ -3,7 +3,7 @@
 Clients translate a problem by its type and codes, and the frontend's type check makes its messages cover the values
 the contract lists in x-extensible-enum (docs/adr/2026-10-18-api-and-auth-baseline.md D3). So every problem the server
 sends must use listed values, and every response to a contract operation must match the contract: production
-validates only requests (docs/plans/2026-11-03-fastapi-template/spike.md (b)), so these tests are where responses are.
+validates only requests (docs/adr/2026-11-05-fastapi-backend-stack.md D1), so these tests are where responses are.
 """
 
 import asyncio

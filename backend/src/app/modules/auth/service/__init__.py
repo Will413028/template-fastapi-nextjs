@@ -388,7 +388,7 @@ class AuthService:
         The attempt is counted before the password is checked, so requests sent at the same time cannot all pass a
         wait that has not been recorded yet. A successful sign-in clears only this client's count and the
         account-wide one: the owner signing in from one address does not lift the wait an attacker has built up at
-        another (plan D10; ADR account-abuse-and-lifecycle D4). A sign-in from a browser the account does not trust
+        another (ADR account-abuse-and-lifecycle D4). A sign-in from a browser the account does not trust
         trusts it from now on (SignedIn.device). The responses do not reveal whether the account exists.
         """
         key = account_key(account)

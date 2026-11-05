@@ -1,6 +1,6 @@
 # Database Design Rules
 
-本專案使用 PostgreSQL 18、SQLAlchemy 2.0 async 加 asyncpg，schema 由 Alembic 管理（`docs/plans/2026-11-03-fastapi-template.md` 的 D2、D3）。命名、型別、FK、角色等 schema 規則沿用 Go 版（[ADR FastAPI 版後端](../adr/2026-11-05-fastapi-backend-stack.md) D6、D7），兩版的 schema 相同，由測試守住（`backend/tests/test_schema_db.py`）。
+本專案使用 PostgreSQL 18、SQLAlchemy 2.0 async 加 asyncpg，schema 由 Alembic 管理（[ADR FastAPI 版後端](../adr/2026-11-05-fastapi-backend-stack.md) D3、D4）。命名、型別、FK、角色等 schema 規則沿用 Go 版（[ADR FastAPI 版後端](../adr/2026-11-05-fastapi-backend-stack.md) D6、D7），兩版的 schema 相同，由測試守住（`backend/tests/test_schema_db.py`）。
 
 ## Schema 與查詢的位置
 
@@ -8,7 +8,7 @@
 - `backend/src/app/main/schema.py` 的 `MODEL_MODULES` 列出所有有表的模組；新模組的 `models.py` 沒列進去時 `tests/test_schema.py` 會失敗。
 - 跨模組的 FK 用字串（`ForeignKey("users.id")`），不建 ORM relationship（AGENTS.md「Backend layers」）。
 - 所有表都在 `public` schema，DDL 不寫 schema 前綴。
-- 查詢是 SQLAlchemy Core 的運算式，欄位取自 `models.py` 的類別（`select(User.id, ...)`、`insert(Session).values(...).returning(...)`、`sqlalchemy.dialects.postgresql.insert(...).on_conflict_do_update(...)`），在 `AsyncConnection` 上執行；值一律是 bound parameter。不用 ORM `Session` 的 unit of work 與 identity map：每個呼叫就是一句明確的 SQL，async 下也沒有 lazy load（`docs/plans/2026-11-03-fastapi-template/auth-carryover.md`「資料存取與組裝」）。
+- 查詢是 SQLAlchemy Core 的運算式，欄位取自 `models.py` 的類別（`select(User.id, ...)`、`insert(Session).values(...).returning(...)`、`sqlalchemy.dialects.postgresql.insert(...).on_conflict_do_update(...)`），在 `AsyncConnection` 上執行；值一律是 bound parameter。不用 ORM `Session` 的 unit of work 與 identity map：每個呼叫就是一句明確的 SQL，async 下也沒有 lazy load（[ADR FastAPI 版後端](../adr/2026-11-05-fastapi-backend-stack.md) D4）。
 - 有 `repository.py` 的模組把查詢都放在那裡（auth 的做法：欄位清單在同一個檔裡共用），函式接受呼叫端給的連線、只跑一句，transaction 由 service 決定（範例：`app/modules/auth/repository.py`）；只有幾個簡單查詢的模組可以不建 `repository.py`，寫在 service 裡。
 - **NEVER** 用字串拼 SQL（f-string、`%`、`+`）：ruff 的 S608 會擋；固定的 SQL 片段用 `literal_column`（例：`interval '1 minute'`），值一律經 bound parameter。
 

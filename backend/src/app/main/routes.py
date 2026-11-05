@@ -1,4 +1,4 @@
-"""The API's routes agree with the contract, checked when the app is built (plan D7 and step 3b (b)).
+"""The API's routes agree with the contract, checked when the app is built (ADR fastapi-backend-stack D1, D5).
 
 The Go version gets this from code generation: every operation is a method of the generated interface, so a missing
 handler or a renamed path parameter does not compile. Here the routes are written by hand, so the check is:

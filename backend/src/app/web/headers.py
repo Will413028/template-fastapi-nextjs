@@ -10,8 +10,9 @@ if TYPE_CHECKING:
 # OWASP's REST Security Cheat Sheet for API responses a browser reads: the API is same-origin with cookies, so a
 # browser does read them. frame-ancestors 'none' stops drag-and-drop clickjacking, and X-Frame-Options: DENY does the
 # same for browsers without CSP Level 2. no-store also keeps Vercel's external rewrite from caching API responses
-# (D6 in docs/plans/2026-11-03-fastapi-template.md). Permissions-Policy and X-XSS-Protection do nothing for JSON (the
-# last one enables an XS-Leak); HSTS belongs to the edge that terminates TLS.
+# (D4 in docs/adr/2026-11-05-vercel-rewrite-and-cloudflare-tunnel.md).
+# Permissions-Policy and X-XSS-Protection do nothing for JSON (the last one enables an XS-Leak); HSTS belongs to the
+# edge that terminates TLS.
 SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "Cache-Control": "no-store",

@@ -3,7 +3,8 @@ CrossOriginProtection).
 
 A state-changing request is refused when the browser says it comes from another site (Sec-Fetch-Site), or, from a
 browser too old to send Sec-Fetch-Site, when its Origin is not the site. The Go version compares Origin with Host;
-here it is compared with APP_ORIGIN, because the Host the backend receives is not the name the browser used (D6).
+here it is compared with APP_ORIGIN, because the Host the backend receives is not the name the browser used
+(ADR vercel-rewrite-and-cloudflare-tunnel).
 """
 
 from typing import TYPE_CHECKING

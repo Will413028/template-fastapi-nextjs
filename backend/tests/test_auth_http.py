@@ -87,7 +87,8 @@ def test_a_request_refused_at_the_edge_never_looks_up_its_session() -> None:
     # the origin guard and the CSRF check read headers only and run before the session lookup
     service = FakeAuthService()
     app = fake_app(service, origin=OriginPolicy(secrets=(SECRET,), required=True))
-    # the origin guard's 403 is not a contract response (D6), so responses are not checked against the contract
+    # the origin guard's 403 is not a contract response (ADR vercel-rewrite-and-cloudflare-tunnel), so responses are not
+    # checked against the contract
     with TestClient(app, client=PEER) as client:
         refused = [
             client.get("/api/users/me", headers={"Cookie": f"__Host-session={TOKEN}", "X-Origin-Secret": "x" * 43}),

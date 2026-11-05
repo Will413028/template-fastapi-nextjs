@@ -722,7 +722,7 @@ def test_ipv6_addresses_in_one_64_are_one_client(api: AuthAPI) -> None:
 
 
 def test_signing_in_clears_only_that_clients_wait(api: AuthAPI) -> None:
-    # plan D10, ADR account-abuse-and-lifecycle D4: the owner signing in elsewhere does not lift an attacker's wait
+    # ADR account-abuse-and-lifecycle D4: the owner signing in elsewhere does not lift an attacker's wait
     api.must_sign_up("alice")
     for _ in range(5):
         assert api.sign_in("alice", WRONG, address="198.51.100.1").status_code == 401
@@ -824,7 +824,7 @@ def test_an_admin_sees_and_lifts_the_lock(api: AuthAPI) -> None:
     # and is not counted for the account
     assert api.do("GET", path, admin).json() == {"locked": True, "failures": 104}
     assert api.do("DELETE", path, admin).status_code == 204
-    # every count of the account goes, the per-client waits too (plan D10)
+    # every count of the account goes, the per-client waits too (ADR account-abuse-and-lifecycle D4)
     assert api.sql("SELECT 1 FROM sign_in_throttles WHERE account_key = 'alice'") == []
     assert api.sign_in("alice", address="198.51.0.1").status_code == 201
     assert api.do("GET", path, admin).json() == {"locked": False, "failures": 0}

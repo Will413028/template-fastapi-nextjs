@@ -1,4 +1,5 @@
-"""The origin secret (D6 in docs/plans/2026-11-03-fastapi-template.md): the backend is reachable through the tunnel by
+"""The origin secret (D3 in
+docs/adr/2026-11-05-vercel-rewrite-and-cloudflare-tunnel.md): the backend is reachable through the tunnel by
 anyone who knows its address, so an /api request counts as coming through the site only when it carries the
 X-Origin-Secret that Vercel's rewrite and the frontend's server-side calls add."""
 

@@ -131,8 +131,8 @@ def test_the_throttle_waits_in_whole_minutes() -> None:
 
 
 def test_signing_in_clears_only_that_clients_count() -> None:
-    # plan D10: the owner signing in elsewhere does not lift the wait an attacker built up at another address; the
-    # account-wide count ('') goes with it (NIST SP 800-63B-4 3.2.2)
+    # ADR account-abuse-and-lifecycle D4: the owner signing in elsewhere does not lift the wait an attacker built up at
+    # another address; the account-wide count ('') goes with it (NIST SP 800-63B-4 3.2.2)
     sql = run(lambda c: repository.clear_login_throttle(c, account_key="a", client_key="ip:1"))
     where = sql.partition("WHERE")[2]
     assert "sign_in_throttles.account_key = " in where

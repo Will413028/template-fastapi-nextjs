@@ -1,7 +1,7 @@
 """Request ids and security headers (Go version: internal/httpapi/middleware_test.go).
 
-Unlike the Go version, no X-Request-ID from outside is believed: there is no trusted proxy that sets one (D6 in
-docs/plans/2026-11-03-fastapi-template.md), so the backend always generates it.
+Unlike the Go version, no X-Request-ID from outside is believed: there is no trusted proxy that sets one (D4 in
+docs/adr/2026-11-05-vercel-rewrite-and-cloudflare-tunnel.md), so the backend always generates it.
 """
 
 import uuid

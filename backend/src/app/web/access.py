@@ -1,4 +1,4 @@
-"""Who may call an operation (docs/adr/2026-10-18-api-and-auth-baseline.md D7, plan D7).
+"""Who may call an operation (docs/adr/2026-10-18-api-and-auth-baseline.md D7, ADR fastapi-backend-stack D5).
 
 Every /api route carries exactly one access marker, and app.main checks at startup that it does and that PUBLIC is
 exactly the operations the contract gives `security: []` (app.main.routes): a new operation's access is a decision,

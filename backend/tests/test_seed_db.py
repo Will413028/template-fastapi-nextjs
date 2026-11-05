@@ -55,7 +55,7 @@ def test_seed_admin_leaves_an_existing_account_unchanged(api: AuthAPI) -> None:
 
 
 def test_recover_admin_gives_an_admin_a_new_password_and_a_clean_slate(api: AuthAPI) -> None:
-    # Go version: seed_test.go TestRecoverAdmin; also its sessions and trusted devices go (plan step 5)
+    # Go version: seed_test.go TestRecoverAdmin; also its sessions and trusted devices go
     api.call(seed_admin, api.service, "root", LONG_ENOUGH)
     api.must_sign_in("root")  # a session and a trusted device
     api.sql("UPDATE users SET is_disabled = true WHERE account = 'root'")

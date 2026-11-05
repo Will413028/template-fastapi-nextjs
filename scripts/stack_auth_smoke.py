@@ -81,7 +81,8 @@ def main() -> None:
     client.cookies = signed_out
     status, headers, _ = client.call("GET", "/users/me", headers={"X-Request-ID": "client-chosen"})
     expect("read with the signed-out session", status, 401)
-    # the backend makes every request id itself (D6): a client's own must not reach the logs or the response
+    # the backend makes every request id itself (ADR vercel-rewrite-and-cloudflare-tunnel D4): a client's own must not
+    # reach the logs or the response
     request_id = headers.get("x-request-id", "")
     if not request_id or request_id == "client-chosen":
         sys.exit(f"X-Request-ID is {request_id!r}: the client's own was kept or none was set")

@@ -115,10 +115,11 @@ class Settings:
     http: HttpSettings
     database: DatabaseSettings
     # The site's origin as browsers send it in Origin (scheme://host[:port], lowercase, no default port): the CSRF
-    # check compares against it because the Host the backend receives is not the name the browser used (D6).
+    # check compares against it because the Host the backend receives is not the name the browser used
+    # (ADR vercel-rewrite-and-cloudflare-tunnel).
     app_origin: str
-    # X-Origin-Secret values that mark a request as coming through the site (D6 in
-    # docs/plans/2026-11-03-fastapi-template.md); empty only with MODE=dev.
+    # X-Origin-Secret values that mark a request as coming through the site (D3 in
+    # docs/adr/2026-11-05-vercel-rewrite-and-cloudflare-tunnel.md); empty only with MODE=dev.
     origin_secrets: tuple[str, ...] = ()
     auth_rate_limit_per_min: int = DEFAULT_AUTH_RATE_LIMIT_PER_MIN
     # A session ends session_absolute after sign-in, or session_idle after its last use (ADR api-and-auth-baseline D4).

@@ -3,7 +3,7 @@ title: FastAPI 版後端：契約優先、SQLAlchemy async＋Alembic、按功能
 date: 2026-11-05
 review-date: 2027-05-05
 status: active
-supersedes: "2026-10-18-go-backend.md（Go 版範本的後端 ADR，不適用本 repo；仍成立的型別與 DB 角色規則移入本 ADR 的 D6、D7）"
+supersedes: "Go 版範本的後端 ADR（不適用本 repo；仍成立的型別與 DB 角色規則移入本 ADR 的 D6、D7）"
 tags: [fullstack-template, decision, fastapi, postgresql, migration]
 ---
 
@@ -11,13 +11,13 @@ tags: [fullstack-template, decision, fastapi, postgresql, migration]
 
 ## Context
 
-這個 repo 從 template-go-nextjs@560106d 分出來：當時的 HTTP 契約與 Next.js 前端照搬，backend 改用 FastAPI，規格是那個 commit 的行為。之後 Go 版改用 Protobuf＋Connect（Go 版 ADR `2026-11-03-api-contract-protobuf-connect.md`），兩版從此各自演進（D8）。用 `make new` 產生的專案和範本沒有連結，所以這裡的每個預設都是衍生專案的起點。
+這個 repo 從 template-go-nextjs@560106d 分出來：當時的 HTTP 契約與 Next.js 前端照搬，backend 改用 FastAPI，規格是那個 commit 的行為。之後 Go 版改用 Protobuf＋Connect（Go 版範本的契約 ADR），兩版從此各自演進（D8）。用 `make new` 產生的專案和範本沒有連結，所以這裡的每個預設都是衍生專案的起點。
 
 **約束**：
 
 - `external`：Will 要一個 Python 後端的範本，前端與契約起點和 Go 版相同（2026-11-03）；Go 版換成 Connect 後，Will 決定不跟，維持 OpenAPI（2026-11-05）。
 - `external`：範本沒有部署、沒有線上資料，沒有相容性窗口要顧。
-- `inherited`：Go 版的 schema 規則（型別、主鍵、DB 角色；Go 版 ADR go-backend D3、D5）。仍成立：理由來自 PostgreSQL wiki 與 OWASP，和語言無關。baseline revision 等於 Go 版 `560106d` 的 6 支 migration（分家前由 catalog 比對測試證明，最後一次在 `064a24a` 的 CI；D8 之後那支測試與 Go 的 SQL 刪除，baseline 由 revision 不可修改的檢查固定），之後的 schema 各自演進。
+- `inherited`：Go 版的 schema 規則（型別、主鍵、DB 角色；Go 版範本的後端 ADR）。仍成立：理由來自 PostgreSQL wiki 與 OWASP，和語言無關。baseline revision 等於 Go 版 `560106d` 的 6 支 migration（分家前由 catalog 比對測試證明，最後一次在 `064a24a` 的 CI；D8 之後那支測試與 Go 的 SQL 刪除，baseline 由 revision 不可修改的檢查固定），之後的 schema 各自演進。
 
 ## Options Considered
 
@@ -76,7 +76,7 @@ tags: [fullstack-template, decision, fastapi, postgresql, migration]
 ## Related
 
 <!-- >>> template-only -->
-- 來源：FastAPI 版計畫 `docs/plans/2026-11-03-fastapi-template.md` 的 D1–D5、D7（Will 2026-11-03 拍板）與 D11（Will 2026-11-05，D8 的修訂），spike 結果 `docs/plans/2026-11-03-fastapi-template/spike.md`。
+- 來源：FastAPI 版計畫 `docs/plans/2026-11-03-fastapi-template.md` D1–D5、D7、D11（前六項 Will 2026-11-03 拍板；最後一項 Will 2026-11-05 拍板，修訂本 ADR 的 D8），spike 結果 `docs/plans/2026-11-03-fastapi-template/spike.md`。
 <!-- <<< template-only -->
-- 取代：Go 版 ADR `docs/adr/2026-10-18-go-backend.md`（本 repo 已刪除，原文在 template-go-nextjs@560106d）。
+- 取代：Go 版範本的後端 ADR（原文在 template-go-nextjs@560106d）。
 - 同批：[部署拓樸](2026-11-05-vercel-rewrite-and-cloudflare-tunnel.md)；[API 與認證基準](2026-10-18-api-and-auth-baseline.md)。

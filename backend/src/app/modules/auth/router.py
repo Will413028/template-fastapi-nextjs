@@ -1,9 +1,10 @@
 """The auth operations of backend/api/openapi.yaml: accounts (/users) and sessions (/sessions) (Go version:
-internal/httpapi/users.go). Request and response shapes are the contract's generated models (D8).
+internal/httpapi/users.go). Request and response shapes are the contract's generated models
+(ADR fastapi-backend-stack D2).
 
 A 201 carries a Location whose GET answers 200 for the creator (docs/adr/2026-10-18-api-and-auth-baseline.md D9).
-Sign-up and sign-in are limited per client address (RATE_LIMITED, D6 of the same ADR); sign-in is also throttled per
-account and client in the service.
+Sign-up and sign-in are limited per client address (RATE_LIMITED, ADR api-and-auth-baseline D6); sign-in is also
+throttled per account and client in the service.
 """
 
 import uuid

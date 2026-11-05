@@ -1,8 +1,7 @@
 """Request ids: every request gets a new UUIDv7, sent back in X-Request-ID and in every problem body.
 
-An X-Request-ID from outside is never believed: no trusted proxy sets one (D4 in
-docs/adr/2026-11-05-vercel-rewrite-and-cloudflare-tunnel.md), and a client-chosen id would let it forge or collide
-log lines.
+An X-Request-ID from outside is never believed: no trusted proxy sets one (ADR vercel-rewrite-and-cloudflare-tunnel
+D4), and a client-chosen id would let it forge or collide log lines.
 """
 
 import contextvars

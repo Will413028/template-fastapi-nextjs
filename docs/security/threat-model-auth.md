@@ -1,6 +1,6 @@
 # 威脅建模：認證與 session
 
-用 STRIDE 逐項檢查帳號、密碼、session 與角色在目前程式碼裡的做法。每個緩解措施都寫出程式碼或證明它的測試；找不到程式碼的威脅列為 Open。設計的決定在 [API 與認證基準](../adr/2026-10-18-api-and-auth-baseline.md)（D4 session、D5 CSRF、D6 密碼與節流、D7 授權）與 [FastAPI 版後端](../adr/2026-11-05-fastapi-backend-stack.md)（D7 資料庫角色）。
+用 STRIDE 逐項檢查帳號、密碼、session 與角色在目前程式碼裡的做法。每個緩解措施都寫出程式碼或證明它的測試；找不到程式碼的威脅列為 Open。設計的決定在 [API 與認證基準](../adr/2026-10-18-api-and-auth-baseline.md) D4–D7（session、CSRF、密碼與節流、授權）與 [FastAPI 版後端](../adr/2026-11-05-fastapi-backend-stack.md) D7（資料庫角色）。
 
 路徑相對於 repo 根目錄；`auth/` 指 `backend/src/app/modules/auth/`，`web/` 指 `backend/src/app/web/`，測試在 `backend/tests/`（`*_db.py` 需要資料庫，只在 CI 跑）。
 
@@ -80,7 +80,7 @@
 | 密碼或 token 寫進日誌 | 註冊、登入成功與失敗、驗證錯誤、格式錯誤的 body、未知的 token、登出、HIBP 查詢失敗，全部跑一遍後檢查日誌（含 debug 級）。測試：`test_credentials_never_reach_the_log`（`test_auth_db.py`，HIBP 查詢失敗時跑） | 已緩解 |
 | Script 讀到 token（XSS） | cookie 是 `HttpOnly`；頁面有 nonce 型 CSP，`connect-src 'self'`、`frame-ancestors 'none'`（`frontend/src/proxy.ts`）。測試：`test_create_user_sets_the_session_cookie`、`test_session_cookie_attributes`、前端 `proxy.test.ts` | build 出來的版本已緩解；`next dev` 不設 CSP |
 | 登入時從回應或時間差列舉帳號 | 不存在的帳號也跑一次 dummy hash，回同樣的 problem；節流也套用在不存在的帳號名。dummy hash 在啟動時就算好，第一次也不多一次雜湊。測試：`test_an_unknown_account_costs_a_hash_and_answers_like_a_wrong_password`、`test_sign_in_is_throttled_per_account_name_whether_or_not_it_exists` | 已緩解 |
-| 註冊時列舉帳號 | 帳號已存在回 `409 account_taken`。測試：`test_create_user_duplicate` | 接受：用帳號名而不是 email，無法隱藏名稱已被使用（ADR D6）；註冊有每 IP 限流 |
+| 註冊時列舉帳號 | 帳號已存在回 `409 account_taken`。測試：`test_create_user_duplicate` | 接受：用帳號名而不是 email，無法隱藏名稱已被使用（ADR api-and-auth-baseline D6）；註冊有每 IP 限流 |
 | 讀到別人的使用者資料或 session | 非擁有者一律 404，與不存在的一樣（`auth/service/__init__.py` `user`、`session`，`auth/repository.py` `get_user_session`）。測試：`test_another_users_account_is_not_found_like_a_missing_one`、`test_get_session`、`test_list_sessions`、`test_another_users_session_cannot_be_revoked`（`test_auth_db.py`，撤銷也只看本人的 session：`auth/repository.py` `Live`）；非 admin 列使用者回 403：`test_a_user_cannot_administer_users`（`test_auth_db.py`） | 已緩解 |
 | 讀到或改到別人的 item | 每個讀、改、刪既有 item 的查詢都帶 `owner_id = 呼叫者`，非擁有者一律 404（`items/repository.py`）。測試：`test_queries_on_existing_items_are_scoped_to_the_owner`（`test_items_repository.py`，本機）、`test_another_users_item_is_not_found_like_a_missing_one`、`test_another_users_item_cannot_be_changed_or_deleted`（`test_items_db.py`） | 已緩解 |
 | 內部錯誤洩漏細節 | 非預期錯誤變成不帶細節的 500，細節只進日誌（`web/problems.py`）。測試：`test_unhandled_error_is_logged_not_sent`（`test_problems.py`） | 已緩解 |
@@ -94,7 +94,7 @@
 |---|---|---|
 | 大量雜湊耗盡記憶體或 CPU | 雜湊在專用的執行緒池跑，同時最多 `os.process_cpu_count()` 個；等待中的請求被取消時，還沒開始的雜湊一起取消，已開始的跑完才釋放名額（`auth/service/passwords.py`）。測試：`test_concurrent_hashes_are_bounded`、`test_a_cancelled_waiter_does_not_free_a_running_slot` | 已緩解。uvicorn 在 client 斷線時不取消請求，所以排隊中的雜湊照樣會算：接受；出現雜湊排隊造成的延遲時，加排隊上限並回 503 |
 | 過大或過慢的請求 | body 上限 1 MiB，沒宣告長度的也在讀到超過時回 413（`web/validation.py` `MAX_BODY_BYTES`）。測試：`test_body_over_the_limit`（`test_validation.py`）。uvicorn 沒有讀取 header 的逾時；正式環境的請求都先經過 Vercel 與 Cloudflare，慢速傳送 header 的連線到不了 backend（推論，未實測） | 已緩解（body）；header 逾時靠前面兩層 |
-| 故意登入失敗把受害者鎖在門外 | 節流以「帳號＋來源」為單位，攻擊者的失敗只讓自己的來源等待；帳號層級的鎖只擋沒有該帳號裝置 cookie 的來源，本人曾登入過的瀏覽器照常登入（OWASP「Slow Down Online Guessing Attacks with Device Cookies」）；admin 可查看與解鎖（`GET`／`DELETE /api/users/{id}/sign-in-lock`，寫入稽核）。全部登出、停用、救援時忘掉該帳號的裝置。測試：`test_untrusted_clients_are_locked_but_a_trusted_device_is_not`、`test_a_device_cookie_is_per_account`、`test_signing_out_everywhere_and_disabling_forget_devices`、`test_an_admin_sees_and_lifts_the_lock`（`test_auth_db.py`）；`recover-admin` 也刪掉該 admin 的信任裝置（`test_recover_admin_gives_an_admin_a_new_password_and_a_clean_slate`，`test_seed_db.py`） | 已緩解。本人在新裝置上仍可能被鎖，要等 admin 解鎖；加了 email 之後改成鎖定期間可用重設密碼解鎖（ADR api-and-auth D6 的重新評估條件） |
+| 故意登入失敗把受害者鎖在門外 | 節流以「帳號＋來源」為單位，攻擊者的失敗只讓自己的來源等待；帳號層級的鎖只擋沒有該帳號裝置 cookie 的來源，本人曾登入過的瀏覽器照常登入（OWASP「Slow Down Online Guessing Attacks with Device Cookies」）；admin 可查看與解鎖（`GET`／`DELETE /api/users/{id}/sign-in-lock`，寫入稽核）。全部登出、停用、救援時忘掉該帳號的裝置。測試：`test_untrusted_clients_are_locked_but_a_trusted_device_is_not`、`test_a_device_cookie_is_per_account`、`test_signing_out_everywhere_and_disabling_forget_devices`、`test_an_admin_sees_and_lifts_the_lock`（`test_auth_db.py`）；`recover-admin` 也刪掉該 admin 的信任裝置（`test_recover_admin_gives_an_admin_a_new_password_and_a_clean_slate`，`test_seed_db.py`） | 已緩解。本人在新裝置上仍可能被鎖，要等 admin 解鎖；加了 email 之後改成鎖定期間可用重設密碼解鎖（ADR api-and-auth-baseline D6 的重新評估條件） |
 | 用亂數帳號名塞滿 `sign_in_throttles` | 不存在的帳號名也會建立紀錄（每次嘗試最多兩列：來源一列、帳號合計一列）；每 IP 限流限制速率，閒置 24 小時的紀錄每小時清掉（`app.main.factory` 的 lifespan 背景 task 呼叫 `auth/service/__init__.py` `cleanup`）。測試：`test_cleanup_deletes_expired_sessions_and_stale_throttles`（`test_auth_db.py`）、`test_serve_cleans_up_on_a_schedule_until_shutdown`（`test_auth_http.py`） | 單一副本內已緩解 |
 | Admin 停用最後一個 admin，包括自己 | 停用時先鎖住所有啟用中的 admin，目標是唯一一個就回 409 `last_admin`（`auth/service/__init__.py` `_keep_an_admin`）；兩個 admin 同時互相停用只會成功一個。所有 admin 都登不進來時，`make recover-admin` 在主機上替既有的 admin 設新密碼、啟用並清掉節流。`recover-admin`（`backend/src/app/main/recover.py`、`auth/service/__init__.py` `recover_admin`）也刪掉它的 sessions 與信任裝置，寫 `admin.recovered`（執行者為空，代表主機上的操作者），只改既有的 admin、不建立也不升級帳號。測試：`test_the_only_enabled_admin_cannot_be_disabled`、`test_two_admins_disabling_each_other_at_once_leave_one`（`test_auth_db.py`）、`test_recover_admin_gives_an_admin_a_new_password_and_a_clean_slate`、`test_recover_admin_changes_only_an_existing_admin`（`test_seed_db.py`）、`test_recovery_changes_only_an_admin`（`test_auth_repository.py`） | 已緩解 |
 | 其他 operation 不限次數 | 每 IP 限流只涵蓋 `CreateUser`、`CreateSession`；其他 operation 都要登入 | 範本接受；衍生專案依需要加進清單（`docs/rules/api-design.md` 限流） |
@@ -117,8 +117,8 @@
 | 每 IP 限流的狀態在程式記憶體裡，每個 backend 副本各有一份額度（`web/ratelimit.py`） | 範本只跑一個 backend 副本 | 跑超過一個 backend 副本，或改用 Kamal、Swarm 部署：把限流移到資料庫或 proxy（ADR 基準的 Revocation Triggers） |
 | 所有模組共用一個 app 角色與 `public` schema，app 角色能寫每張表（`backend/src/app/main/migrate.py`） | 單一程序的模組化單體；模組之間的 import 由 `backend/.importlinter` 檢查（`AGENTS.md`「Backend layers」） | 某個模組拆成獨立服務，或需要自己的資料庫帳密 |
 | 外洩密碼檢查查詢失敗時放行，且預設關閉 | 外部服務故障不該擋住註冊；內建清單一律檢查 | 產品要求外洩檢查是硬性規則 |
-| 註冊會透露帳號名稱已被使用 | 用帳號名而不是 email，沒有 email 服務（ADR D6） | 加入 email 驗證或密碼找回 |
-| 沒有改密碼、重設或找回密碼的 operation | 沒有 email 服務（ADR D6） | 同上；新 operation 必須撤銷 session（後端規則 8） |
+| 註冊會透露帳號名稱已被使用 | 用帳號名而不是 email，沒有 email 服務（ADR api-and-auth-baseline D6） | 加入 email 驗證或密碼找回 |
+| 沒有改密碼、重設或找回密碼的 operation | 沒有 email 服務（ADR api-and-auth-baseline D6） | 同上；新 operation 必須撤銷 session（後端規則 8） |
 
 ## 何時更新這份文件
 

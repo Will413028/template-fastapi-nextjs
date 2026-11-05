@@ -1,4 +1,4 @@
-"""Where a request comes from (D3 in docs/adr/2026-11-05-vercel-rewrite-and-cloudflare-tunnel.md,
+"""Where a request comes from (docs/adr/2026-11-05-vercel-rewrite-and-cloudflare-tunnel.md D3,
 which has no list of trusted proxy addresses).
 
 The backend is reachable through the Cloudflare Tunnel by anyone who learns its address, so no header is believed

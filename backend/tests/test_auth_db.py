@@ -457,7 +457,7 @@ def test_delete_all_sessions(api: AuthAPI) -> None:
 
 def test_delete_current_user(api: AuthAPI) -> None:
     alice, token = api.must_sign_up("alice")
-    # the items module's routes land in step 4; its table already references users
+    # an item row owned by alice: the items table references users
     [(item,)] = api.sql("INSERT INTO items (title, owner_id) VALUES ('mine', :owner) RETURNING id", owner=alice["id"])
     _, other = api.must_sign_in("alice")
     api.clock.advance(timedelta(minutes=10, seconds=1))

@@ -40,7 +40,7 @@ source = ["app"]
 # generated from the contract (make gen)
 omit = ["*/app/web/contract_models.py"]
 
-# `make gen` reads these: the Pydantic models of the contract's schemas (D8), written to src/app/web/contract_models.py
+# `make gen` reads these: the Pydantic models of the contract's schemas (ADR fastapi-backend-stack D2), written to src/app/web/contract_models.py
 # after ruff fixes and formats them, so the generator's own formatting is switched off.
 [tool.datamodel-codegen]
 input = "api/openapi.yaml"

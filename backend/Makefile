@@ -13,7 +13,7 @@ sync: ## Install the locked dependencies, dev tools included, into .venv
 run: ## Start `app serve` with MODE=dev on this machine
 	MODE=dev $(UV) app serve
 
-# The Pydantic models of the contract (D8; options in pyproject.toml [tool.datamodel-codegen]), then ruff's fixes and
+# The Pydantic models of the contract (ADR fastapi-backend-stack D2; options in pyproject.toml [tool.datamodel-codegen]), then ruff's fixes and
 # format. ruff reads the code through stdin under the target's name, so ruff.toml applies as it does to the file and
 # the work tree is not touched. $(1) is where the result goes; $(1).raw and $(1).fixed are left next to it.
 CONTRACT_MODELS := src/app/web/contract_models.py

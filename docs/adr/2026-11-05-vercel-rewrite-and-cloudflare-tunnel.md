@@ -3,7 +3,7 @@ title: 部署拓樸：前端在 Vercel，以同源 rewrite 轉送 /api，backend
 date: 2026-11-05
 review-date: 2027-05-05
 status: active
-supersedes-parts: "2026-10-18-api-and-auth-baseline.md 的 D1（拓樸）、D6（per-IP 限流的 IP 來源）、D8（proxy 部分），以及約束段、Expected Outcome、Revocation Triggers 中提到 Caddy 的部分"
+supersedes-parts: "2026-10-18-api-and-auth-baseline.md D1、D6、D8（依序是拓樸、per-IP 限流的 IP 來源、proxy 部分），以及約束段、Expected Outcome、Revocation Triggers 中提到 Caddy 的部分"
 tags: [fullstack-template, decision, deployment, security]
 ---
 
@@ -17,7 +17,7 @@ Go 版範本（template-go-nextjs@560106d）把前端、backend 與 PostgreSQL �
 
 - `external`：前端放 Vercel，backend 與 PostgreSQL 放一台 VM（Will 2026-11-03）。
 - `external`：Vercel 的出口 IP 不固定，付費的 Static IPs 只涵蓋 Functions，所以 backend 不能用 IP 白名單辨認 Vercel（[Static IPs](https://vercel.com/docs/networking/static-ips)）。external rewrite 每個請求最多 120 秒（[Limits](https://vercel.com/docs/limits)）。
-- `inherited`：同源是 `__Host-` cookie、SSR 拿得到 cookie、CSP `connect-src 'self'` 與 Fetch Metadata CSRF 防護的前提（基準 ADR D1、D5）。仍成立：這些機制已實作，前端與契約沿用 Go 版 `560106d`。
+- `inherited`：同源是 `__Host-` cookie、SSR 拿得到 cookie、CSP `connect-src 'self'` 與 Fetch Metadata CSRF 防護的前提（ADR api-and-auth-baseline D1、D5）。仍成立：這些機制已實作，前端與契約沿用 Go 版 `560106d`。
 - `external`：範本本身不部署（Will 2026-11-03），正式路徑在範本的 CI 裡沒有真的 Vercel 與 Cloudflare 可測。
 
 ## Options Considered
@@ -39,7 +39,7 @@ Go 版範本（template-go-nextjs@560106d）把前端、backend 與 PostgreSQL �
 - 選 A 不選基準：基準是更常見的拓樸，但它要改四個前端檔案與 cookie 屬性，還要加 CORS；A 讓前端程式與契約幾乎不變（只有部署設定與伺服器端帶密鑰），同源帶來的 `__Host-` cookie、CSP 與 CSRF 防護照舊成立。代價：多一個共享密鑰要輪換；Vercel 文件沒寫 `Cookie`／`Set-Cookie` 會穿過 external rewrite，這點沒有實測。
 - 選 Cloudflare Tunnel：VM 不開任何 port，等於保留 Go 版「backend 不直接對外」的不變量，也不用自己續約憑證。代價：網域 DNS 交給 Cloudflare，Cloudflare 與 Vercel 都終止 TLS，兩者都是新的資料處理者（`docs/privacy/data-inventory.md`）。
 - 用密鑰加 `X-Real-IP` 取代 `TRUSTED_PROXIES`：Vercel 沒有固定 IP 可列，而密鑰可以證明請求經過 Vercel，`X-Real-IP` 又是 Vercel 覆寫的，這樣 per-IP 限流的 key 不能由 client 自選（MDN「X-Forwarded-For」：只信任已知 proxy）。
-- 接受的代價：dev 走 `next dev` rewrite、正式走 Vercel，不再是同一套 proxy（基準 ADR D1 原本用 Caddy 換到的 dev/prod parity 沒了）；來源密鑰與 `X-Real-IP` 的正式路徑在 CI 沒有自動化覆蓋，靠 backend 單元測試、`vercel.json` 的 policy 檢查與部署文件的第一次部署檢查清單；backend 重建的空檔請求會失敗，與基準 ADR D8 已接受的代價相同；Vercel preview 部署不設 `ORIGIN_SECRET`，所以 preview 呼叫不了 API。
+- 接受的代價：dev 走 `next dev` rewrite、正式走 Vercel，不再是同一套 proxy（ADR api-and-auth-baseline D1 原本用 Caddy 換到的 dev/prod parity 沒了）；來源密鑰與 `X-Real-IP` 的正式路徑在 CI 沒有自動化覆蓋，靠 backend 單元測試、`vercel.json` 的 policy 檢查與部署文件的第一次部署檢查清單；backend 重建的空檔請求會失敗，與 ADR api-and-auth-baseline D8 已接受的代價相同；Vercel preview 部署不設 `ORIGIN_SECRET`，所以 preview 呼叫不了 API。
 
 ## Expected Outcome
 
@@ -66,7 +66,7 @@ Go 版範本（template-go-nextjs@560106d）把前端、backend 與 PostgreSQL �
 ## Related
 
 <!-- >>> template-only -->
-- 來源：FastAPI 版計畫 `docs/plans/2026-11-03-fastapi-template.md` 的 D6（Will 2026-11-03 拍板；Vercel 文件 [Rewrites](https://vercel.com/docs/routing/rewrites)、[Request headers](https://vercel.com/docs/headers/request-headers) 由 subagent 於當天讀取）。
+- 來源：FastAPI 版計畫 `docs/plans/2026-11-03-fastapi-template.md` D6（Will 2026-11-03 拍板；Vercel 文件 [Rewrites](https://vercel.com/docs/routing/rewrites)、[Request headers](https://vercel.com/docs/headers/request-headers) 由 subagent 於當天讀取）。
 <!-- <<< template-only -->
 - 部分取代：[API 與認證基準](2026-10-18-api-and-auth-baseline.md)（各段標有 2026-11-05 修訂）。
 - 部署步驟與第一次部署檢查清單：`docs/deploy-vps.md`。

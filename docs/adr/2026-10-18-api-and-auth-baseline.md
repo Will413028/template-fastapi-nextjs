@@ -108,5 +108,5 @@ tags: [fullstack-template, decision, rest, auth, security]
 ## Related
 
 - 來源：2026-10-18 一個沒參與規劃的 subagent 從零查證業界基準（來源見上方各連結），repo 擁有者回覆「照建議」拍板。本 ADR 即原始紀錄。
-- 同批決定：後端改寫成 Go（template-go-nextjs@560106d 的 `docs/adr/2026-10-18-go-backend.md`；本 repo 改由 [FastAPI 版後端](2026-11-05-fastapi-backend-stack.md) 取代）。
+- 同批決定：後端改寫成 Go（Go 版範本的後端 ADR，template-go-nextjs@560106d；本 repo 改由 [FastAPI 版後端](2026-11-05-fastapi-backend-stack.md) 取代）。
 - 部分取代：本 repo 的 [部署拓樸](2026-11-05-vercel-rewrite-and-cloudflare-tunnel.md)（D1、D6 的 IP 來源、D8 的 proxy 部分）。

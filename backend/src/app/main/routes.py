@@ -27,7 +27,8 @@ if TYPE_CHECKING:
 
     from app.web.contract import Contract
 
-# The contract's paths are relative to its server, /api (frontend/scripts/gen-api.mjs, D6's /api rewrite).
+# The contract's paths are relative to its server, /api (frontend/scripts/gen-api.mjs; the /api rewrite of
+# ADR vercel-rewrite-and-cloudflare-tunnel D1).
 API_PREFIX = "/api"
 
 HEALTH_PATHS = frozenset({"/health", "/health/ready"})

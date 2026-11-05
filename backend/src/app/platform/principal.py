@@ -1,4 +1,5 @@
-"""The signed-in user of the request being served (D7: what modules need from auth goes through app.platform).
+"""The signed-in user of the request being served (ADR fastapi-backend-stack D5: what modules need from auth goes
+through app.platform).
 
 The auth module's middleware (app.modules.auth.dependencies) sets it from the session cookie before the contract is
 checked, so the contract's security check (app.web.contract) and the routes' access markers (app.web.access) see it.

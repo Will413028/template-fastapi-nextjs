@@ -93,8 +93,8 @@ class CheckDocRefsTest(unittest.TestCase):
 
     def test_a_missing_document_fails(self):
         self.assertEqual(
-            self.problems("src/a.py", "# see docs/plans/2026-11-03-x.md D6\n"),
-            ["src/a.py:1: docs/plans/2026-11-03-x.md does not exist"],
+            self.problems("src/a.py", "# see docs/notes/2026-11-03-x.md D6\n"),
+            ["src/a.py:1: docs/notes/2026-11-03-x.md does not exist"],
         )
 
     def test_an_adr_slug_must_name_one_adr(self):

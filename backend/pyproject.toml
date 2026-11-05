@@ -69,7 +69,7 @@ custom-file-header = """\
 # `make gen-check` fails when this file no longer matches the contract."""
 
 [build-system]
-requires = ["uv_build>=0.12,<0.13"]
+requires = ["uv_build>=0.13,<0.14"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
@@ -78,6 +78,6 @@ module-name = "app"
 
 [tool.uv]
 # One uv everywhere: CI reads this (astral-sh/setup-uv version-file), and backend/Dockerfile pins the same image tag.
-required-version = "==0.12.24"
+required-version = "==0.13.6"
 # Supply-chain cooldown, the same 7 days as Dependabot (.github/dependabot.yml) and pnpm's minimumReleaseAge.
 exclude-newer = "7 days"

@@ -3,6 +3,7 @@
 Go version: internal/httpapi/queries_test.go TestListQueriesDoNotGrowWithRows.
 """
 
+import functools
 from typing import TYPE_CHECKING
 
 import pytest
@@ -18,6 +19,14 @@ if TYPE_CHECKING:
 
 pytestmark = pytest.mark.db
 
+# Every paginated list in the contract (a GET with the Limit parameter), by operationId: its path with a full page, and
+# whether the caller is the admin. test_queries.py fails when the contract has a list this does not name.
+LISTS: dict[str, tuple[str, bool]] = {
+    "listItems": ("/api/items?limit=100", False),
+    "listSessions": ("/api/sessions?limit=100", False),
+    "listUsers": ("/api/users?limit=100", True),
+}
+
 
 @pytest.fixture
 def api(postgres: Server) -> Generator[AuthAPI]:
@@ -30,9 +39,8 @@ def test_list_queries_do_not_grow_with_rows(api: AuthAPI) -> None:
     _, admin = api.must_sign_in("root")
     _, token = api.must_sign_up("alice")
     lists: dict[str, Callable[[], httpx2.Response]] = {
-        "items": lambda: api.do("GET", "/api/items?limit=100", token),
-        "sessions": lambda: api.do("GET", "/api/sessions?limit=100", token),
-        "users": lambda: api.do("GET", "/api/users?limit=100", admin),
+        name: functools.partial(api.do, "GET", path, admin if as_admin else token)
+        for name, (path, as_admin) in LISTS.items()
     }
     few = {name: api.count_queries(send) for name, send in lists.items()}
     for i in range(10):

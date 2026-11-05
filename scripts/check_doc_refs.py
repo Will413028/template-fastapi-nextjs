@@ -13,12 +13,16 @@ another document reuses the number. So a label is written with its document:
     <date>-<slug>.md D2              an ADR's file name: next to the file that holds it, or in docs/adr/
 
 and the document must exist and define the label (a heading, list item or table row that starts with it, bold or
-not). A document may use its own labels bare. Every docs/ path ending in .md must exist too.
+not). A document may use its own labels bare, so inside a document a bare label always means its own. Every docs/
+path ending in .md, and every ADR <slug>, must exist too.
+
+Every "step N" counts as a label, numbered procedure comments included: number those "1.", "2." instead.
 
 Checks the files git tracks (every file when root is not a repository), skipping binary files and the path prefixes
 listed in .doc-refs-ignore, one per line (# starts a comment).
 """
 
+import bisect
 import functools
 import pathlib
 import re
@@ -26,16 +30,18 @@ import subprocess
 import sys
 
 IGNORE_FILE = ".doc-refs-ignore"
-_D = r"D\d{1,2}(?![\w-])"
-_STEP = r"(?:[Ss]teps? |步驟 ?)\d+[a-z]?(?![\w-])"
-LABEL = re.compile(rf"(?<![\w-])(?:{_D}|{_STEP})")
-_LABELS = rf"(?:{_D}|{_STEP})(?:\s*(?:,|、|–|and|與|和)\s*(?:{_D}|{_STEP}))*"
+_D = r"D\d{1,2}(?![\w-]|\.\w)"
+_STEP = r"(?:[Ss]teps? |步驟 ?)\d+[a-z]?(?![\w-]|\.\w)"
+LABEL = re.compile(rf"(?<![\w#-])(?:{_D}|{_STEP})")
+# whitespace within a paragraph: one line break at most, so a reference never reaches into the next block
+_GAP = r"[ \t]*(?:\n[ \t]*)?"
+_LABELS = rf"(?:{_D}|{_STEP})(?:{_GAP}(?:,|、|–|and|與|和){_GAP}(?:{_D}|{_STEP}))*"
 REFERENCE = re.compile(
     r"(?:(?<![\w/.-])(?P<path>(?:docs|\.claude)/[\w./-]*\.md)"
-    r"|\]\((?P<link>[^)\s]+\.md)\)"
+    r"|\]\((?P<link>(?![a-z][a-z0-9+.-]*:)[^)\s#]+\.md)(?:#[^)\s]*)?\)"
     r"|(?<![\w/.-])(?P<dated>\d{4}-\d{2}-\d{2}-[\w.-]+\.md)"
-    r"|(?<![\w-])ADR\s+(?P<slug>[a-z0-9][a-z0-9-]*)(?=,?\s+(?:D\d|[Ss]tep |步驟)))"
-    rf"(?:`?,?\s+(?P<labels>{_LABELS}))?"
+    r"|(?<![\w-])ADR\s+(?P<slug>[a-z0-9]+(?:-[a-z0-9]+)+))"
+    rf"(?:`?,?(?![ \t]*\n[ \t]*\n){_GAP}(?<=\s)(?P<labels>{_LABELS}))?"
 )
 
 
@@ -43,7 +49,8 @@ def _files(root: pathlib.Path) -> list[str]:
     if (root / ".git").exists():
         listed = subprocess.run(["git", "ls-files", "-z"], cwd=root, capture_output=True, check=True).stdout
         return [name for name in listed.decode().split("\0") if name]
-    return sorted(p.relative_to(root).as_posix() for p in root.rglob("*") if p.is_file() and ".git" not in p.parts)
+    skipped = {".git", "node_modules", ".venv"}
+    return sorted(p.relative_to(root).as_posix() for p in root.rglob("*") if p.is_file() and not skipped & set(p.parts))
 
 
 def _ignored(root: pathlib.Path) -> tuple[str, ...]:
@@ -75,7 +82,8 @@ def _target(root: pathlib.Path, rel: str, match: re.Match[str]) -> tuple[pathlib
     if match["path"]:
         return root / match["path"], match["path"]
     if match["link"]:
-        target = (root / rel).parent / match["link"]
+        link = match["link"]
+        target = root / link.lstrip("/") if link.startswith("/") else (root / rel).parent / link
         return target, match["link"]
     if match["dated"]:
         beside = (root / rel).parent / match["dated"]
@@ -85,43 +93,46 @@ def _target(root: pathlib.Path, rel: str, match: re.Match[str]) -> tuple[pathlib
     return (found[0] if len(found) == 1 else None), f"ADR {slug}"
 
 
-# A comment leader at the start of a line, blanked so that a reference may wrap onto the next comment line
+# A comment leader at the start of a line, blanked so that a reference may wrap onto the next comment line (not in
+# Markdown, where # starts a heading)
 LEADER = re.compile(r"^[ \t]*(?:#+|//+|/?\*+|--|;+)", re.MULTILINE)
 
 
 def check_text(root: pathlib.Path, rel: str, text: str) -> list[str]:
-    problems: list[str] = []
-    own = _defined(root / rel) if rel.endswith(".md") else frozenset()
-    flat = LEADER.sub(lambda m: " " * len(m[0]), text)
+    problems: list[tuple[int, str]] = []
+    markdown = rel.endswith(".md")
+    own = _defined(root / rel) if markdown else frozenset()
+    flat = text if markdown else LEADER.sub(lambda m: " " * len(m[0]), text)
+    starts = [0] + [m.end() for m in re.finditer("\n", text)]
 
     def at(offset: int) -> int:
-        return text.count("\n", 0, offset) + 1
+        return bisect.bisect_right(starts, offset)
 
     covered: list[tuple[int, int]] = []
     for match in REFERENCE.finditer(flat):
         target, name = _target(root, rel, match)
-        where = f"{rel}:{at(match.start())}"
+        line = at(match.start())
+        where = f"{rel}:{line}"
         if match["labels"]:
             covered.append(match.span("labels"))
         if target is None:
-            problems.append(f"{where}: {name} names no file docs/adr/<date>-{match['slug']}.md")
+            problems.append((line, f"{where}: {name} names no file docs/adr/<date>-{match['slug']}.md"))
         elif not target.is_file():
-            problems.append(f"{where}: {name} does not exist")
+            problems.append((line, f"{where}: {name} does not exist"))
         elif match["labels"]:
             defined = _defined(target.resolve())
             problems += [
-                f"{where}: {name} does not define {label}"
+                (line, f"{where}: {name} does not define {label}")
                 for label in LABEL.findall(match["labels"])
                 if _normal(label) not in defined
             ]
     for label in LABEL.finditer(flat):
         if any(start <= label.start() < end for start, end in covered) or _normal(label[0]) in own:
             continue
-        problems.append(
-            f"{rel}:{at(label.start())}: {label[0]!r} names no document "
-            f"(write docs/<path>.md {label[0]} or ADR <slug> {label[0]})"
-        )
-    return sorted(problems, key=lambda p: int(p.split(":")[1]))
+        line = at(label.start())
+        message = f"{label[0]!r} names no document (write docs/<path>.md {label[0]} or ADR <slug> {label[0]})"
+        problems.append((line, f"{rel}:{line}: {message}"))
+    return [message for _, message in sorted(problems, key=lambda p: p[0])]
 
 
 def check(root: pathlib.Path) -> list[str]:

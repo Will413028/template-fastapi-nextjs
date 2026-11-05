@@ -1,6 +1,6 @@
 # API Design Rules
 
-本專案的 API 是 contract-first：`backend/api/openapi.yaml`（OpenAPI 3.0.3）是 API 形狀與限制的唯一來源，HTTP 層在 `backend/src/app/modules/<m>/router.py`（共用的在 `backend/src/app/web/`），業務邏輯在同一模組的 service。決策來源見 [ADR api-and-auth](../adr/2026-10-18-api-and-auth-baseline.md) 與 [ADR FastAPI 版後端](../adr/2026-11-05-fastapi-backend-stack.md)。
+本專案的 API 是 contract-first：`backend/api/openapi.yaml`（OpenAPI 3.0.3）是 API 形狀與限制的唯一來源，HTTP 層在 `backend/src/app/modules/<m>/router.py`（共用的在 `backend/src/app/web/`），業務邏輯在同一模組的 service。決策來源見 [ADR api-and-auth-baseline](../adr/2026-10-18-api-and-auth-baseline.md) 與 [ADR FastAPI 版後端](../adr/2026-11-05-fastapi-backend-stack.md)。
 
 ## 契約是唯一來源
 
@@ -165,7 +165,7 @@ raise HTTPException(status_code=409)
 - 契約變更必須通過 `make -C backend api-breaking`：oasdiff 以 `main`（`BASE`，預設 `origin/main`）的 merge-base 比對，有 breaking change 就失敗。
 - **可以**新增 operation、新增 response 欄位、新增選填的 request 欄位。
 - **NEVER** 刪除、改名或改型別已合併的欄位；**NEVER** 把選填的 request 欄位改成必填。
-- URL 不帶版本。出現原生 app 或第三方 API 消費者時，重新評估版本策略（ADR api-and-auth Revocation Triggers）。
+- URL 不帶版本。出現原生 app 或第三方 API 消費者時，重新評估版本策略（ADR api-and-auth-baseline 的 Revocation Triggers）。
 
 ```yaml
 # 正確：新增選填欄位

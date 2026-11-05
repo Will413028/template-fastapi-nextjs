@@ -126,10 +126,10 @@ class GenerateTest(unittest.TestCase):
             self.generate(files)
 
     def test_a_label_with_a_document_the_output_keeps_passes(self):
-        adr = "docs/adr/2026-01-01-layers.md"
-        files = {**BASE_FILES, adr: "- **D3 Layers**: modules\n", "src/app.py": "# layered (ADR layers D3)\n"}
+        adr = "docs/adr/2026-01-01-app-layers.md"
+        files = {**BASE_FILES, adr: "- **D3 Layers**: modules\n", "src/app.py": "# layered (ADR app-layers D3)\n"}
         _, dest, _ = self.generate(files)
-        self.assertEqual(self.read(dest, "src/app.py"), "# layered (ADR layers D3)\n")
+        self.assertEqual(self.read(dest, "src/app.py"), "# layered (ADR app-layers D3)\n")
 
     def test_replaces_each_token_in_contents_and_names(self):
         _, dest, _ = self.generate()

@@ -10,7 +10,7 @@ tags: [fullstack-template, decision, rest, auth, security]
 
 ## Context
 
-改寫成 Go（template-go-nextjs 的 ADR go-backend）時，第一版計畫保留了舊 FastAPI 的契約：`{data}` 外殼、`/auth/login` 這類動詞路徑、建立與刪除都回 200、offset 分頁、數字 ID，認證則是 JWT 加 refresh token。從零對照業界基準後，舊設計有兩個實際缺口，另有幾處違反標準：
+改寫成 Go（template-go-nextjs 的後端 ADR）時，第一版計畫保留了舊 FastAPI 的契約：`{data}` 外殼、`/auth/login` 這類動詞路徑、建立與刪除都回 200、offset 分頁、數字 ID，認證則是 JWT 加 refresh token。從零對照業界基準後，舊設計有兩個實際缺口，另有幾處違反標準：
 
 - **cookie 在正式環境收不到**：前端在 `yourdomain.com`、API 在 `api.yourdomain.com`，cookie 沒帶 Domain，所以只屬於 `api.` 這個 host，前端的 server-side 認證檢查收不到它。這是依 cookie 規範推論的，沒有實測。
 - **沒有 CSRF 防護**：只靠 `SameSite=Lax`。

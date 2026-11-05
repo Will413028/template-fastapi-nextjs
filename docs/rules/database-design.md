@@ -43,7 +43,7 @@ Index("sessions_id_key", "id", unique=True)
 
 ## 模組邊界
 
-- 跨模組只允許 FK 指向 `users`（Go 版 ADR go-backend 的 Invariants；本 repo 由 [ADR FastAPI 版後端](../adr/2026-11-05-fastapi-backend-stack.md) D5 的模組規則承接）。
+- 跨模組只允許 FK 指向 `users`（Go 版範本後端 ADR 的 Invariants；本 repo 由 [ADR FastAPI 版後端](../adr/2026-11-05-fastapi-backend-stack.md) D5 的模組規則承接）。
 - 模組的查詢**NEVER** `SELECT` 或 `JOIN` 其他模組的表，也不 import 其他模組的 `models.py`（import-linter 的 `modules-independent` 會擋）；FK 用字串，不需要對方的模型。
 - 需要別的模組的資料時，經由該模組的 service 取得。
 

@@ -138,13 +138,15 @@ jobs:
         run: make sync check BASE=HEAD
       - run: python3 -m unittest discover -s scripts -p 'test_*.py'
         working-directory: ${{ runner.temp }}/ci-probe
+      # pnpm/setup refuses a path outside the workspace: it sets up pnpm from the template's frontend (same lockfile),
+      # and the generated project installs from the warm store
       - uses: pnpm/setup@a0881977cd8ea73b1ed212236c99ca10dcc80cf4 # v3.1.1
         with:
-          working-directory: ${{ runner.temp }}/ci-probe/frontend
+          working-directory: frontend
           runtime: node@26
-          cache: false
+          cache: true
           require-lockfile: true
-      - run: pnpm gen:api:check && pnpm lint && pnpm test
+      - run: pnpm install --frozen-lockfile && pnpm gen:api:check && pnpm lint && pnpm test
         working-directory: ${{ runner.temp }}/ci-probe/frontend
   # <<< template-only
 

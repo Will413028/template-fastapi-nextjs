@@ -55,6 +55,8 @@ squawk (`make -C backend squawk`) checks the SQL.
 - `tests/test_<name>_db.py` (`pytestmark = pytest.mark.db`, CI only): create with `Location` and owner, list newest
   first and keyset paging that survives inserts, get, merge-patch semantics, `updated_at` changes, delete then 404,
   and another user's row is 404 for get, patch and delete and stays unchanged.
+- `tests/test_queries_db.py` `LISTS`: add the list operation (its path with `limit=100`), so the N+1 check covers it;
+  `tests/test_queries.py` fails until every GET with the `Limit` parameter is there.
 
 Update `scripts/quality-locks.json` (`backend`, `backend_db`) to the new test counts in the same commit.
 

@@ -2,6 +2,10 @@
 
 Fullstack monorepo template with a FastAPI backend and a Next.js frontend. The frontend deploys to Vercel, which rewrites `/api/*` to the backend on one origin; the backend and PostgreSQL run with Docker Compose on a VM and are reached through a Cloudflare Tunnel.
 
+<!-- >>> template-only -->
+This repository is a template: `make new NAME=x DEST=<dir>` generates a project from it (`template/new_project.py`), dropping `template/`, `docs/plans/`, the drift check against template-go-nextjs and every block between template-only markers (the comment lines that open and close this paragraph), and replacing `README.md` with `template/derived/README.md`. A line that only makes sense in the template goes inside such a block; CI's generate job runs the checks that need no database on a generated project.
+<!-- <<< template-only -->
+
 Status: modules in progress. The backend serves `GET /health`, `GET /health/ready` and every operation of the contract (accounts, sessions, the admin's user management and sign-in locks, and the items CRUD), with the `serve`, `migrate`, `healthcheck`, `seed-admin` and `recover-admin` commands (`make seed` creates the admin, `make recover-admin` gives an existing admin a new password); `backend/src/app/main/routes.py` refuses to start when an operation has no route.
 
 ## Verification
@@ -52,7 +56,10 @@ The backend is a modular monolith organized by feature. `backend/.importlinter` 
 ├── docker-compose.yml      # VM stack (postgres + backend; cloudflared with --profile tunnel)
 ├── docker-compose.dev.yml  # Dev overrides (compose watch, frontend dev server on 127.0.0.1:3000)
 ├── Makefile                # Docker Compose shortcuts
-├── scripts/                # Repo tooling (rename, init_env, quality locks, commit policy)
+├── scripts/                # Repo tooling (init_env, quality locks, commit policy)
+# >>> template-only
+├── template/               # make new: the generator, its tests, files that replace the template's in a new project
+# <<< template-only
 └── .env-example            # Environment variable template
 ```
 
@@ -60,7 +67,9 @@ The backend is a modular monolith organized by feature. `backend/.importlinter` 
 
 ```bash
 # Docker Compose (from root)
-make rename NAME=my-project         # Rename a fresh clone (database, roles, image, packages, brand; REPO=owner/repo)
+# >>> template-only
+make new NAME=my-project DEST=../my-project  # Generate a new project (names, database, roles, image, brand; REPO=owner/repo)
+# <<< template-only
 make init-env                       # Create .env and the database password files in .secrets/
 make dev                            # Start dev stack (compose watch) on http://localhost:3000
 make up                             # Start the VM stack without the tunnel (detached)

@@ -8,10 +8,12 @@ on:
   # new advisories land without any commit here, so the default branch (dev, which contains all of main) is rescanned weekly
   schedule:
     - cron: "0 3 * * 1"
+  # >>> template-only
   # Other repositories run the same checks by calling this workflow at a pinned commit:
   #   uses: Will413028/template-fastapi-nextjs/.github/workflows/security.yml@<sha> # <tag>
   # A caller's scheduled run gets only the vulnerability scan, as here. Projects made from this template keep their
   # own copy of this file instead of calling it.
+  # <<< template-only
   workflow_call:
     inputs:
       osv-scan-args:

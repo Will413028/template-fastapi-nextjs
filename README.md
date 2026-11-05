@@ -17,8 +17,12 @@ Fullstack monorepo template for new web projects: the Python sibling of `templat
 
 ## Quick Start
 
+Start a project with `make new NAME=my-project DEST=../my-project` (`REPO=owner/repo`, default
+`Will413028/<NAME>`): it writes a new git repository with one commit on `main` and no remote, with the package,
+database, role, image and brand names and the repository links set, and without `template/`, `docs/plans/` and the
+lines that only concern the template. Work on the template itself in this repository:
+
 ```bash
-make rename NAME=my-project  # once per new project: database, image, package and brand names (REPO=owner/repo)
 make init-env        # .env from .env-example, database passwords in .secrets/
 make dev             # backend rebuilt on change, Next.js dev server: http://localhost:3000
 make -C backend sync check

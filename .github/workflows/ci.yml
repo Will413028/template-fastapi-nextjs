@@ -90,27 +90,63 @@ jobs:
           else range="$HEAD_SHA"; fi  # a new branch whose first commit is the root commit
           python3 scripts/check_commit_policy.py --range "$range"
 
-  # A derived project starts with `make rename`; afterwards the backend still passes its lock check and tests (rename.py
-  # itself fails when a tracked file it does not list names the placeholder). Skipped once the project is renamed.
-  rename:
-    name: Rename smoke test
+  # >>> template-only
+  # A project starts with `make new`: generate one and run CI's checks that need no database on it (the package,
+  # database and role names change). This job and its comments are left out of the generated project.
+  generate:
+    name: Generate a project (make new)
     runs-on: ubuntu-latest
+    env:
+      GIT_AUTHOR_NAME: ci
+      GIT_AUTHOR_EMAIL: ci@example.invalid
+      GIT_COMMITTER_NAME: ci
+      GIT_COMMITTER_EMAIL: ci@example.invalid
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - id: placeholder
-        run: if grep -q template-fastapi-nextjs backend/pyproject.toml; then echo "found=true" >> "$GITHUB_OUTPUT"; fi
+      - run: python3 -m unittest discover -s template -p 'test_*.py'
+      # A repository other than the default (Will413028/<NAME>) that names the project: it must be written as given.
+      - run: make new NAME=ci-probe DEST="$RUNNER_TEMP/ci-probe" REPO=ci-owner/ci-probe-fork
+      - name: One commit, no remote, the commit policy passes
+        working-directory: ${{ runner.temp }}/ci-probe
+        run: |
+          test "$(git rev-list --count HEAD)" = 1
+          test "$(git branch --format='%(refname:short)')" = main
+          test -z "$(git remote)"
+          test -z "$(git status --porcelain)"
+          python3 scripts/check_commit_policy.py --range HEAD
+      - name: Nothing names the template; the repository links point to the given repository
+        working-directory: ${{ runner.temp }}/ci-probe
+        run: |
+          if git grep -n -i -E 'template[-_]fastapi[-_]nextjs|Will413028/ci-probe|make rename|docs/plans' ; then
+            echo "files above name the template, its plans or the default repository"; exit 1
+          fi
+          grep -F 'github.com/ci-owner/ci-probe-fork/security/advisories/new' SECURITY.md ||
+            { echo "SECURITY.md does not link to ci-owner/ci-probe-fork"; exit 1; }
       - uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
-        if: steps.placeholder.outputs.found == 'true'
         with:
-          version-file: backend/pyproject.toml
+          version-file: ${{ runner.temp }}/ci-probe/backend/pyproject.toml
           enable-cache: false
-      - if: steps.placeholder.outputs.found == 'true'
-        run: make rename NAME=ci-probe
-      - if: steps.placeholder.outputs.found == 'true'
-        run: make sync && uv lock --check && make test
-        working-directory: backend
+      # squawk installs from backend/tools/package-lock.json with npm
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+      # one commit: the revisions it holds are compared with itself
+      - name: make check (the backend job without the db tests)
+        working-directory: ${{ runner.temp }}/ci-probe/backend
+        run: make sync check BASE=HEAD
+      - run: python3 -m unittest discover -s scripts -p 'test_*.py'
+        working-directory: ${{ runner.temp }}/ci-probe
+      - uses: pnpm/setup@a0881977cd8ea73b1ed212236c99ca10dcc80cf4 # v3.1.1
+        with:
+          working-directory: ${{ runner.temp }}/ci-probe/frontend
+          runtime: node@26
+          cache: false
+          require-lockfile: true
+      - run: pnpm gen:api:check && pnpm lint && pnpm test
+        working-directory: ${{ runner.temp }}/ci-probe/frontend
+  # <<< template-only
 
   # Builds the production backend image and starts the stack the VM runs (no tunnel: CI has no token).
   stack:
@@ -216,7 +252,14 @@ jobs:
     # The only required check on main: it passes when every other job in this workflow succeeded or was skipped.
     name: gate (ci)
     if: always()
-    needs: [backend, policy, rename, stack, frontend]
+    needs:
+      - backend
+      - policy
+      # >>> template-only
+      - generate
+      # <<< template-only
+      - stack
+      - frontend
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions: {}

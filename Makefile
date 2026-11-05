@@ -106,12 +106,19 @@ logs-postgres:
 status:
 	$(COMPOSE) ps
 
-.PHONY: rename
-rename:
+# >>> template-only
+# Generates a new project into DEST (missing or empty): package, database, role and image names, brand, repository link
+# (default Will413028/<NAME>; REPO= overrides it); a new git repository with one commit on main and no remote.
+.PHONY: new
+new:
 ifndef NAME
-	$(error NAME is required. Usage: make rename NAME=my-project [REPO=owner/repo])
+	$(error NAME and DEST are required. Usage: make new NAME=my-project DEST=../my-project [REPO=owner/my-project])
 endif
-	@python3 scripts/rename.py "$(NAME)" $(if $(REPO),--repo "$(REPO)")
+ifndef DEST
+	$(error NAME and DEST are required. Usage: make new NAME=my-project DEST=../my-project [REPO=owner/my-project])
+endif
+	@python3 template/new_project.py "$(NAME)" "$(DEST)" $(if $(REPO),--repo "$(REPO)")
+# <<< template-only
 
 .PHONY: init-env
 init-env:

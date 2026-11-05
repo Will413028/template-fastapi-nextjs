@@ -56,6 +56,7 @@ Go 版範本（template-go-nextjs@560106d）把前端、backend 與 PostgreSQL �
 ## Revocation Triggers
 
 - 衍生專案第一次部署時 cookie 不能穿過 rewrite → 改選基準（分子網域加 CORS）。
+- 第一次部署檢查清單發現 `Sec-Fetch-Site` 或 `Origin` 到不了 backend（跨來源 POST 沒被擋）→ 先在 `vercel.json` 的 route 拒絕沒有 `Sec-Fetch-Site` 的非安全方法請求；做不到就改選基準，CSRF 改用 synchronizer token（OWASP CSRF Prevention Cheat Sheet）。
 - 需要在 Vercel preview 上操作 API → 加一個 staging backend 與 preview 用的密鑰。
 - 要求零停機部署，或 backend 超過一個副本 → 在 VM 上加 blue-green 或放回一層 proxy；per-IP 限流改用 DB 或 proxy 層。
 - Vercel 提供涵蓋 rewrite 的固定出口 IP → 重新評估密鑰與 IP 白名單的取捨。

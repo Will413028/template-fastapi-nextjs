@@ -45,8 +45,8 @@
 | 路徑 | 去向 | 步驟 | 狀態 |
 |---|---|---|---|
 | `frontend/` | 保留，程式不改（型別仍從 `backend/api/openapi.yaml` 產生） | 1 | 完成 |
-| `frontend/AGENTS.md`、`frontend/README.md` | 保留，Caddy 段改寫（D6） | 1、7 | 進行中 |
-| `AGENTS.md`、`README.md` | 改寫（Go 專屬規則換成 Python） | 1、7 | 進行中 |
+| `frontend/AGENTS.md`、`frontend/README.md` | 保留，Caddy 段改寫（D6） | 1、7 | 完成（7a 補回 `frontend/AGENTS.md`；7b 改寫 `frontend/README.md`） |
+| `AGENTS.md`、`README.md` | 改寫（Go 專屬規則換成 Python） | 1、7 | 完成（7b：`AGENTS.md` 的部署指向、`README.md` 第 3 行改成以 `560106d` 分家） |
 | `SECURITY.md`、`LICENSE` | 保留（`SECURITY.md` 網址換 repo 名） | 1 | 完成 |
 | `bin/hadolint` | 保留 | 1 | 完成 |
 | `.claude/`（openspec 指令、`add-crud`、`add-module` 指南） | 步驟 1 不照搬：內容是 Go 的寫法。第一個 module 做完後，依 D7 寫 Python 版的 `add-module` 指南（給 agent 照著做的範例）；openspec 指令不帶過來 | 4 | 完成（`docs/rules/add-module.md`，Claude Code skill `.claude/skills/add-module/SKILL.md` 指向它；涵蓋 Go 版 add-module 與 add-crud） |
@@ -64,20 +64,21 @@
 | `frontend/src/lib/api/client.ts`、`frontend/src/features/auth/server.ts` | 修改：伺服器端呼叫帶 `X-Origin-Secret`，值取自 `ORIGIN_SECRET`（不帶 `NEXT_PUBLIC_`），`client.ts:5-12` 的 Caddy 註解改寫；驗收：測試確認伺服器端請求帶密鑰，build 後瀏覽器 bundle 裡找不到密鑰的值（mutation：把變數改成 `NEXT_PUBLIC_ORIGIN_SECRET`，bundle 檢查要失敗）（D6） | 3 | 完成（2c 提前做：`315d07c`、bundle 哨兵 `8ac82fa`；`server.ts` 經 `client.ts` 的共用 middleware 帶上，不必改；2026-11-03 核對） |
 | `frontend/.env.example` | 修改：`API_URL` 說明改成 backend 公開網址，加 `ORIGIN_SECRET`（D6） | 3 | 完成（2c 提前做：`315d07c`；2026-11-03 核對） |
 | `scripts/init_env.py`、根目錄 `.env-example`、`backend/.env-example` | 修改（D6）：產生 `.secrets/origin_secret`；刪除 `TRUSTED_PROXIES`、`SITE_ADDRESS`，加 `APP_ORIGIN` | 2 | 完成（`backend/.env-example` 不存在；`TRUSTED_PROXIES`、`SITE_ADDRESS` 在步驟 1 就沒搬進來） |
-| `docs/deploy-vps.md`、`docs/security/threat-model-auth.md`、`docs/privacy/data-inventory.md`、`docs/frontend-known-issues.md` | 改寫成 Vercel + VM + Cloudflare Tunnel（D6） | 7 | 未開始 |
-| `.github/dependabot.yml` | 修改：caddy 註解換成 cloudflared（D6） | 7 | 未開始 |
+| `docs/deploy-vps.md`、`docs/security/threat-model-auth.md`、`docs/privacy/data-inventory.md`、`docs/frontend-known-issues.md` | 改寫成 Vercel + VM + Cloudflare Tunnel（D6） | 7 | 完成（7b） |
+| `.github/dependabot.yml` | 修改：caddy 註解換成 cloudflared（D6） | 7 | 完成（步驟 1；`.github/dependabot.yml:68`） |
 | `docker-compose*.yml`、`Makefile`、`.env-example`、`scripts/init_env.py` | 保留後把 backend 相關部分改成 Python | 1 | 完成 |
 | `lefthook.yml` | 改寫 backend 段（gofmt／golangci-lint → ruff／型別檢查） | 1 | 完成 |
-| `.github/workflows/ci.yml` | 改寫 backend、rename job；frontend、stack、policy、gate 保留 | 1、6 | 進行中 |
+| `.github/workflows/ci.yml` | 改寫 backend、rename job；frontend、stack、policy、gate 保留 | 1、6 | 完成（rename job 依 D12 改成 generate job，6b） |
 | `.github/workflows/security.yml`、`tool-versions.yml` | 保留（osv-scanner 已涵蓋 `requirements.txt`，要加 `uv.lock`） | 1 | 完成 |
 | `scripts/check_commit_policy.py`、`check_locks.py`、`quality-locks.json` | 保留；`check_locks.py` 加 Python 的 suppression 與 pytest 報告 | 1 | 完成 |
-| `scripts/rename.py` | 改寫 module path 部分（Python 沒有 module path） | 6 | 未開始 |
+| `scripts/rename.py` | 改寫 module path 部分（Python 沒有 module path） | 6 | 完成：被 D12 取代，`scripts/rename.py` 由 `template/new_project.py` 取代（6b） |
 | `scripts/tool_versions.py` | 改寫 Go 工具清單為 Python 工具 | 1 | 完成 |
-| `docs/rules/`、`docs/security/`、`docs/privacy/`、`docs/deploy-vps.md` | 保留，Go 專屬段改寫 | 2、3、7 | 進行中（2a 改寫 `database-design.md` 的 schema、Migration、連線、角色；2b 改寫 `api-design.md` 的契約驗證、錯誤、分頁 cursor 與 service 回報錯誤；2c 改寫威脅建模的信任邊界、偽造位址、request id、access log 與個資盤點的 client IP、user agent、日誌段；查詢與 Transaction、handler 分層、認證、授權、限流與威脅建模的 3b 機制在 3b 改寫；3c、5、7 的部分仍是 Go 版） |
+| `docs/rules/`、`docs/security/`、`docs/privacy/`、`docs/deploy-vps.md` | 保留，Go 專屬段改寫 | 2、3、7 | 完成（7b 改完 Go 專屬段；剩下的「Go 版」字樣是沿用規則的出處與 expand 範例） |
 | `docs/adr/2026-10-22-account-abuse-and-lifecycle.md` | 保留（與語言無關的決定） | 1 | 完成 |
-| `docs/adr/2026-10-18-api-and-auth-baseline.md` | 保留；D1、D6（IP 來源）、D8 的決定與 Rationale，以及約束、Expected Outcome、Revocation Triggers 中的 Caddy 部分，由本 repo 的 D6 ADR 取代並標修訂；第 13 行與 Related 段指向 `2026-10-18-go-backend.md` 的連結改指本 repo 的 ADR | 1、7 | 進行中 |
-| `docs/adr/2026-10-18-go-backend.md` | 刪除（Go 專屬；以本計畫的 D1–D3 ADR 取代） | 7 | 未開始 |
-| `backend/` 全部 | 改寫 | 1–5 | 進行中 |
+| `docs/adr/2026-10-18-api-and-auth-baseline.md` | 保留；D1、D6（IP 來源）、D8 的決定與 Rationale，以及約束、Expected Outcome、Revocation Triggers 中的 Caddy 部分，由本 repo 的 D6 ADR 取代並標修訂；第 13 行與 Related 段指向 `2026-10-18-go-backend.md` 的連結改指本 repo 的 ADR | 1、7 | 完成（7a 標修訂；第 13、111 行是改寫歷史的出處，保留） |
+| `docs/adr/2026-10-18-go-backend.md` | 刪除（Go 專屬；以本計畫的 D1–D3 ADR 取代） | 7 | 完成（7a 刪除） |
+| `backend/` 全部 | 改寫 | 1–5 | 完成（1–5） |
+| `backend/tests/fixtures/go_migrations/` 與 `test_the_revisions_build_the_go_schema`（2a 加入，design-review 2026-11-05 補列） | 刪除：D11 分家後不再要求 schema 與 Go 版相同，比對 head 會讓任何新 revision 失敗；baseline 等價最後一次在 `064a24a` 的 CI 證明，baseline 由 revision 不可修改檢查固定 | 8 | 完成 |
 
 ## 舊 FastAPI 實作（tag `archive/pre-go-rewrite`）
 
@@ -89,7 +90,7 @@
 |---|---|---|---|---|
 | `.github/workflows/ci.yml:143` | `intruder` 檢查寫死 DB 與角色名 | 換成本 repo 佔位名稱 | 1 | 完成 |
 | `.github/workflows/ci.yml` stack job | 用 image 內附 Atlas 套用 migration | 改成 Alembic（D2） | 2a | 完成 |
-| `.github/workflows/ci.yml:84-101` rename job | setup-go、`go vet`、module path 檢查 | 改成 Python | 6 | 未開始 |
+| `.github/workflows/ci.yml:84-101` rename job | setup-go、`go vet`、module path 檢查 | 改成 Python | 6 | 完成（6b 的 generate job） |
 | `.github/workflows/ci.yml` backend job | Go 工具鏈 | 改成 Python | 1 | 完成 |
 | `.github/workflows/security.yml:12` | 註解寫死 `Will413028/template-go-nextjs` | 換 repo 名 | 1 | 完成 |
 | 根目錄 `Makefile` 的 `migration`、`generate-migration`、`seed`、`recover-admin` | 呼叫 Go 後端子命令 | 改成 Python 子命令 | 2a、3、5 | 完成 |

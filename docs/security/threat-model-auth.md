@@ -75,7 +75,7 @@
 
 | 威脅 | 程式碼裡的緩解 | 狀態 |
 |---|---|---|
-| 資料庫外洩導致 session 被盜用 | 只存 token 的 SHA-256，schema 用 CHECK 限制 32 byte（`auth/models.py` `sessions_token_hash_check`）。測試：`test_the_models_match_the_revisions`、`test_the_revisions_build_the_go_schema`（`test_schema_db.py`，比對含 CHECK 的 catalog） | 已緩解 |
+| 資料庫外洩導致 session 被盜用 | 只存 token 的 SHA-256，schema 用 CHECK 限制 32 byte（`auth/models.py` `sessions_token_hash_check`）。測試：`test_the_models_match_the_revisions`（`test_schema_db.py`，比對含 CHECK 的 catalog） | 已緩解 |
 | 資料庫外洩導致密碼外洩 | argon2id m=19 MiB、t=2、p=1、16 byte salt，argon2-cffi 比對（`auth/service/passwords.py`）。測試：`test_hash_uses_owasp_argon2id_and_verifies` | 已緩解 |
 | 密碼或 token 寫進日誌 | 註冊、登入成功與失敗、驗證錯誤、格式錯誤的 body、未知的 token、登出、HIBP 查詢失敗，全部跑一遍後檢查日誌（含 debug 級）。測試：`test_credentials_never_reach_the_log`（`test_auth_db.py`，HIBP 查詢失敗時跑） | 已緩解 |
 | Script 讀到 token（XSS） | cookie 是 `HttpOnly`；頁面有 nonce 型 CSP，`connect-src 'self'`、`frame-ancestors 'none'`（`frontend/src/proxy.ts`）。測試：`test_create_user_sets_the_session_cookie`、`test_session_cookie_attributes`、前端 `proxy.test.ts` | build 出來的版本已緩解；`next dev` 不設 CSP |

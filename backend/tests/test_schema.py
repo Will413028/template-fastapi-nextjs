@@ -29,11 +29,6 @@ def test_the_test_image_is_the_compose_image() -> None:
     assert re.findall(r"image: (postgres:\S+)", compose) == [dbtest.IMAGE]
 
 
-def test_the_go_migrations_are_all_there() -> None:
-    fixtures = pathlib.Path(__file__).parent / "fixtures/go_migrations"
-    assert len(list(fixtures.glob("*.sql"))) == 6
-
-
 def test_the_revisions_form_one_line_from_the_baseline() -> None:
     script = ScriptDirectory.from_config(alembic_config())
     assert script.get_heads() == [script.get_current_head()]

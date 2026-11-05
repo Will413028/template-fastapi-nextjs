@@ -6,7 +6,7 @@ Fullstack monorepo template with a FastAPI backend and a Next.js frontend. The f
 This repository is a template: `make new NAME=x DEST=<dir>` generates a project from it (`template/new_project.py`), dropping `template/`, `docs/plans/` and every block between template-only markers (the comment lines that open and close this paragraph), and replacing `README.md` with `template/derived/README.md`. A line that only makes sense in the template goes inside such a block; CI's generate job runs the checks that need no database on a generated project.
 <!-- <<< template-only -->
 
-Status: modules in progress. The backend serves `GET /health`, `GET /health/ready` and every operation of the contract (accounts, sessions, the admin's user management and sign-in locks, and the items CRUD), with the `serve`, `migrate`, `healthcheck`, `seed-admin` and `recover-admin` commands (`make seed` creates the admin, `make recover-admin` gives an existing admin a new password); `backend/src/app/main/routes.py` refuses to start when an operation has no route.
+The backend serves `GET /health`, `GET /health/ready` and every operation of the contract (accounts, sessions, the admin's user management and sign-in locks, and the items CRUD), with the `serve`, `migrate`, `healthcheck`, `seed-admin` and `recover-admin` commands (`make seed` creates the admin, `make recover-admin` gives an existing admin a new password); `backend/src/app/main/routes.py` refuses to start when an operation has no route.
 
 ## Verification
 

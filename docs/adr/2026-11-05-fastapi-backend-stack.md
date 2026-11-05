@@ -17,7 +17,7 @@ tags: [fullstack-template, decision, fastapi, postgresql, migration]
 
 - `external`：Will 要一個 Python 後端的範本，前端與契約起點和 Go 版相同（2026-11-03）；Go 版換成 Connect 後，Will 決定不跟，維持 OpenAPI（2026-11-05）。
 - `external`：範本沒有部署、沒有線上資料，沒有相容性窗口要顧。
-- `inherited`：Go 版的 schema 規則（型別、主鍵、DB 角色；Go 版 ADR go-backend D3、D5）。仍成立：理由來自 PostgreSQL wiki 與 OWASP，和語言無關；兩版的 schema 要相同，由測試守住。
+- `inherited`：Go 版的 schema 規則（型別、主鍵、DB 角色；Go 版 ADR go-backend D3、D5）。仍成立：理由來自 PostgreSQL wiki 與 OWASP，和語言無關。baseline revision 等於 Go 版 `560106d` 的 6 支 migration（分家前由 catalog 比對測試證明，最後一次在 `064a24a` 的 CI；D8 之後那支測試與 Go 的 SQL 刪除，baseline 由 revision 不可修改的檢查固定），之後的 schema 各自演進。
 
 ## Options Considered
 
@@ -61,7 +61,7 @@ tags: [fullstack-template, decision, fastapi, postgresql, migration]
 ## Invariants
 
 - 契約只在 `backend/api/openapi.yaml`：`frontend/scripts/gen-api.mjs`、`pnpm gen:api:check`、`make -C backend gen-check`。
-- schema 與 Go 版等價：`backend/tests/test_schema_db.py`、`backend/tests/fixtures/go_migrations/`。
+- models 與 revisions 一致：`backend/tests/test_schema_db.py`；baseline 不再改：`scripts/check_migrations_immutable.py`。
 - 分層：`backend/.importlinter`。
 
 ## Revocation Triggers

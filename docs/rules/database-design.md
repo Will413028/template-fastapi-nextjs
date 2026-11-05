@@ -1,6 +1,6 @@
 # Database Design Rules
 
-本專案使用 PostgreSQL 18、SQLAlchemy 2.0 async 加 asyncpg，schema 由 Alembic 管理（[ADR FastAPI 版後端](../adr/2026-11-05-fastapi-backend-stack.md) D3、D4）。命名、型別、FK、角色等 schema 規則沿用 Go 版（[ADR FastAPI 版後端](../adr/2026-11-05-fastapi-backend-stack.md) D6、D7），兩版的 schema 相同，由測試守住（`backend/tests/test_schema_db.py`）。
+本專案使用 PostgreSQL 18、SQLAlchemy 2.0 async 加 asyncpg，schema 由 Alembic 管理（[ADR FastAPI 版後端](../adr/2026-11-05-fastapi-backend-stack.md) D3、D4）。命名、型別、FK、角色等 schema 規則沿用 Go 版（[ADR FastAPI 版後端](../adr/2026-11-05-fastapi-backend-stack.md) D6、D7）；baseline revision 等於 Go 版 `560106d` 的 schema，之後各自演進（同一份 ADR 的 D8）。
 
 ## Schema 與查詢的位置
 

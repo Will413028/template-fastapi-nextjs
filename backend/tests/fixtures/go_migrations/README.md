@@ -1,1 +1,0 @@
-The six migrations of `template-go-nextjs` at commit `560106d` (`backend/migrations/*.sql`), copied unchanged. `tests/test_schema_db.py` runs them in file-name order to build the schema this repository's Alembic baseline must equal. Do not edit them; they are the specification, not this repository's migrations.

@@ -23,14 +23,22 @@ app = "app.main.cli:main"
 dev = [
     # make gen writes src/app/web/contract_models.py from api/openapi.yaml; make gen-check fails when it is stale
     "datamodel-code-generator==0.86.0",
+    # make coverage: total and changed-line coverage, reported in CI, not gated (AGENTS.md Verification)
+    "diff-cover==11.0.0",
     "httpx2==2.16.0",
     "import-linter==2.15",
     "pyright==1.1.414",
     "pytest==9.1.1",
+    "pytest-cov==7.1.0",
     "ruff==0.17.3",
     "testcontainers==4.15.0",
     "vulture==2.16",
 ]
+
+[tool.coverage.run]
+source = ["app"]
+# generated from the contract (make gen)
+omit = ["*/app/web/contract_models.py"]
 
 # `make gen` reads these: the Pydantic models of the contract's schemas (D8), written to src/app/web/contract_models.py
 # after ruff fixes and formats them, so the generator's own formatting is switched off.

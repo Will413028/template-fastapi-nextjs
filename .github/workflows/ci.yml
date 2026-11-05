@@ -47,8 +47,13 @@ jobs:
           if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then base=HEAD~1; fi
           make sync check BASE="$base"
       # The db tests start PostgreSQL with testcontainers; they run only here, never on a developer's machine by default
-      # (schema equals the Go version's, models equal the revisions, grants, append-only, readiness)
+      # (models equal the revisions, grants, append-only, readiness, the API over a real database)
       - run: make test-db
+      # Reported, not gated: total coverage of both runs, plus changed-line coverage against the PR base on pull requests
+      - name: Coverage report
+        env:
+          COVER_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || '' }}
+        run: make -s coverage COVER_BASE="$COVER_BASE" >> "$GITHUB_STEP_SUMMARY"
       # suppression comments may only go down and executed tests only up (scripts/quality-locks.json)
       - run: python3 scripts/check_locks.py --pytest-report backend/test-report.xml --pytest-db-report backend/test-db-report.xml
         working-directory: .

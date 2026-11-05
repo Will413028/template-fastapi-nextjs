@@ -3,6 +3,7 @@
 .DS_Store
 frontend/test-report.json
 backend/coverage.xml
+backend/.coverage
 /bin/
 __pycache__/
 .venv/

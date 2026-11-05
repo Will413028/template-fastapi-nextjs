@@ -65,13 +65,23 @@ deadcode:
 		--ignore-names 'do_GET,run,pytest_*,pytestmark,revision,down_revision,upgrade'
 
 .PHONY: test
-test: ## pytest without the db tests; writes test-report.xml for scripts/check_locks.py
-	$(UV) pytest -m "not db" --junitxml=test-report.xml
+test: ## pytest without the db tests; writes test-report.xml for scripts/check_locks.py and .coverage
+	$(UV) pytest -m "not db" --junitxml=test-report.xml --cov --cov-report=
 
 # Not part of check: these start PostgreSQL containers, which run only in CI (AGENTS.md, Verification).
 .PHONY: test-db
-test-db: ## Needs Docker: the db tests; writes test-db-report.xml for scripts/check_locks.py
-	$(UV) pytest -m db --junitxml=test-db-report.xml
+test-db: ## Needs Docker: the db tests; writes test-db-report.xml for scripts/check_locks.py, adds to .coverage
+	$(UV) pytest -m db --junitxml=test-db-report.xml --cov --cov-append --cov-report=
+
+# Reported, not gated (AGENTS.md Verification): total line coverage of the last make test (and test-db), and with
+# COVER_BASE (a ref) the coverage of the lines changed since it. CI sets COVER_BASE on pull requests.
+.PHONY: coverage
+coverage: ## Markdown coverage report from .coverage
+	@$(UV) coverage xml -q -o coverage.xml
+	@printf '## Backend coverage\n\nTotal line coverage: **%s%%** (generated code excluded)\n\n' "$$($(UV) coverage report --format=total)"
+	@if [ -n "$(COVER_BASE)" ]; then \
+		tmp=$$(mktemp) && $(UV) diff-cover coverage.xml --compare-branch="$(COVER_BASE)" --format "markdown:$$tmp" >/dev/null \
+		&& cat "$$tmp"; status=$$?; rm -f "$$tmp"; exit $$status; fi
 
 .PHONY: migration
 migration: ## Needs Docker: generate a revision from the models, make migration MSG=add_widgets

@@ -71,21 +71,27 @@ class CheckDocRefsTest(unittest.TestCase):
         )
 
     def test_a_range_and_a_quoted_path_qualify_labels(self):
-        self.assertEqual(self.problems("src/a.md", "the `docs/adr/2026-10-18-auth-baseline.md` D1–D2\n"), [])
+        self.assertEqual(self.problems("src/a.md", "the `docs/adr/2026-10-18-auth-baseline.md` D1\u2013D2\n"), [])
 
     def test_external_links_and_anchors(self):
         self.assertEqual(
-            self.problems("docs/rules/s.md", "[x](https://example.com/README.md) and [y](../adr/2026-10-18-auth-baseline.md#d1) D1\n"),
+            self.problems(
+                "docs/rules/s.md",
+                "[x](https://example.com/README.md) and [y](../adr/2026-10-18-auth-baseline.md#d1) D1\n",
+            ),
             [],
         )
 
     def test_a_reference_does_not_reach_past_a_blank_line(self):
-        self.assertEqual(self.problems("docs/rules/r.md", "See docs/adr/2026-10-18-auth-baseline.md\n\n## Step 1 — table\n"), [])
+        self.assertEqual(
+            self.problems("docs/rules/r.md", "See docs/adr/2026-10-18-auth-baseline.md\n\n## Step 1 — table\n"), []
+        )
 
     def test_names_that_only_contain_a_label_pass(self):
-        self.assertEqual(self.problems("src/c.ts", 'uses D3.js charts; color = "#D3"; end of D1.\n'), [
-            "src/c.ts:1: 'D1' names no document (write docs/<path>.md D1 or ADR <slug> D1)"
-        ])
+        self.assertEqual(
+            self.problems("src/c.ts", 'uses D3.js charts; color = "#D3"; end of D1.\n'),
+            ["src/c.ts:1: 'D1' names no document (write docs/<path>.md D1 or ADR <slug> D1)"],
+        )
 
     def test_an_adr_slug_without_labels_must_exist(self):
         self.assertEqual(

@@ -7,7 +7,7 @@ Decisions are labelled D1, D2 … and procedures step 1, step 2 … inside the d
 numbers restart in every document. A bare label in a comment therefore points nowhere, or at the wrong decision once
 another document reuses the number. So a label is written with its document:
 
-    docs/adr/<file>.md D2, D3        a path, from the repository root (D1–D5 is a range: both ends must exist)
+    docs/adr/<file>.md D2, D3        a path, from the repository root
     ADR <slug> D2                    docs/adr/<date>-<slug>.md
     [text](<file>.md) D2             a Markdown link, relative to the file that holds it
     <date>-<slug>.md D2              an ADR's file name: next to the file that holds it, or in docs/adr/
@@ -15,6 +15,8 @@ another document reuses the number. So a label is written with its document:
 and the document must exist and define the label (a heading, list item or table row that starts with it, bold or
 not). A document may use its own labels bare, so inside a document a bare label always means its own. Every docs/
 path ending in .md, and every ADR <slug>, must exist too.
+
+Two labels joined by an en dash are a range, and both ends must exist.
 
 Every "step N" counts as a label, numbered procedure comments included: number those "1.", "2." instead.
 
@@ -35,7 +37,7 @@ _STEP = r"(?:[Ss]teps? |步驟 ?)\d+[a-z]?(?![\w-]|\.\w)"
 LABEL = re.compile(rf"(?<![\w#-])(?:{_D}|{_STEP})")
 # whitespace within a paragraph: one line break at most, so a reference never reaches into the next block
 _GAP = r"[ \t]*(?:\n[ \t]*)?"
-_LABELS = rf"(?:{_D}|{_STEP})(?:{_GAP}(?:,|、|–|and|與|和){_GAP}(?:{_D}|{_STEP}))*"
+_LABELS = rf"(?:{_D}|{_STEP})(?:{_GAP}(?:,|、|\u2013|and|與|和){_GAP}(?:{_D}|{_STEP}))*"
 REFERENCE = re.compile(
     r"(?:(?<![\w/.-])(?P<path>(?:docs|\.claude)/[\w./-]*\.md)"
     r"|\]\((?P<link>(?![a-z][a-z0-9+.-]*:)[^)\s#]+\.md)(?:#[^)\s]*)?\)"

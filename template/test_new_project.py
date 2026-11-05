@@ -66,6 +66,9 @@ BASE_FILES = {
     "template/new_project.py": "# the generator\n",
     "docs/plans/plan.md": f"{NAME} plan\n",
     ".github/workflows/ci.yml": "jobs:\n  app: {}\n  # >>> template-only\n  generate: {}\n  # <<< template-only\n",
+    # the output checks its own document references with the checker it ships
+    "scripts/check_doc_refs.py": (SCRIPT.parents[1] / "scripts/check_doc_refs.py").read_text(encoding="utf-8"),
+    ".doc-refs-ignore": (SCRIPT.parents[1] / ".doc-refs-ignore").read_text(encoding="utf-8"),
 }
 
 
@@ -115,6 +118,18 @@ class GenerateTest(unittest.TestCase):
         self.assertEqual(git(outer, "config", "core.bare").strip(), "false")
         self.assertEqual(git(outer, "rev-list", "--all", "--count").strip(), "1")
         self.assertEqual(git(self.root / "out", "rev-list", "--all", "--count").strip(), "1")
+
+    def test_a_label_without_its_document_stops_the_output(self):
+        # D3 is the plan's decision, and the plan is not exported: the output may not point at it
+        files = {**BASE_FILES, "docs/plans/plan.md": "- **D3 Layers**: modules\n", "src/app.py": "# layered (D3)\n"}
+        with self.assertRaisesRegex(new_project.GenerateError, r"src/app.py:1: 'D3' names no document"):
+            self.generate(files)
+
+    def test_a_label_with_a_document_the_output_keeps_passes(self):
+        adr = "docs/adr/2026-01-01-layers.md"
+        files = {**BASE_FILES, adr: "- **D3 Layers**: modules\n", "src/app.py": "# layered (ADR layers D3)\n"}
+        _, dest, _ = self.generate(files)
+        self.assertEqual(self.read(dest, "src/app.py"), "# layered (ADR layers D3)\n")
 
     def test_replaces_each_token_in_contents_and_names(self):
         _, dest, _ = self.generate()

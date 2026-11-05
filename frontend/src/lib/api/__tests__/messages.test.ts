@@ -12,11 +12,25 @@ type Problems = {
   codes: Covers<ProblemCode>;
   fields: Covers<FieldErrorCode>;
 };
+// Covers is only as strict as the keys: if gen-api.mjs stopped turning
+// x-extensible-enum into unions, they would widen to string (or, for the
+// slugs, never) and every messages file would pass. Fail tsc instead.
+type ListsValues<Key> = [Key] extends [never]
+  ? false
+  : string extends Key
+    ? false
+    : true;
+const contractListsValues: [
+  ListsValues<ProblemTypeSlug>,
+  ListsValues<ProblemCode>,
+  ListsValues<FieldErrorCode>,
+] = [true, true, true];
 const enProblems: Problems = en.problems;
 const zhTWProblems: Problems = zhTW.problems;
 
 describe("problem messages", () => {
   it("translates the contract's values in every locale", () => {
+    expect(contractListsValues).toEqual([true, true, true]);
     expect(Object.keys(zhTWProblems.types).sort()).toEqual(
       Object.keys(enProblems.types).sort(),
     );

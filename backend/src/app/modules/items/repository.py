@@ -42,7 +42,10 @@ async def list_items(
     stmt = select(*ITEM_COLUMNS).where(Item.owner_id == owner_id)
     if after is not None:
         stmt = stmt.where(Item.id < after)
-    return (await conn.execute(stmt.order_by(Item.id.desc()).limit(rows))).all()
+    found = (await conn.execute(stmt.order_by(Item.id.desc()).limit(rows))).all()
+    for row in found:  # mutation: one query per row (N+1)
+        await conn.execute(select(Item.id).where(Item.id == row[0]))
+    return found
 
 
 async def update_item(

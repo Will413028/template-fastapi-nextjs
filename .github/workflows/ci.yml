@@ -171,6 +171,11 @@ jobs:
         with:
           persist-credentials: false
       - run: make lint-docker
+      # make init-env runs scripts/init_env.py on Python 3.14 through uv
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version-file: backend/pyproject.toml
+          enable-cache: false
       # .env and the password files under .secrets/, as a developer gets them
       - run: make init-env
       # the tunnel profile included, so cloudflared is checked too; its token file is only read when it starts

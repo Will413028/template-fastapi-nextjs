@@ -107,7 +107,7 @@ squawk: $(SQUAWK) ## Lock and compatibility checks on every revision's SQL (.squ
 
 .PHONY: migrations-immutable
 migrations-immutable: ## Revisions already on BASE (default origin/main) must not change
-	python3 ../scripts/check_migrations_immutable.py $(BASE)
+	uv run --no-project --python 3.14 python ../scripts/check_migrations_immutable.py $(BASE)
 
 .PHONY: lock-check
 lock-check: ## uv.lock matches pyproject.toml

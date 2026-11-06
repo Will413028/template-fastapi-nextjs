@@ -1,4 +1,4 @@
-"""Tests for check_vercel_config.py. Run: python3 -m unittest discover -s scripts -p 'test_*.py'"""
+"""Tests for check_vercel_config.py. Run: uv run --no-project --python 3.14 python -m unittest discover -s scripts -p 'test_*.py'"""
 
 import copy
 import importlib

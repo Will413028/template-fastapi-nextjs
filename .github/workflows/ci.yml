@@ -55,7 +55,7 @@ jobs:
           COVER_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || '' }}
         run: make -s coverage COVER_BASE="$COVER_BASE" >> "$GITHUB_STEP_SUMMARY"
       # suppression comments may only go down and executed tests only up (scripts/quality-locks.json)
-      - run: python3 scripts/check_locks.py --pytest-report backend/test-report.xml --pytest-db-report backend/test-db-report.xml
+      - run: uv run --no-project --python 3.14 python scripts/check_locks.py --pytest-report backend/test-report.xml --pytest-db-report backend/test-db-report.xml
         working-directory: .
       # make migration generates a revision; with the models and revisions in agreement it holds no operation
       - name: make migration generates an empty revision when nothing changed
@@ -80,13 +80,18 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
-      - run: python3 -m unittest discover -s scripts -p 'test_*.py'
+      # scripts/ run on Python 3.14, the backend's version, through uv (the uv pinned in backend/pyproject.toml)
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version-file: backend/pyproject.toml
+          enable-cache: false
+      - run: uv run --no-project --python 3.14 python -m unittest discover -s scripts -p 'test_*.py'
       # every release binary pinned in a Makefile has a version and a checksum per platform
-      - run: python3 scripts/tool_versions.py verify
+      - run: uv run --no-project --python 3.14 python scripts/tool_versions.py verify
       # Vercel's /api rewrite adds the origin secret from its environment, and the file holds no secret
-      - run: python3 scripts/check_vercel_config.py
+      - run: uv run --no-project --python 3.14 python scripts/check_vercel_config.py
       # every decision or step label names a document the project holds, and that document defines it
-      - run: python3 scripts/check_doc_refs.py
+      - run: uv run --no-project --python 3.14 python scripts/check_doc_refs.py
       - name: Check the commits being added
         env:
           BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
@@ -95,7 +100,7 @@ jobs:
           if [ -n "$BASE" ] && [ "$BASE" != "0000000000000000000000000000000000000000" ]; then range="$BASE..$HEAD_SHA"
           elif git rev-parse -q --verify "$HEAD_SHA~1" > /dev/null; then range="$HEAD_SHA~1..$HEAD_SHA"
           else range="$HEAD_SHA"; fi  # a new branch whose first commit is the root commit
-          python3 scripts/check_commit_policy.py --range "$range"
+          uv run --no-project --python 3.14 python scripts/check_commit_policy.py --range "$range"
 
   # >>> template-only
   # A project starts with `make new`: generate one and run CI's checks that need no database on it (the package,
@@ -115,6 +120,10 @@ jobs:
       - run: python3 -m unittest discover -s template -p 'test_*.py'
       # A repository other than the default (Will413028/<NAME>) that names the project: it must be written as given.
       - run: make new NAME=ci-probe DEST="$RUNNER_TEMP/ci-probe" REPO=ci-owner/ci-probe-fork
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version-file: ${{ runner.temp }}/ci-probe/backend/pyproject.toml
+          enable-cache: false
       - name: One commit, no remote, the commit policy passes
         working-directory: ${{ runner.temp }}/ci-probe
         run: |
@@ -122,7 +131,7 @@ jobs:
           test "$(git branch --format='%(refname:short)')" = main
           test -z "$(git remote)"
           test -z "$(git status --porcelain)"
-          python3 scripts/check_commit_policy.py --range HEAD
+          uv run --no-project --python 3.14 python scripts/check_commit_policy.py --range HEAD
       - name: Nothing names the template; the repository links point to the given repository
         working-directory: ${{ runner.temp }}/ci-probe
         run: |
@@ -131,10 +140,6 @@ jobs:
           fi
           grep -F 'github.com/ci-owner/ci-probe-fork/security/advisories/new' SECURITY.md ||
             { echo "SECURITY.md does not link to ci-owner/ci-probe-fork"; exit 1; }
-      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-        with:
-          version-file: ${{ runner.temp }}/ci-probe/backend/pyproject.toml
-          enable-cache: false
       # squawk installs from backend/tools/package-lock.json with npm
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -143,7 +148,7 @@ jobs:
       - name: make check (the backend job without the db tests)
         working-directory: ${{ runner.temp }}/ci-probe/backend
         run: make sync check BASE=HEAD
-      - run: python3 -m unittest discover -s scripts -p 'test_*.py'
+      - run: uv run --no-project --python 3.14 python -m unittest discover -s scripts -p 'test_*.py'
         working-directory: ${{ runner.temp }}/ci-probe
       # pnpm/setup refuses a path outside the workspace: it sets up pnpm from the template's frontend (same lockfile),
       # and the generated project installs from the warm store
@@ -245,8 +250,13 @@ jobs:
       - run: pnpm check:deps
       - run: pnpm check:arch
       - run: pnpm test:report
+      # scripts/ run on Python 3.14, the backend's version, through uv (the uv pinned in backend/pyproject.toml)
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version-file: backend/pyproject.toml
+          enable-cache: false
       # suppression comments may only go down and executed tests only up (scripts/quality-locks.json)
-      - run: python3 scripts/check_locks.py --vitest-report frontend/test-report.json
+      - run: uv run --no-project --python 3.14 python scripts/check_locks.py --vitest-report frontend/test-report.json
         working-directory: .
       # ORIGIN_SECRET is server-only (src/lib/env.ts): a sentinel set at build time, also under the NEXT_PUBLIC_ name
       # that would inline it, must not reach the JavaScript sent to browsers

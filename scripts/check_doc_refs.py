@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check that every reference to a document's decision or step names that document, which exists and defines it.
 
-Usage: python3 scripts/check_doc_refs.py [root]   (default: the current directory)
+Usage: uv run --no-project --python 3.14 python scripts/check_doc_refs.py [root]   (default: the current directory)
 
 Decisions are labelled D1, D2 … and procedures step 1, step 2 … inside the document that makes them, and those
 numbers restart in every document. A bare label in a comment therefore points nowhere, or at the wrong decision once

@@ -122,7 +122,7 @@ endif
 
 .PHONY: init-env
 init-env:
-	@python3 scripts/init_env.py
+	@uv run --no-project --python 3.14 python scripts/init_env.py
 
 
 # --- Checks ---

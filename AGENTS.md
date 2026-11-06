@@ -124,5 +124,5 @@ pnpm gen:api          # Regenerate API types from backend/api/openapi.yaml
 
 ## Conventions
 
-- Backend is Python 3.14 managed with `uv` (`backend/pyproject.toml`, `backend/uv.lock`); frontend uses `pnpm`.
+- Backend is Python 3.14 managed with `uv` (`backend/pyproject.toml`, `backend/uv.lock`); frontend uses `pnpm`. `scripts/` run on the same Python 3.14 through `uv run --no-project --python 3.14 python scripts/<name>.py` (lefthook, Makefiles and CI do), never the host `python3`.
 - The HTTP contract is the hand-written `backend/api/openapi.yaml`; FastAPI's generated schema is off; the backend generates its Pydantic models (`make -C backend gen`) and the frontend its types (`pnpm gen:api`) from the contract.

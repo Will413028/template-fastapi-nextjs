@@ -11,7 +11,7 @@ Fullstack monorepo template for new web projects: a FastAPI backend that started
 ## Prerequisites
 
 - [Docker](https://docs.docker.com/get-docker/) (Compose v2.24.7+ for `make dev`, which runs `docker compose up --watch`)
-- [uv](https://docs.astral.sh/uv/) — installs Python 3.14 and the backend's locked dependencies
+- [uv](https://docs.astral.sh/uv/) — installs Python 3.14 and the backend's locked dependencies, and runs `scripts/` on that Python
 - [pnpm](https://pnpm.io/) — `npm install -g pnpm`
 - Python 3 — for the repo scripts (`make init-env`)
 

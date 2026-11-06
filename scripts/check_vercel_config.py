@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Check that frontend/vercel.json forwards /api to the backend with the origin secret, and holds no secret itself.
 
-Usage: python3 scripts/check_vercel_config.py [path]   (default: frontend/vercel.json; run from the repository root)
+Usage: uv run --no-project --python 3.14 python scripts/check_vercel_config.py [path]   (default: frontend/vercel.json; run from the repository root)
 
 The backend refuses an /api request without its X-Origin-Secret (backend/src/app/web/origin.py), so the route that
 rewrites /api/* to BACKEND_ORIGIN must also set that header from the ORIGIN_SECRET environment variable. Vercel

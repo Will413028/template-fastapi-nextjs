@@ -5,11 +5,11 @@ Dependabot reads manifests, not Makefiles, so these pins would otherwise age unn
 are pinned where Dependabot looks instead (the backend's dev tools in backend/pyproject.toml and backend/uv.lock).
 
 Usage (from the repository root):
-  python3 scripts/tool_versions.py verify          # offline: every pinned tool has a version and a checksum per platform,
+  uv run --no-project --python 3.14 python scripts/tool_versions.py verify          # offline: every pinned tool has a version and a checksum per platform,
                                                    # and backend/Dockerfile's uv image tag equals [tool.uv] required-version
-  python3 scripts/tool_versions.py check           # print pins older than the newest release past the cooldown;
+  uv run --no-project --python 3.14 python scripts/tool_versions.py check           # print pins older than the newest release past the cooldown;
                                                    # exit 10 when any is, 1 when a source cannot be read
-  python3 scripts/tool_versions.py bump <tool> [--version V]
+  uv run --no-project --python 3.14 python scripts/tool_versions.py bump <tool> [--version V]
                                                    # rewrite version and checksums from the release's checksum files
 
 Releases younger than COOLDOWN_DAYS are ignored, the same cooldown as Dependabot (.github/dependabot.yml).
@@ -169,7 +169,7 @@ def cmd_check() -> int:
             print(f"{tool}: {current} (current)")
             continue
         outdated += 1
-        print(f"{tool}: {current} -> {newest} (released {released}): python3 scripts/tool_versions.py bump {tool}")
+        print(f"{tool}: {current} -> {newest} (released {released}): uv run --no-project --python 3.14 python scripts/tool_versions.py bump {tool}")
     return OUTDATED if outdated else 0
 
 

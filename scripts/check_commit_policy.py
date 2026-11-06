@@ -2,8 +2,8 @@
 """Require a reason in the commit message when a commit changes a quality gate or is large.
 
 Usage:
-  python3 scripts/check_commit_policy.py --commit-msg <file>   # lefthook commit-msg: the staged changes
-  python3 scripts/check_commit_policy.py --range <base>..<head> # CI: every non-merge commit in the range
+  uv run --no-project --python 3.14 python scripts/check_commit_policy.py --commit-msg <file>   # lefthook commit-msg: the staged changes
+  uv run --no-project --python 3.14 python scripts/check_commit_policy.py --range <base>..<head> # CI: every non-merge commit in the range
 
 A commit needs a `Quality-Gate: <reason>` trailer when it edits a checker's configuration (GATE_FILES), or moves a
 lock in scripts/quality-locks.json the bad way (more suppressions, fewer tests). Moving a lock the good way needs no

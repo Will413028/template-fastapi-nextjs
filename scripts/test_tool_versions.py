@@ -1,4 +1,4 @@
-"""Offline tests for tool_versions.py. Run: python3 -m unittest discover -s scripts -p 'test_*.py'"""
+"""Offline tests for tool_versions.py. Run: uv run --no-project --python 3.14 python -m unittest discover -s scripts -p 'test_*.py'"""
 
 import importlib
 import pathlib

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Compare suppression comments and executed tests with the values locked in scripts/quality-locks.json.
 
-Usage: python3 scripts/check_locks.py [--vitest-report <file>] [--pytest-report <file>] [--pytest-db-report <file>]
+Usage: uv run --no-project --python 3.14 python scripts/check_locks.py [--vitest-report <file>] [--pytest-report <file>] [--pytest-db-report <file>]
 Run from the repository root. Suppressions are counted in tracked files on every run; a test count is checked when its
 report is given: vitest's json reporter for the frontend, pytest's JUnit XML for the backend (backend/test-report.xml
 from `make test`) and for its database tests (backend/test-db-report.xml from `make test-db`, which only CI runs).

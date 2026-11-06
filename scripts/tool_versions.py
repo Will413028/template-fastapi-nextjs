@@ -15,6 +15,8 @@ Usage (from the repository root):
 Releases younger than COOLDOWN_DAYS are ignored, the same cooldown as Dependabot (.github/dependabot.yml).
 """
 
+from __future__ import annotations
+
 import argparse
 import datetime as dt
 import json
@@ -22,7 +24,6 @@ import os
 import pathlib
 import re
 import sys
-import tomllib
 import urllib.error
 import urllib.request
 
@@ -139,6 +140,8 @@ def uv_pin_problems(dockerfile: str, pyproject: str) -> list[str]:
     Only an exact `==x.y.z` counts: a range (`>=`, `~=`, `<`) lets CI and local runs pick a uv the image does not
     have, so "one uv everywhere" would hold by luck; it is reported rather than compared against the tag.
     """
+    import tomllib  # 3.11+; main() refuses an older host python3 (lefthook runs whatever is installed) first
+
     required = tomllib.loads(pyproject).get("tool", {}).get("uv", {}).get("required-version")
     m = re.fullmatch(r"==\s*(\d+\.\d+\.\d+)", (required or "").strip())
     if not m:
@@ -189,6 +192,8 @@ def cmd_bump(tool: str, version: str | None) -> int:
 
 
 def main() -> int:
+    if sys.version_info < (3, 11):
+        raise SystemExit(f"Python {sys.version.split()[0]} is too old: tool_versions.py needs Python 3.11+ (tomllib)")
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="cmd", required=True)
     sub.add_parser("verify")

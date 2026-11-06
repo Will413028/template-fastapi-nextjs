@@ -68,3 +68,19 @@ class UvPin(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HostPython(unittest.TestCase):
+    """lefthook runs this with the host python3, which nothing pins; an old one gets a clear message."""
+
+    def test_old_python_is_refused_with_a_message(self):
+        from unittest import mock
+
+        with mock.patch.object(tv.sys, "version_info", (3, 10, 0)), mock.patch.object(tv.sys, "argv", ["tv", "verify"]):
+            with self.assertRaises(SystemExit) as cm:
+                tv.main()
+        self.assertIn("Python 3.11+", str(cm.exception.code))
+
+    def test_tomllib_is_not_imported_at_module_level(self):
+        source = pathlib.Path(tv.__file__).read_text()
+        self.assertNotRegex(source, r"(?m)^import tomllib")

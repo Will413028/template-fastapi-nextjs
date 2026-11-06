@@ -5,7 +5,8 @@ Dependabot reads manifests, not Makefiles, so these pins would otherwise age unn
 are pinned where Dependabot looks instead (the backend's dev tools in backend/pyproject.toml and backend/uv.lock).
 
 Usage (from the repository root):
-  python3 scripts/tool_versions.py verify          # offline: every pinned tool has a version and a checksum per platform
+  python3 scripts/tool_versions.py verify          # offline: every pinned tool has a version and a checksum per platform,
+                                                   # and backend/Dockerfile's uv image tag equals [tool.uv] required-version
   python3 scripts/tool_versions.py check           # print pins older than the newest release past the cooldown;
                                                    # exit 10 when any is, 1 when a source cannot be read
   python3 scripts/tool_versions.py bump <tool> [--version V]
@@ -21,6 +22,7 @@ import os
 import pathlib
 import re
 import sys
+import tomllib
 import urllib.error
 import urllib.request
 
@@ -28,6 +30,8 @@ COOLDOWN_DAYS = 7
 # check's exit status when a pin is behind, so a caller can tell it from a failure (1).
 OUTDATED = 10
 ROOT_MAKEFILE = pathlib.Path("Makefile")
+BACKEND_DOCKERFILE = pathlib.Path("backend/Dockerfile")
+BACKEND_PYPROJECT = pathlib.Path("backend/pyproject.toml")
 
 
 def http_get(url: str, method: str = "GET") -> tuple[int, dict[str, str], bytes]:
@@ -129,8 +133,27 @@ def pin_problems(tool: str, text: str) -> list[str]:
     return problems
 
 
+def uv_pin_problems(dockerfile: str, pyproject: str) -> list[str]:
+    """The uv image tag in backend/Dockerfile must equal [tool.uv] required-version, the pin CI's setup-uv reads.
+
+    Only an exact `==x.y.z` counts: a range (`>=`, `~=`, `<`) lets CI and local runs pick a uv the image does not
+    have, so "one uv everywhere" would hold by luck; it is reported rather than compared against the tag.
+    """
+    required = tomllib.loads(pyproject).get("tool", {}).get("uv", {}).get("required-version")
+    m = re.fullmatch(r"==\s*(\d+\.\d+\.\d+)", (required or "").strip())
+    if not m:
+        return [f"uv: required-version {required} is not an exact ==x.y.z pin"]
+    tag = re.search(r"^FROM\s+ghcr\.io/astral-sh/uv:(\d+\.\d+\.\d+)\b", dockerfile, re.M | re.I)
+    if not tag:
+        return [f"uv: {BACKEND_DOCKERFILE} has no ghcr.io/astral-sh/uv:x.y.z image"]
+    if tag.group(1) != m.group(1):
+        return [f"uv: {BACKEND_DOCKERFILE} uses uv {tag.group(1)} but required-version is {required}"]
+    return []
+
+
 def cmd_verify() -> int:
     problems = [p for tool in TOOLS for p in pin_problems(tool, TOOLS[tool]["file"].read_text())]
+    problems += uv_pin_problems(BACKEND_DOCKERFILE.read_text(), BACKEND_PYPROJECT.read_text())
     for p in problems:
         print(p, file=sys.stderr)
     return 1 if problems else 0

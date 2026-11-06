@@ -45,5 +45,26 @@ class Verify(unittest.TestCase):
         self.assertEqual(problems, ["hadolint: HADOLINT_VERSION is not a plain x.y.z version"])
 
 
+DOCKERFILE = "FROM ghcr.io/astral-sh/uv:0.13.6@sha256:" + A + " AS uv\nFROM python:3.14-slim\n"
+PYPROJECT = '[tool.uv]\nrequired-version = "==0.13.6"\n'
+
+
+class UvPin(unittest.TestCase):
+    def test_matching_pin_passes(self):
+        self.assertEqual(tv.uv_pin_problems(DOCKERFILE, PYPROJECT), [])
+
+    def test_mismatched_image_tag_fails(self):
+        problems = tv.uv_pin_problems(DOCKERFILE.replace("uv:0.13.6", "uv:0.13.5"), PYPROJECT)
+        self.assertEqual(problems, ["uv: backend/Dockerfile uses uv 0.13.5 but required-version is ==0.13.6"])
+
+    def test_range_required_version_fails(self):
+        problems = tv.uv_pin_problems(DOCKERFILE, PYPROJECT.replace("==0.13.6", ">=0.13.6"))
+        self.assertEqual(problems, ["uv: required-version >=0.13.6 is not an exact ==x.y.z pin"])
+
+    def test_missing_image_fails(self):
+        problems = tv.uv_pin_problems("FROM python:3.14-slim\n", PYPROJECT)
+        self.assertEqual(problems, ["uv: backend/Dockerfile has no ghcr.io/astral-sh/uv:x.y.z image"])
+
+
 if __name__ == "__main__":
     unittest.main()

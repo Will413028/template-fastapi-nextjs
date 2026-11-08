@@ -45,6 +45,34 @@ class Verify(unittest.TestCase):
         self.assertEqual(problems, ["hadolint: HADOLINT_VERSION is not a plain x.y.z version"])
 
 
+OASDIFF_MAKEFILE = f"""OASDIFF_VERSION := 1.35.0
+OASDIFF_SHA256_darwin_all   := {A}
+OASDIFF_SHA256_linux_amd64  := {B}
+OASDIFF_SHA256_linux_arm64  := {C}
+"""
+
+
+class Oasdiff(unittest.TestCase):
+    def test_complete_pins_pass(self):
+        self.assertEqual(tv.pin_problems("oasdiff", OASDIFF_MAKEFILE), [])
+
+    def test_missing_platform_fails(self):
+        text = "\n".join(line for line in OASDIFF_MAKEFILE.splitlines() if "darwin_all" not in line)
+        self.assertEqual(tv.pin_problems("oasdiff", text), ["oasdiff: OASDIFF_SHA256_darwin_all is missing or not a sha256"])
+
+    def test_checksums_come_from_the_release_archives(self):
+        listing = f"{A}  oasdiff_1.35.0_darwin_all.tar.gz\n{B}  oasdiff_1.35.0_linux_amd64.tar.gz\n" \
+            f"{C}  oasdiff_1.35.0_linux_arm64.tar.gz\n{'d' * 64}  oasdiff_1.35.0_linux_amd64.deb\n"
+        sums = tv.archive_checksums("oasdiff", "1.35.0", listing)
+        self.assertEqual(sums, {"OASDIFF_SHA256_darwin_all": A, "OASDIFF_SHA256_linux_amd64": B, "OASDIFF_SHA256_linux_arm64": C})
+
+    def test_a_missing_archive_names_it(self):
+        listing = f"{B}  oasdiff_1.37.0_linux_amd64.tar.gz\n{C}  oasdiff_1.37.0_linux_arm64.tar.gz\n"
+        with self.assertRaises(SystemExit) as raised:
+            tv.archive_checksums("oasdiff", "1.37.0", listing)
+        self.assertIn("oasdiff_1.37.0_darwin_all.tar.gz", str(raised.exception))
+
+
 DOCKERFILE = "FROM ghcr.io/astral-sh/uv:0.13.6@sha256:" + A + " AS uv\nFROM python:3.14-slim\n"
 PYPROJECT = '[tool.uv]\nrequired-version = "==0.13.6"\n'
 

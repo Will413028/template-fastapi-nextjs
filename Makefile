@@ -127,9 +127,10 @@ init-env:
 
 # --- Checks ---
 
-# hadolint is installed from its release binary; the checksums are the release's checksums.sha256.
+# hadolint is installed from its release binary; the checksums are the release's checksums.sha256. The version is in the
+# file name so that a bump downloads the new release instead of keeping an older binary.
 HADOLINT_VERSION := 2.15.1
-HADOLINT := bin/hadolint
+HADOLINT := bin/hadolint-$(HADOLINT_VERSION)
 HADOLINT_SHA256_macos-arm64  := 5c09f3213f8e40406abe048233d985eebef336d4a6a20021be47fadb6cf480a2
 HADOLINT_SHA256_linux-x86_64 := c7187db94eeeeca956519a6af171adc31453941a1e777961f6e680f697c8c507
 HADOLINT_SHA256_linux-arm64  := f6198ef8090f404dbb771abfee086eb8c48ac177f30da7fd3510aca35b344b5d

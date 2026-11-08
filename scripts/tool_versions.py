@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Keep the release binaries pinned in Makefiles (hadolint) current, with verified checksums.
+"""Keep the release binaries pinned in Makefiles (hadolint, oasdiff) current, with verified checksums.
 
 Dependabot reads manifests, not Makefiles, so these pins would otherwise age unnoticed. Tools that ship as packages
 are pinned where Dependabot looks instead (the backend's dev tools in backend/pyproject.toml and backend/uv.lock).
@@ -30,6 +30,7 @@ COOLDOWN_DAYS = 7
 # check's exit status when a pin is behind, so a caller can tell it from a failure (1).
 OUTDATED = 10
 ROOT_MAKEFILE = pathlib.Path("Makefile")
+BACKEND_MAKEFILE = pathlib.Path("backend/Makefile")
 BACKEND_DOCKERFILE = pathlib.Path("backend/Dockerfile")
 BACKEND_PYPROJECT = pathlib.Path("backend/pyproject.toml")
 
@@ -61,6 +62,7 @@ def set_make_var(text: str, name: str, value: str) -> str:
 
 # Each tool: where its version and checksums live, and how a release's checksums are published.
 HADOLINT_PLATFORMS = ["macos-arm64", "linux-x86_64", "linux-arm64"]
+OASDIFF_PLATFORMS = ["darwin_all", "linux_amd64", "linux_arm64"]
 
 
 def github_latest(repo: str, cooldown: dt.date) -> tuple[str, dt.date]:
@@ -93,6 +95,7 @@ def fetch_text(url: str) -> str:
 
 TOOLS = {
     "hadolint": {"file": ROOT_MAKEFILE, "version_var": "HADOLINT_VERSION"},
+    "oasdiff": {"file": BACKEND_MAKEFILE, "version_var": "OASDIFF_VERSION"},
 }
 
 
@@ -104,6 +107,8 @@ def pinned(tool: str) -> str:
 def latest(tool: str, cooldown: dt.date) -> tuple[str, dt.date]:
     if tool == "hadolint":
         return github_latest("hadolint/hadolint", cooldown)
+    if tool == "oasdiff":
+        return github_latest("oasdiff/oasdiff", cooldown)
     raise SystemExit(f"no release source for {tool}")
 
 
@@ -114,10 +119,27 @@ def new_checksums(tool: str, version: str) -> dict[str, str]:
             fetch_text(f"https://github.com/hadolint/hadolint/releases/download/v{version}/checksums.sha256")
         )
         return {f"HADOLINT_SHA256_{p}": sums[f"hadolint-{p}"] for p in HADOLINT_PLATFORMS}
+    if tool == "oasdiff":
+        listing = fetch_text(f"https://github.com/oasdiff/oasdiff/releases/download/v{version}/checksums.txt")
+        return archive_checksums(tool, version, listing)
     raise SystemExit(f"no checksum source for {tool}")
 
 
-PLATFORMS = {"hadolint": ("HADOLINT_SHA256", HADOLINT_PLATFORMS)}
+def archive_checksums(tool: str, version: str, listing: str) -> dict[str, str]:
+    """Makefile variable -> checksum of the release's .tar.gz per platform (the archive the Makefile downloads)."""
+    sums = checksum_lines(listing)
+    prefix, platforms = PLATFORMS[tool]
+    names = {p: f"{tool}_{version}_{p}.tar.gz" for p in platforms}
+    missing = [n for n in names.values() if n not in sums]
+    if missing:
+        raise SystemExit(f"{tool} {version}: the release lists no {', '.join(missing)}; update the platforms for {tool}")
+    return {f"{prefix}_{p}": sums[n] for p, n in names.items()}
+
+
+PLATFORMS = {
+    "hadolint": ("HADOLINT_SHA256", HADOLINT_PLATFORMS),
+    "oasdiff": ("OASDIFF_SHA256", OASDIFF_PLATFORMS),
+}
 
 
 def pin_problems(tool: str, text: str) -> list[str]:

@@ -115,5 +115,29 @@ lock-check: ## uv.lock matches pyproject.toml
 
 BASE ?= origin/main
 
+# oasdiff compares two OpenAPI documents. It is installed from its release archive; the checksums are the release's
+# checksums.txt (`scripts/tool_versions.py bump oasdiff` rewrites them). macOS has one universal archive. The version is
+# in the file name so that a bump downloads the new release instead of keeping an older binary.
+OASDIFF_VERSION := 1.35.0
+OASDIFF := bin/oasdiff-$(OASDIFF_VERSION)
+OASDIFF_SHA256_darwin_all   := 964ad2c0331768c4515fc49779827094bc89a65b1d309dac28886d1c3faf305c
+OASDIFF_SHA256_linux_amd64  := a8023002fcb2eaa7f5758148a9303cb63d33b939886df312268bc0fc7b939140
+OASDIFF_SHA256_linux_arm64  := 1f8b5aa033cd0240ae6c53460268bcd6e578526666a4487a781ece8cef39fbdd
+OASDIFF_OS := $(shell uname -s | tr A-Z a-z)
+OASDIFF_PLATFORM := $(if $(filter darwin,$(OASDIFF_OS)),darwin_all,$(OASDIFF_OS)_$(subst aarch64,arm64,$(subst x86_64,amd64,$(shell uname -m))))
+
+.PHONY: tools
+tools: $(OASDIFF) ## Download the pinned release binaries into bin/
+
+$(OASDIFF):
+	@sum="$(OASDIFF_SHA256_$(OASDIFF_PLATFORM))"; \
+	if [ -z "$$sum" ]; then echo "no oasdiff checksum for $(OASDIFF_PLATFORM)"; exit 1; fi; \
+	tmp="$$(mktemp -d)"; trap 'rm -rf "$$tmp"' EXIT; \
+	archive="oasdiff_$(OASDIFF_VERSION)_$(OASDIFF_PLATFORM).tar.gz"; \
+	curl -sSfL -o "$$tmp/$$archive" "https://github.com/oasdiff/oasdiff/releases/download/v$(OASDIFF_VERSION)/$$archive" && \
+	(cd "$$tmp" && echo "$$sum  $$archive" | shasum -a 256 -c -) && \
+	tar -xzf "$$tmp/$$archive" -C "$$tmp" oasdiff && \
+	mkdir -p bin && chmod 0755 "$$tmp/oasdiff" && mv "$$tmp/oasdiff" $@
+
 .PHONY: check
 check: lock-check gen-check fmt-check lint typecheck deadcode test squawk migrations-immutable ## CI's backend job, minus test-db

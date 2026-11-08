@@ -5,6 +5,7 @@ frontend/test-report.json
 backend/coverage.xml
 backend/.coverage
 /bin/
+/backend/bin/
 __pycache__/
 .venv/
 backend/test-report.xml

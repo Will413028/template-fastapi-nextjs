@@ -1,6 +1,6 @@
 name: Tool versions
 
-# The release binaries pinned in Makefiles (golangci-lint, hadolint, Atlas) are outside Dependabot's reach. This
+# The release binaries pinned in Makefiles (hadolint, oasdiff) are outside Dependabot's reach. This
 # compares them weekly with the newest releases past the 7-day cooldown and keeps one issue open while any is behind;
 # `uv run --no-project --python 3.14 python scripts/tool_versions.py bump <tool>` rewrites the version and checksums, and CI verifies the result.
 on:

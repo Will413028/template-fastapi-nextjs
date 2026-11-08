@@ -16,6 +16,7 @@ The backend serves `GET /health`, `GET /health/ready` and every operation of the
 - Coverage is reported, not gated: CI's backend job writes the total line coverage of both pytest runs and, on a pull request, the coverage of the changed lines (`make -C backend coverage COVER_BASE=<ref>` after `make test`) to the run summary.
 - pytest turns every warning into an error (`backend/pytest.ini`): fix a deprecation when an upgrade brings it, do not filter it.
 - `make lint-docker` (hadolint, pinned in the root `Makefile`) checks both Dockerfiles; every finding fails, infos included.
+- Release binaries are pinned with a sha256 per platform: hadolint in the root `Makefile`, oasdiff (OpenAPI diff) in `backend/Makefile` (`make -C backend tools` downloads it into `backend/bin/`); `scripts/tool_versions.py` verifies the pins (CI and pre-push) and `bump <tool>` updates them.
 - `git push` runs CI's checks first through the lefthook pre-push hook (all but the compose stack job, except its `make lint-docker`); it needs `uv`, `actionlint`, `zizmor`, `gitleaks` and `osv-scanner` installed. Do not skip it with `--no-verify`.
 - Suppression comments (`# noqa`, `# ruff: noqa`, `# ruff: ignore`, `# type: ignore`, `# pyright: ignore`, `squawk-ignore`, `biome-ignore`, `@ts-expect-error`, `@ts-ignore`, `eslint-disable`) and the number of tests run (frontend and backend) are locked in `scripts/quality-locks.json`; `scripts/check_locks.py` (CI and pre-push) fails when a count differs. Suppressions only go down and tests only up: update the lock in the same commit. Fix the code instead of suppressing: the template ships with zero suppressions.
 - A commit that edits a checker's configuration (`backend/ruff.toml`, `backend/pyrightconfig.json`, `backend/.importlinter`, `backend/.squawk.toml`, `backend/pytest.ini`, `biome.json`, `.dependency-cruiser.cjs`, `knip.config.ts`, `tsconfig.json`, any `osv-scanner.toml`, the lock scripts) or moves a lock the bad way carries a `Quality-Gate: <why>` trailer, and a commit over 1,000 changed lines (files `.gitattributes` marks `linguist-generated` not counted) is split or carries a `Large-Change: <why>` trailer; `scripts/check_commit_policy.py` checks both at commit time (lefthook) and for every pushed commit (CI and pre-push).
@@ -98,6 +99,7 @@ make check            # CI's backend job, minus the db tests
 make gen              # Regenerate src/app/http/contract_models.py from api/openapi.yaml (gen-check fails when stale)
 make migration MSG=x  # Generate an Alembic revision from the models (needs Docker)
 make squawk           # Lock and compatibility checks on every revision's SQL (needs Node)
+make tools            # Download the pinned release binaries (oasdiff) into bin/
 make fmt              # ruff format and safe fixes
 
 # Frontend development (from frontend/)

@@ -7,7 +7,6 @@ command reads only the settings it needs from the environment. Add a command by 
 
 import argparse
 import importlib
-import sys
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -29,7 +28,3 @@ def main(argv: Sequence[str] | None = None, environ: Mapping[str, str] | None = 
     # environ None means the process environment, which only app.core.config reads
     command: Callable[[Mapping[str, str] | None], int] = importlib.import_module(COMMANDS[args.command]).run
     return command(environ)
-
-
-if __name__ == "__main__":
-    sys.exit(main())

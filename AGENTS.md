@@ -29,7 +29,7 @@ The backend is a modular monolith organized by feature. `backend/.importlinter` 
 
 | Package | Holds | May import |
 |---|---|---|
-| `app.cli` | the `app` command: one module per subcommand (`serve`, `migrate`, `healthcheck`, `seed-admin`, `recover-admin`), imported only when it runs | everything below |
+| `app.cli` | the `app` command: the dispatcher imports each subcommand's module (`serve`, `migrate`, `healthcheck`, `seed-admin`, `recover-admin`) only when it runs; `logs.py` is the logging setup `serve` uses | everything below |
 | `app.main` | app factory and middleware assembly (`create_app`) | everything below except `app.migrations` |
 | `app.migrations` | Alembic environment, revisions and the schema metadata | everything below except `app.main` |
 | `app.modules.<name>` | one feature: `router.py`, `schemas.py`, `dependencies.py` (HTTP: routes, FastAPI dependencies, and any ASGI middleware `app.main` mounts for the module); `service.py`, or a `service/` package when it grows (business rules, owns the transaction); optional `repository.py` (complex queries); `models.py` (tables) | `app.http`, `app.core`; never another module |

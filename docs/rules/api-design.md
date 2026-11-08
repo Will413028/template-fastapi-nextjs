@@ -1,10 +1,13 @@
 # API Design Rules
 
-本專案的 API 正從 contract-first 改為 code-first（`docs/plans/2026-11-08-fastapi-code-first.md`）：過渡期 `backend/api/openapi.yaml`（OpenAPI 3.0.3）仍驗證每個 request、前端仍從它產生型別，`backend/api/openapi.json` 由 route 與 `schemas.py` 產生，兩者以計畫附件的 `contract_delta.py` 核對（見下方「契約是唯一來源」第一條）；HTTP 層在 `backend/src/app/modules/<m>/router.py`（共用的在 `backend/src/app/http/`），業務邏輯在同一模組的 service。決策來源見 [ADR api-and-auth-baseline](../adr/2026-10-18-api-and-auth-baseline.md) 與 [ADR FastAPI 版後端](../adr/2026-11-05-fastapi-backend-stack.md)。
+本專案的 API 正從 contract-first 改為 code-first：過渡期 `backend/api/openapi.yaml`（OpenAPI 3.0.3）仍驗證每個 request、前端仍從它產生型別，`backend/api/openapi.json` 由 route 與 `schemas.py` 產生（見下方「契約是唯一來源」第一條）；HTTP 層在 `backend/src/app/modules/<m>/router.py`（共用的在 `backend/src/app/http/`），業務邏輯在同一模組的 service。決策來源見 [ADR api-and-auth-baseline](../adr/2026-10-18-api-and-auth-baseline.md) 與 [ADR FastAPI 版後端](../adr/2026-11-05-fastapi-backend-stack.md)。
 
 ## 契約是唯一來源
 
-- 過渡期（`docs/plans/2026-11-08-fastapi-code-first.md` 步驟 4a–5）：新增或修改 API 要同時改 `backend/api/openapi.yaml`（仍驗證每個 request，前端仍從它產生型別）與各模組的 `schemas.py`、route 宣告，再重新生成：後端 `make -C backend gen`（`backend/api/openapi.json`，**NEVER** 手改），前端 `pnpm gen:api`（`frontend/src/lib/api/schema.d.ts`）；兩份契約的差異以計畫附件的 `contract_delta.py` 核對。CI 以 `make -C backend gen-check` 與 `pnpm gen:api:check` 擋下沒有重新生成的變更（ADR api-and-auth-baseline D2）。
+<!-- >>> template-only -->
+- 兩份契約的差異以 `docs/plans/2026-11-08-fastapi-code-first/contract_delta.py` 核對，直到該計畫把 request 檢查與前端型別都改到產生的契約。
+<!-- <<< template-only -->
+- 過渡期：新增或修改 API 要同時改 `backend/api/openapi.yaml`（仍驗證每個 request，前端仍從它產生型別）與各模組的 `schemas.py`、route 宣告，再重新生成：後端 `make -C backend gen`（`backend/api/openapi.json`，**NEVER** 手改），前端 `pnpm gen:api`（`frontend/src/lib/api/schema.d.ts`）。CI 以 `make -C backend gen-check` 與 `pnpm gen:api:check` 擋下沒有重新生成的變更（ADR api-and-auth-baseline D2）。
 - 長度、格式、pattern、enum 只寫在契約裡。後端由 validator（`backend/src/app/http/validation.py` 的 `ContractValidation`，openapi-core 依契約檢查每個 `/api/` request）執行，前端取用生成的型別。正式環境只驗 request；response 由測試對照契約（`backend/tests/apitest.py` 的 `checked_client`）。**NEVER** 在 handler、service 或 zod schema 再寫一次相同的限制（ADR api-and-auth-baseline D6）。
 - 契約表達不了的規則（例如密碼在常見密碼清單內、帳號已被使用）才由 service 檢查，以 `AppError` 回報。
 - request body 的 schema 加 `additionalProperties: false`，多送的欄位回 422 `additional_property`。

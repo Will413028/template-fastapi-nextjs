@@ -18,9 +18,8 @@ if TYPE_CHECKING:
     from collections.abc import Mapping
 
 # Every problem code the API sends. The lists grow (x-extensible-enum, ADR api-and-auth-baseline D3): adding a value
-# is not a breaking change, renaming or removing one is. Until openapi.yaml is removed
-# (docs/plans/2026-11-08-fastapi-code-first.md), tests/apitest.py fails a test whose response sends a value
-# openapi.yaml does not list, and the plan's contract_delta.py fails when these lists and the yaml's differ.
+# is not a breaking change, renaming or removing one is. While openapi.yaml validates requests, tests/apitest.py
+# fails a test whose response sends a value openapi.yaml does not list.
 PROBLEM_CODES = (
     "account_taken",
     "invalid_credentials",

@@ -129,4 +129,7 @@ pnpm gen:api          # Regenerate API types from backend/api/openapi.yaml
 ## Conventions
 
 - Backend is Python 3.14 managed with `uv` (`backend/pyproject.toml`, `backend/uv.lock`); frontend uses `pnpm`. `scripts/` run on the same Python 3.14 through `uv run --no-project --python 3.14 python scripts/<name>.py` (lefthook, Makefiles and CI do), never the host `python3`.
-- The HTTP contract is moving to code-first (`docs/plans/2026-11-08-fastapi-code-first.md`): `make -C backend gen` writes `backend/api/openapi.json` from the routes and their `schemas.py` models; until the plan moves request checks and the frontend's types to the generated contract, the hand-written `backend/api/openapi.yaml` still validates every request and is what the frontend generates its types from (`pnpm gen:api`), so a change goes into both and the plan's `contract_delta.py` must stay green.
+- The HTTP contract is moving to code-first: `make -C backend gen` writes `backend/api/openapi.json` from the routes and their `schemas.py` models, while the hand-written `backend/api/openapi.yaml` still validates every request and is what the frontend generates its types from (`pnpm gen:api`), so an API change goes into both.
+<!-- >>> template-only -->
+- The two contracts are compared with `docs/plans/2026-11-08-fastapi-code-first/contract_delta.py`, which must stay green until that plan moves request checks and the frontend's types to the generated contract.
+<!-- <<< template-only -->

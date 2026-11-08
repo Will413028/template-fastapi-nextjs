@@ -224,8 +224,7 @@ def _api(
 
 def build_openapi() -> dict[str, Any]:
     """The contract: the OpenAPI document of every module's routes, without building the app's dependencies.
-    `make gen` writes it to api/openapi.json (the frontend's types move to that file with
-    docs/plans/2026-11-08-fastapi-code-first.md)."""
+    `make gen` writes it to api/openapi.json."""
     app = _api(openapi_url=None)
     for router in ROUTERS:
         app.include_router(router)

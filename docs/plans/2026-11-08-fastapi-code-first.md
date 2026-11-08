@@ -63,7 +63,7 @@
   - 不能動：產品程式碼。
   - 驗收：每項附指令與原始輸出寫進 `spike.md`；(b) 附「拿掉 route class 後匿名壞 JSON 回 400 而不是 401」的對照。
   - 停止條件：(b) 做不到 → D2 重新拍板；(e) 失敗 → D5 重新拍板；(f) 新增 x-extensible-enum 值被當成 ERR → 錯誤代碼的表達方式列成決定題。
-- [ ] **2. 套件改名（純結構，refactoring playbook）**（被擋於：無）
+- [x] **2. 套件改名（純結構，refactoring playbook）**（被擋於：無；完成 2026-11-09，commit `0b4bff4`、`d08b183`）
   - 範圍（逐檔，搬移以 `git mv`）：
     - `app/platform/*` → `app/core/*`；`app/web/*` → `app/http/*`。
     - `app/main/factory.py`、`app/main/routes.py` → `app/main.py`（`create_app`、`Deps`、`Modules`，以及暫併入的 `check_routes`、`RouteContractError`；模組層級不建立 app、不讀環境；routes 部分在步驟 4b 刪除）。
@@ -140,7 +140,7 @@
 | 步驟 | 狀態 | 已跑的驗收 | 未跑的驗收與原因 | commit |
 |---|---|---|---|---|
 | 1 spike | 完成 | (a)–(g) 全部，指令與原始輸出在 `spike.md` | 無 | `docs(plans): record the step 1 spike of the code-first plan` |
-| 2 套件改名 | 未開始 | | | |
+| 2 套件改名 | 完成 | `make -C backend check` exit 0：354 passed、95 deselected，`lint-imports` 7 kept 0 broken，squawk 0 issues；`scripts/` 59 tests、`template/` 33 tests OK，`check_doc_refs.py`、`check_vercel_config.py` exit 0；mutation（複本）4 個全 killed：`app.cli.healthcheck` 加 `import fastapi`、分派器 `app.cli` 加 `import uvicorn`（light-healthcheck BROKEN），`app.main` import `app.migrations`、`app.core` import `app.http`（top-layers BROKEN）；`git diff -M100% --summary 4dbe59f HEAD -- backend/src/app` 中 `r20261103_baseline.py`、`versions/__init__.py`、`script.py.mako` 為 100% rename；以搬移後 commit 為 base，複本改 revision，`check_migrations_immutable.py` exit 1（killed）；消費端指令只剩 ADR `fastapi-backend-stack` D1、D2、D5 的段落（步驟 7 修訂）與新名稱 `app.main.check_routes` ；CI run 42501080365（`d08b183`）全綠：backend（含 db 測試）、frontend、generate、commit policy、compose stack（image + migrate + health）；`/code-review` findings 7（blocking 0）：fixed 2（`app.cli` 的死 `__main__` 區塊、AGENTS.md 分層表對 `logs.py` 的描述）、rejected 5（revision 檢查空窗 ×2：前提段 Will 2026-11-08 決定、以 100% rename 補足；ADR 舊名：步驟 7；`http` 與標準庫同名：沒有任何設定把 `src/app` 放進 `sys.path`；routes 併入 `main.py`：步驟 2 範圍、4b 刪除） | 無 | `0b4bff4`、`d08b183` |
 | 3 固定 oasdiff | 未開始 | | | |
 | 4a 契約改由 FastAPI 產生 | 未開始 | | | |
 | 4b 搬移驗證行為、移除 spec-first | 未開始 | | | |

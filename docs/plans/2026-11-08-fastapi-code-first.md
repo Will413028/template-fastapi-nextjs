@@ -18,7 +18,7 @@
 - FastAPI 0.162.0 先解析 body、再求解依賴、最後回報參數與 body 的驗證錯誤：匿名送壞 JSON 回 422 `json_invalid`（先於 401），送合法 JSON 但 body 不合 schema 回 401（步驟 1 實測 2026-11-08，附件 `spike.md` (a)）。已確認。
 - openapi-core 0.23.1 能驗證 FastAPI 產生的 3.1 規格的回應：缺必填欄位、未宣告的 status、錯的 media type 都會拒絕；前提是 `application/problem+json` 註冊 deserializer（同現行 `app.web.contract`）（步驟 1 實測 2026-11-08，`spike.md` (e)）。已確認。
 - FastAPI 把 `responses=` 裡 model 的 schema 寫到 route 成功回應的 media type（`application/json`），沒有逐一 status 指定 media type 的原生寫法（`fastapi/openapi/utils.py:491`）；route 有參數或 body 卻沒宣告 422 時自動加 `HTTPValidationError`（`utils.py:507-525`）（步驟 1 實測 2026-11-08，`spike.md` (d)）。已確認；做法寫進步驟 4a。
-- oasdiff v1.36.0 發布於 2026-11-07，不滿 repo 對依賴的 7 天規則；v1.35.0 發布於 2026-10-28，步驟 1 的 (f) 用它量（`gh release list -R oasdiff/oasdiff`，2026-11-08）。已確認；步驟 3 的版本待 Will 重新核准。
+- oasdiff v1.36.0 發布於 2026-11-07，不滿 repo 對依賴的 7 天規則；v1.35.0 發布於 2026-10-28，步驟 1 的 (f) 用它量（`gh release list -R oasdiff/oasdiff`，2026-11-08）。已確認；Will 2026-11-08 改核准 v1.35.0。
 
 **驗收基線：** `4dbe59f` 上 `make -C backend check` exit 0：354 passed、95 deselected（db 測試只在 CI 跑），squawk 0 issues，revision 未被修改；`scripts/quality-locks.json` 鎖 backend 354、backend_db 95。前端基線在步驟 1 補跑 `pnpm test`、`pnpm gen:api:check`。db 測試、compose stack 只在 CI 跑，CI 一次只跑一個。
 
@@ -77,7 +77,7 @@
   - 驗收：`make -C backend check` 354 passed 不變；`lint-imports` 合約數不變；消費端指令只剩 ADR 的歷史段落；mutation（複本）：在 `app.cli.healthcheck` 加 `import fastapi`，`lint-imports` 要失敗；`git diff -M100% --summary 4dbe59f HEAD -- backend/src/app` 顯示每支 revision 都是 100% 相似的 rename（搬移那次 `VERSIONS` 在舊 base 下沒有檔，檢查不會擋，以此補足）；以搬移後的 commit 為 base，在複本改一支 revision，`check_migrations_immutable.py <搬移後 commit>` 要失敗；docker build 經 CI。
   - commit：拆成「搬移」與「改引用」兩個 commit，或帶 `Large-Change:`；改 `.importlinter` 的那個帶 `Quality-Gate:`。
   - 停止條件：測試數或合約數變化。
-- [ ] **3. 固定 oasdiff 版本**（被擋於：Will 重新核准版本——原核准的 v1.36.0 發布於 2026-11-07，不滿 7 天；建議 v1.35.0（2026-10-28，darwin_all sha256 `964ad2c0…f305c`，與 release `checksums.txt` 相符），或等到 2026-11-14 後用 v1.36.0）
+- [ ] **3. 固定 oasdiff 版本**（被擋於：無；Will 2026-11-08 改核准 v1.35.0（發布 2026-10-28；原核准的 v1.36.0 發布於 2026-11-07，不滿 7 天）。darwin_all sha256 `964ad2c0331768c4515fc49779827094bc89a65b1d309dac28886d1c3faf305c`，與 release `checksums.txt` 相符；其他平台的 checksum 在本步從同一份 `checksums.txt` 登錄）
   - 範圍：oasdiff 版本與 checksum 登錄在 `scripts/tool_versions.py`（比照 hadolint），`backend/Makefile` 下載到 `bin/`；AGENTS.md 必要工具清單更新。
   - 需要人做的事：Will 核准 oasdiff（Go binary，非 PyPI；版本、發布日期與 checksum 在此步列出）。
   - 驗收：乾淨 clone 跑 `make -C backend` 的安裝目標後 `bin/oasdiff --version` 為登錄版本；改錯 checksum 時下載失敗。
@@ -132,7 +132,7 @@
   - B：限流依賴也宣告 body 參數，驗證失敗時 FastAPI 不呼叫它（`dependencies/utils.py:706-708`）——保留現行規則，但每個限流 route 多一個寫法
 - **D8 匯出格式**（預設，可推翻）：JSON，`backend/api/openapi.json`，不需新增 pyyaml；dev 模式由 `/api/openapi.json` 與既有文件頁提供。
 
-拍板順序：D3、D4 已決；D2、D5、D6 與 oasdiff 版本（步驟 3）在步驟 1 完成後（2026-11-08）交 Will。
+拍板順序：D3、D4、oasdiff 版本已決；D2、D5、D6 在步驟 1 完成後（2026-11-08）交 Will，Will 要求先對照業界做法與治本方案，簡報準備中。
 
 ## 進度
 

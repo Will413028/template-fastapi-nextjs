@@ -5,7 +5,7 @@
 assume_in_transaction = false
 pg_version = "18.0"
 excluded_rules = [
-  # app migrate sets lock_timeout on the connection (app.platform.config.MigrateSettings), not with SET in each file.
+  # app migrate sets lock_timeout on the connection (app.core.config.MigrateSettings), not with SET in each file.
   "require-lock-timeout",
   # No statement timeout for migrations: long index builds use CONCURRENTLY.
   "require-statement-timeout",

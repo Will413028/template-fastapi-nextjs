@@ -23,7 +23,7 @@
 needs no Domain and the client sends it without `credentials: "include"`.
 
 ### CSRF: Fetch Metadata in the Backend (implemented)
-**Decision:** The backend's `CrossOriginMiddleware` (`backend/src/app/web/cross_origin.py`) rejects
+**Decision:** The backend's `CrossOriginMiddleware` (`backend/src/app/http/cross_origin.py`) rejects
 cross-origin state-changing requests (403) using `Sec-Fetch-Site` and `Origin`. No CSRF token.
 **Why:** `SameSite=Lax` alone is not a CSRF defense (OWASP CSRF Prevention Cheat Sheet): a sibling
 subdomain is the same site, and Lax still sends cookies on top-level cross-site GET navigations.

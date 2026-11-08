@@ -12,7 +12,8 @@ import sys
 from alembic import command
 from alembic.script import ScriptDirectory
 
-from app.main.migrate import VERSION_SCHEMA, alembic_config
+from app.cli.migrate import alembic_config
+from app.migrations import VERSION_SCHEMA
 
 # Alembic creates its bookkeeping table ahead of the first revision. It is Alembic's, not a revision's (VARCHAR(32),
 # which squawk's prefer-text-field would flag), so it is cut out; failing to find it fails the script, so a change

@@ -10,7 +10,7 @@ trusted device for the account also share one count; from UNTRUSTED_FAILURE_LIMI
 succeeds, an admin unlocks the account, or a day passes without attempts, while the owner's trusted devices still get
 in (OWASP "Slow Down Online Guessing Attacks with Device Cookies").
 
-Every method that needs the signed-in user takes it as an argument (app.platform.principal.Principal); the service
+Every method that needs the signed-in user takes it as an argument (app.core.principal.Principal); the service
 does not read the request. Failures a client can act on are AppErrors with the codes below; changing a code is a
 breaking change.
 """
@@ -22,6 +22,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Literal, Protocol
 
+from app.core import pagination
+from app.core import principal as principal_module
+from app.core.config import DEFAULT_SESSION_ABSOLUTE, DEFAULT_SESSION_IDLE
+from app.core.errors import AppError, Kind
+from app.core.hibp import HIBPError
+from app.core.principal import Principal, session_invalid
 from app.modules.auth import repository
 from app.modules.auth.service.passwords import (
     PASSWORD_MIN_LENGTH,
@@ -29,12 +35,6 @@ from app.modules.auth.service.passwords import (
     is_common_password,
     normalize_password,
 )
-from app.platform import pagination
-from app.platform import principal as principal_module
-from app.platform.config import DEFAULT_SESSION_ABSOLUTE, DEFAULT_SESSION_IDLE
-from app.platform.errors import AppError, Kind
-from app.platform.hibp import HIBPError
-from app.platform.principal import Principal, session_invalid
 
 if TYPE_CHECKING:
     import uuid
@@ -85,7 +85,7 @@ logger = logging.getLogger(__name__)
 
 
 class BreachCheck(Protocol):
-    """Whether a password appears in known breaches (app.platform.hibp.HIBPClient); HIBPError means the check could
+    """Whether a password appears in known breaches (app.core.hibp.HIBPClient); HIBPError means the check could
     not answer."""
 
     async def breached(self, password: str) -> bool: ...
@@ -94,7 +94,7 @@ class BreachCheck(Protocol):
 @dataclass(frozen=True, slots=True)
 class SessionLimits:
     """A session ends absolute after sign-in, or idle after its last use (ADR api-and-auth-baseline D4); serve passes
-    SESSION_ABSOLUTE and SESSION_IDLE (app.platform.config checks them), the admin commands, which issue no session,
+    SESSION_ABSOLUTE and SESSION_IDLE (app.core.config checks them), the admin commands, which issue no session,
     the defaults."""
 
     absolute: timedelta = DEFAULT_SESSION_ABSOLUTE
@@ -317,7 +317,7 @@ class AuthService:
 
     async def ensure_admin(self, account: str, password: str) -> bool:
         """Creates an admin account unless the account exists, in which case nothing changes and the result is False.
-        The caller has checked the input against the contract's CreateUserRequest (app.main.seed); the password list
+        The caller has checked the input against the contract's CreateUserRequest (app.cli.seed); the password list
         is checked here, as for create_user."""
         key = account_key(account)
         async with self._engine.connect() as conn:
@@ -572,7 +572,7 @@ class AuthService:
 
     async def cleanup(self) -> CleanupCounts:
         """Deletes expired sessions and trusted devices and sign_in_throttles rows untouched for THROTTLE_TTL; serve
-        runs it hourly (app.main.factory)."""
+        runs it hourly (app.main)."""
         now = self._now()
         async with self._engine.begin() as conn:
             sessions = await repository.delete_expired_sessions(conn, now=now, idle=self._idle)

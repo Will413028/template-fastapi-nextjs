@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from app.main.seed import SeedError, recover_admin, seed_admin
+from app.cli.seed import SeedError, recover_admin, seed_admin
 from app.modules.auth.repository import UNTRUSTED
 from authtest import LONG_ENOUGH, AuthAPI, auth_api
 

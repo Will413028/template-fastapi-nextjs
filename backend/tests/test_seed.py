@@ -3,7 +3,7 @@ TestSeedAdminRejectsShortPassword). Creating the account is tested against Postg
 
 import pytest
 
-from app.main.seed import SeedError, validate_admin_input
+from app.cli.seed import SeedError, validate_admin_input
 
 LONG_ENOUGH = "a long enough password"
 

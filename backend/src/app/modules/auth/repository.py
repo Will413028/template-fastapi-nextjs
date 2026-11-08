@@ -10,8 +10,8 @@ from typing import TYPE_CHECKING
 from sqlalchemy import Integer, Row, case, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 
+from app.core.principal import ROLE_ADMIN
 from app.modules.auth.models import AuditEvent, Session, SignInThrottle, TrustedDevice, User
-from app.platform.principal import ROLE_ADMIN
 
 if TYPE_CHECKING:
     import uuid

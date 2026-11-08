@@ -12,7 +12,7 @@ import pathlib
 import subprocess
 import sys
 
-VERSIONS = "backend/src/app/main/migrations/versions/"
+VERSIONS = "backend/src/app/migrations/versions/"
 # A git hook exports GIT_DIR; without a work tree git would then take the current directory as the repository root.
 # Find the repository from this script's directory instead.
 ENV = {k: v for k, v in os.environ.items() if k not in {"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE"}}

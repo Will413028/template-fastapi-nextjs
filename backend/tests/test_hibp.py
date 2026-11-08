@@ -1,4 +1,4 @@
-"""The Pwned Passwords range client (app.platform.hibp; Go version: internal/platform/hibp/hibp_test.go) against a
+"""The Pwned Passwords range client (app.core.hibp; Go version: internal/platform/hibp/hibp_test.go) against a
 local server, and the breach check's place in choosing a new password (Go version: auth_test.go
 TestCreateUserBreachedPassword, whose sign-up half needs the database and is in test_auth_db.py)."""
 
@@ -12,10 +12,10 @@ from typing import TYPE_CHECKING, ClassVar
 
 import pytest
 
+from app.core.errors import AppError
+from app.core.hibp import USER_AGENT, HIBPClient, HIBPError
 from app.modules.auth.service import CODE_TOO_COMMON, AuthService
 from app.modules.auth.service.passwords import PasswordHasher
-from app.platform.errors import AppError
-from app.platform.hibp import USER_AGENT, HIBPClient, HIBPError
 from authfake import NO_DATABASE
 from authtest import CHEAP, FULL_WIDTH, FakeBreach
 

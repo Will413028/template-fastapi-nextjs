@@ -43,7 +43,7 @@ migration:
 	$(COMPOSE) build backend
 	$(COMPOSE) run --rm migrate
 
-# Generates backend/src/app/main/migrations/versions/r<timestamp>_<MSG>.py from the models (needs Docker and uv):
+# Generates backend/src/app/migrations/versions/r<timestamp>_<MSG>.py from the models (needs Docker and uv):
 #   make generate-migration MSG=add_widgets
 .PHONY: generate-migration
 generate-migration:

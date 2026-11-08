@@ -6,12 +6,12 @@ Fullstack monorepo template with a FastAPI backend and a Next.js frontend. The f
 This repository is a template: `make new NAME=x DEST=<dir>` generates a project from it (`template/new_project.py`), dropping `template/`, `docs/plans/` and every block between template-only markers (the comment lines that open and close this paragraph), and replacing `README.md` with `template/derived/README.md`. A line that only makes sense in the template goes inside such a block; CI's generate job runs the checks that need no database on a generated project.
 <!-- <<< template-only -->
 
-The backend serves `GET /health`, `GET /health/ready` and every operation of the contract (accounts, sessions, the admin's user management and sign-in locks, and the items CRUD), with the `serve`, `migrate`, `healthcheck`, `seed-admin` and `recover-admin` commands (`make seed` creates the admin, `make recover-admin` gives an existing admin a new password); `backend/src/app/main/routes.py` refuses to start when an operation has no route.
+The backend serves `GET /health`, `GET /health/ready` and every operation of the contract (accounts, sessions, the admin's user management and sign-in locks, and the items CRUD), with the `serve`, `migrate`, `healthcheck`, `seed-admin` and `recover-admin` commands (`make seed` creates the admin, `make recover-admin` gives an existing admin a new password); `backend/src/app/main.py` refuses to start when an operation has no route.
 
 ## Verification
 
 - Branch model: daily work goes to `dev`; `main` changes only through a `dev`→`main` PR merged with a merge commit (no squash, no rebase); never push to `main` directly.
-- Backend tests use `pytest`, frontend tests use `vitest`; a task is complete only when `make -C backend check` (backend) and `pnpm test` (frontend) pass, and CI's backend job passes when the change touches the database. `make -C backend check` runs what CI's backend job runs except the database tests: `uv lock --check`, `gen-check` (the Pydantic models in `backend/src/app/web/contract_models.py` match `backend/api/openapi.yaml`), `ruff format --check`, `ruff check`, the import-linter contracts (`lint-imports`), `pyright` in strict mode, `vulture`, `pytest -m "not db"`, squawk on every revision's SQL (needs Node; `backend/tools/package.json`) and the revision immutability check.
+- Backend tests use `pytest`, frontend tests use `vitest`; a task is complete only when `make -C backend check` (backend) and `pnpm test` (frontend) pass, and CI's backend job passes when the change touches the database. `make -C backend check` runs what CI's backend job runs except the database tests: `uv lock --check`, `gen-check` (the Pydantic models in `backend/src/app/http/contract_models.py` match `backend/api/openapi.yaml`), `ruff format --check`, `ruff check`, the import-linter contracts (`lint-imports`), `pyright` in strict mode, `vulture`, `pytest -m "not db"`, squawk on every revision's SQL (needs Node; `backend/tools/package.json`) and the revision immutability check.
 - Tests that need PostgreSQL carry `@pytest.mark.db` (a test using the `postgres` fixture without it fails collection) and start a container with testcontainers (`backend/tests/dbtest.py`). They run only in CI (`make -C backend test-db`); do not run them, or `make migration`, on a shared development machine.
 - Coverage is reported, not gated: CI's backend job writes the total line coverage of both pytest runs and, on a pull request, the coverage of the changed lines (`make -C backend coverage COVER_BASE=<ref>` after `make test`) to the run summary.
 - pytest turns every warning into an error (`backend/pytest.ini`): fix a deprecation when an upgrade brings it, do not filter it.
@@ -29,16 +29,18 @@ The backend is a modular monolith organized by feature. `backend/.importlinter` 
 
 | Package | Holds | May import |
 |---|---|---|
-| `app.main` | app factory, middleware assembly, CLI, migrations environment | everything below |
-| `app.modules.<name>` | one feature: `router.py`, `schemas.py`, `dependencies.py` (HTTP: routes, FastAPI dependencies, and any ASGI middleware `app.main.factory` mounts for the module); `service.py`, or a `service/` package when it grows (business rules, owns the transaction); optional `repository.py` (complex queries); `models.py` (tables) | `app.web`, `app.platform`; never another module |
-| `app.web` | HTTP helpers shared by routers (problem responses, request ids, rate limits, headers) | `app.platform` |
-| `app.platform` | settings, database session, pagination, clock, the authenticated principal | third-party packages only; no `fastapi` or `starlette` |
+| `app.cli` | the `app` command: one module per subcommand (`serve`, `migrate`, `healthcheck`, `seed-admin`, `recover-admin`), imported only when it runs | everything below |
+| `app.main` | app factory and middleware assembly (`create_app`) | everything below except `app.migrations` |
+| `app.migrations` | Alembic environment, revisions and the schema metadata | everything below except `app.main` |
+| `app.modules.<name>` | one feature: `router.py`, `schemas.py`, `dependencies.py` (HTTP: routes, FastAPI dependencies, and any ASGI middleware `app.main` mounts for the module); `service.py`, or a `service/` package when it grows (business rules, owns the transaction); optional `repository.py` (complex queries); `models.py` (tables) | `app.http`, `app.core`; never another module |
+| `app.http` | HTTP helpers shared by routers (problem responses, request ids, rate limits, headers) | `app.core` |
+| `app.core` | settings, database session, pagination, clock, the authenticated principal | third-party packages only; no `fastapi` or `starlette` |
 
 - Inside a module the order is router > service > repository > models; every file in a module belongs to one of those layers.
-- `service`, `repository` and `models` do not import `fastapi` or `starlette`, directly or through another module; routers do not import `sqlalchemy`, a repository, models or `app.platform.db` themselves (they call the service, which does).
-- Every `/api` route carries exactly one access marker from `app.web.access` (`PUBLIC`, `SIGNED_IN`) and matches a contract operation (method, path, path parameter names); `app.main.routes` checks both at startup.
-- Modules share nothing directly: what one needs from another goes through `app.platform` (for example the principal auth's middleware sets), and a table refers to another module's table by a string foreign key such as `"users.id"`, without an ORM relationship.
-- Only `app.platform.config` reads environment variables (ruff `TID251`).
+- `service`, `repository` and `models` do not import `fastapi` or `starlette`, directly or through another module; routers do not import `sqlalchemy`, a repository, models or `app.core.db` themselves (they call the service, which does).
+- Every `/api` route carries exactly one access marker from `app.http.access` (`PUBLIC`, `SIGNED_IN`) and matches a contract operation (method, path, path parameter names); `app.main` checks both at startup.
+- Modules share nothing directly: what one needs from another goes through `app.core` (for example the principal auth's middleware sets), and a table refers to another module's table by a string foreign key such as `"users.id"`, without an ORM relationship.
+- Only `app.core.config` reads environment variables (ruff `TID251`).
 - No import cycles between sibling packages (`acyclic_siblings`).
 
 ## Constraints
@@ -93,7 +95,7 @@ make run              # Start the API server with MODE=dev
 make test             # pytest without the db tests
 make test-db          # The db tests (needs Docker; CI runs them)
 make check            # CI's backend job, minus the db tests
-make gen              # Regenerate src/app/web/contract_models.py from api/openapi.yaml (gen-check fails when stale)
+make gen              # Regenerate src/app/http/contract_models.py from api/openapi.yaml (gen-check fails when stale)
 make migration MSG=x  # Generate an Alembic revision from the models (needs Docker)
 make squawk           # Lock and compatibility checks on every revision's SQL (needs Node)
 make fmt              # ruff format and safe fixes

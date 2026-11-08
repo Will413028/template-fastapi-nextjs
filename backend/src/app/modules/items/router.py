@@ -10,11 +10,11 @@ from typing import TYPE_CHECKING
 from fastapi import APIRouter, Response, status
 from pydantic import MISSING
 
+from app.core.pagination import DEFAULT_LIMIT
+from app.http import contract_models as api
+from app.http.access import SignedIn
 from app.modules.items.dependencies import Service
 from app.modules.items.service import Patch
-from app.platform.pagination import DEFAULT_LIMIT
-from app.web import contract_models as api
-from app.web.access import SignedIn
 
 if TYPE_CHECKING:
     from app.modules.items.service import Item
@@ -47,7 +47,7 @@ async def create_item(
 async def list_items(
     service: Service, principal: SignedIn, limit: int = DEFAULT_LIMIT, cursor: str | None = None
 ) -> api.ItemPage:
-    """The contract has already checked limit's range (app.web.contract). An empty cursor is not one this API
+    """The contract has already checked limit's range (app.http.contract). An empty cursor is not one this API
     returned: 422, not the first page."""
     page = await service.page(principal, limit=limit, cursor=cursor)
     return api.ItemPage(items=[_item(item) for item in page.items], next_cursor=page.next_cursor)

@@ -22,9 +22,9 @@ from apitest import (
     deps,
     stub_app,
 )
-from app.main.factory import create_app
-from app.web.contract import Contract, ContractError, ecma_regex
-from app.web.validation import MAX_BODY_BYTES
+from app.http.contract import Contract, ContractError, ecma_regex
+from app.http.validation import MAX_BODY_BYTES
+from app.main import create_app
 
 if TYPE_CHECKING:
     import pathlib

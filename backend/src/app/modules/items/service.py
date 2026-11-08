@@ -1,6 +1,6 @@
 """Items owned by a user: the example CRUD module (Go version: internal/modules/items/items.go).
 
-The owner is always the caller the router passes in (app.platform.principal.Principal), and every query is scoped to
+The owner is always the caller the router passes in (app.core.principal.Principal), and every query is scoped to
 it (repository.py): another user's item is reported as not found, never as forbidden, so ids reveal nothing about
 other users' data. Titles are checked by the contract (1 to 200 code points) and again by the table's CHECK.
 """
@@ -8,9 +8,9 @@ other users' data. Titles are checked by the contract (1 to 200 code points) and
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from app.core import pagination
+from app.core.errors import AppError, Kind
 from app.modules.items import repository
-from app.platform import pagination
-from app.platform.errors import AppError, Kind
 
 if TYPE_CHECKING:
     import uuid
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
     from sqlalchemy.ext.asyncio import AsyncEngine
 
-    from app.platform.principal import Principal
+    from app.core.principal import Principal
 
 
 @dataclass(frozen=True, slots=True)

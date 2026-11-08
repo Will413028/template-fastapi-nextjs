@@ -1,4 +1,4 @@
-"""The startup check that routes and the contract agree (app.main.routes; Go version: authz_test.go
+"""The startup check that routes and the contract agree (app.main; Go version: authz_test.go
 TestAdminOperationsChecksTable, and what oapi-codegen's generated interface guarantees at compile time)."""
 
 import dataclasses
@@ -9,9 +9,8 @@ from fastapi import APIRouter, FastAPI
 from starlette.routing import Mount
 
 from apitest import contract, deps, stub_contract
-from app.main.factory import create_app
-from app.main.routes import RouteContractError, check_routes, contract_operations
-from app.web.access import PUBLIC, SIGNED_IN
+from app.http.access import PUBLIC, SIGNED_IN
+from app.main import RouteContractError, check_routes, contract_operations, create_app
 from authfake import FakeAuthService, fake_app, fake_modules
 
 if TYPE_CHECKING:

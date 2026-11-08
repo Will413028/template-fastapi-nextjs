@@ -3,7 +3,7 @@ dependencies its routes use (Go version: internal/httpapi/auth.go).
 
 The session token lives only in an HttpOnly cookie (docs/adr/2026-10-18-api-and-auth-baseline.md D4). The middleware
 runs before the contract is checked, so an operation that declares security sees an anonymous request as 401 rather
-than a 422 about its body (app.web.contract). A missing or invalid session leaves the request anonymous: operations
+than a 422 about its body (app.http.contract). A missing or invalid session leaves the request anonymous: operations
 without security (sign-in, sign-up, sign-out) must work with a stale cookie. An invalid cookie is cleared on the
 response: it is HttpOnly, so only the server can remove it, and the frontend takes a present cookie for a session.
 """
@@ -14,10 +14,10 @@ from typing import TYPE_CHECKING, Annotated
 from fastapi import Depends, Request
 from starlette.requests import cookie_parser
 
+from app.core.errors import AppError, Kind
+from app.core.principal import Principal, reset_principal, session_invalid, set_principal
+from app.http.access import ADMIN, SIGNED_IN
 from app.modules.auth.service import Authenticated, AuthService
-from app.platform.errors import AppError, Kind
-from app.platform.principal import Principal, reset_principal, session_invalid, set_principal
-from app.web.access import ADMIN, SIGNED_IN
 
 if TYPE_CHECKING:
     from datetime import timedelta
@@ -32,7 +32,7 @@ _SCOPE_KEY = "app.auth"
 class SessionCookie:
     """Every cookie the API sets, the session cookie (name) and the trusted-device cookie (device_name): HttpOnly so
     scripts cannot read it, Path=/ and no Domain (the __Host- prefix needs both), Secure unless COOKIE_SECURE=false
-    for local development over http. The names follow secure (app.platform.config.Settings.session_cookie_name and
+    for local development over http. The names follow secure (app.core.config.Settings.session_cookie_name and
     device_cookie_name)."""
 
     name: str
@@ -82,7 +82,7 @@ class RequestSession:
 
 
 class AuthenticateMiddleware:
-    """Resolves the session cookie of every /api request into the principal (app.platform.principal) and the
+    """Resolves the session cookie of every /api request into the principal (app.core.principal) and the
     RequestSession. A database error is not caught: RecoverMiddleware turns it into a 500."""
 
     def __init__(self, app: ASGIApp, auth: Auth) -> None:
@@ -146,7 +146,7 @@ class AuthenticateMiddleware:
 def request_session(request: Request) -> RequestSession:
     found = request.scope.get(_SCOPE_KEY)
     if not isinstance(found, RequestSession):
-        msg = "the auth routes run inside AuthenticateMiddleware (app.main.factory)"
+        msg = "the auth routes run inside AuthenticateMiddleware (app.main)"
         raise TypeError(msg)
     return found
 

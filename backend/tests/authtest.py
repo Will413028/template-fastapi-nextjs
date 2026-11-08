@@ -12,15 +12,15 @@ from typing import TYPE_CHECKING, Any, override
 from sqlalchemy import event, text
 
 from apitest import PEER, checked_client, contract, deps
-from app.main.factory import Modules, create_app
+from app.core.db import Database, create_engine
+from app.core.hibp import HIBPError
+from app.http.origin import OriginPolicy
+from app.http.ratelimit import IPLimiter
+from app.main import Modules, create_app
 from app.modules.auth.dependencies import Auth, SessionCookie
 from app.modules.auth.service import AuthService, BreachCheck, SessionLimits
 from app.modules.auth.service.passwords import Argon2Params, PasswordHasher
 from app.modules.items.service import ItemsService
-from app.platform.db import Database, create_engine
-from app.platform.hibp import HIBPError
-from app.web.origin import OriginPolicy
-from app.web.ratelimit import IPLimiter
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable, Generator
@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     import httpx2
     from fastapi.testclient import TestClient
 
-    from app.platform.config import DatabaseSettings
+    from app.core.config import DatabaseSettings
     from dbtest import Server, TestDatabase
 
 COOKIE = "__Host-session"

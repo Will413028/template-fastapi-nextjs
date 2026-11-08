@@ -13,15 +13,15 @@ from typing import TYPE_CHECKING
 from fastapi import APIRouter, Response, status
 from pydantic import MISSING
 
+from app.core.errors import AppError, Kind
+from app.core.pagination import DEFAULT_LIMIT
+from app.core.principal import session_invalid
+from app.http import contract_models as api
+from app.http.access import PUBLIC, Admin, SignedIn
+from app.http.origin import current_client
+from app.http.ratelimit import RATE_LIMITED, limit_key
+from app.http.request_id import current_request_id
 from app.modules.auth.dependencies import Current, CurrentAdmin, CurrentSession, Service
-from app.platform.errors import AppError, Kind
-from app.platform.pagination import DEFAULT_LIMIT
-from app.platform.principal import session_invalid
-from app.web import contract_models as api
-from app.web.access import PUBLIC, Admin, SignedIn
-from app.web.origin import current_client
-from app.web.ratelimit import RATE_LIMITED, limit_key
-from app.web.request_id import current_request_id
 
 if TYPE_CHECKING:
     from app.modules.auth.service import SessionInfo, User
@@ -107,7 +107,7 @@ async def delete_current_session(service: Service, session: CurrentSession) -> R
 async def list_sessions(
     service: Service, current: Current, limit: int = DEFAULT_LIMIT, cursor: str | None = None
 ) -> api.SessionPage:
-    """The contract has already checked limit's range (app.web.contract)."""
+    """The contract has already checked limit's range (app.http.contract)."""
     page = await service.sessions(current.principal, limit=limit, cursor=cursor)
     return api.SessionPage(
         sessions=[_session(s, current.user, current.session_id) for s in page.sessions], next_cursor=page.next_cursor
@@ -149,7 +149,7 @@ async def get_current_session(service: Service, current: Current) -> api.Session
 async def list_users(
     service: Service, _admin: Admin, limit: int = DEFAULT_LIMIT, cursor: str | None = None
 ) -> api.UserPage:
-    """Admins only. The contract has already checked limit's range (app.web.contract)."""
+    """Admins only. The contract has already checked limit's range (app.http.contract)."""
     page = await service.list_users(limit=limit, cursor=cursor)
     return api.UserPage(users=[_user(u) for u in page.users], next_cursor=page.next_cursor)
 

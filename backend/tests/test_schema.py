@@ -10,11 +10,11 @@ from alembic.script import ScriptDirectory
 
 import dbtest
 import revision_sql
-from app.main.migrate import alembic_config
-from app.main.schema import MODEL_MODULES, metadata
+from app.cli.migrate import alembic_config
+from app.migrations.schema import MODEL_MODULES, metadata
 
 SRC = pathlib.Path(__file__).resolve().parents[1] / "src"
-VERSIONS = SRC / "app/main/migrations/versions"
+VERSIONS = SRC / "app/migrations/versions"
 
 
 def test_every_module_with_tables_is_registered() -> None:

@@ -5,8 +5,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from apitest import LOOPBACK, PEER, FakeDatabase, assert_problem, contract, deps
-from app.main.factory import create_app
-from app.web.origin import OriginPolicy
+from app.http.origin import OriginPolicy
+from app.main import create_app
 
 PROD = OriginPolicy(secrets=("s" * 43,), required=True)
 

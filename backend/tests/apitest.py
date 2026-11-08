@@ -19,10 +19,10 @@ from fastapi.testclient import TestClient
 from openapi_core.templating.paths.exceptions import PathError
 from starlette.datastructures import Headers, QueryParams
 
-from app.main.factory import Deps, create_app
-from app.web.contract import Contract, ContractRequest
-from app.web.origin import OriginPolicy
-from app.web.problems import PROBLEM_CONTENT_TYPE
+from app.http.contract import Contract, ContractRequest
+from app.http.origin import OriginPolicy
+from app.http.problems import PROBLEM_CONTENT_TYPE
+from app.main import Deps, create_app
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -30,12 +30,12 @@ if TYPE_CHECKING:
     import httpx2
     from starlette.types import Message, Scope
 
-    from app.web.ratelimit import IPLimiter
+    from app.http.ratelimit import IPLimiter
 
 CONTRACT_PATH = Path(__file__).parents[1] / "api" / "openapi.yaml"
 TEST_CONTRACT_PATH = Path(__file__).parent / "testdata" / "test-openapi.yaml"
 
-# MODE=dev without ORIGIN_SECRET: a request without X-Origin-Secret is let through (app.web.origin).
+# MODE=dev without ORIGIN_SECRET: a request without X-Origin-Secret is let through (app.http.origin).
 DEV_ORIGIN = OriginPolicy(secrets=(), required=False)
 # The connection's other end in tests that do not choose one: a public address, as cloudflared's container address
 # is to the backend. Health checks answer only loopback (LOOPBACK).

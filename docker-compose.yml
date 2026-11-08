@@ -71,7 +71,7 @@ services:
       # plaintext only because postgres is on this host's compose network (backend config, DATABASE_PLAINTEXT)
       DATABASE_PLAINTEXT: same-host
       DATABASE_PASSWORD_FILE: /run/secrets/db_app_password
-      # the X-Origin-Secret Vercel's rewrite adds (backend app.web.origin); to rotate, put "new,old" in the file
+      # the X-Origin-Secret Vercel's rewrite adds (backend app.http.origin); to rotate, put "new,old" in the file
       ORIGIN_SECRET_FILE: /run/secrets/origin_secret
       # the site's origin as browsers see it (https://example.com), for the CSRF check of the auth step
       APP_ORIGIN: ${APP_ORIGIN:-}

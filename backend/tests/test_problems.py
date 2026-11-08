@@ -22,9 +22,9 @@ from apitest import (
     stub_app,
     values_outside_contract,
 )
-from app.platform.errors import AppError, Kind
-from app.web.problems import KIND_PROBLEMS, PROBLEM_TYPES
-from app.web.validation import SCHEMA_CODES
+from app.core.errors import AppError, Kind
+from app.http.problems import KIND_PROBLEMS, PROBLEM_TYPES
+from app.http.validation import SCHEMA_CODES
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator

@@ -4,8 +4,8 @@
 
 ## Schema 與查詢的位置
 
-- 每個模組擁有自己的表，宣告在 `backend/src/app/modules/<m>/models.py`（共用 `app.platform.db.Base`）：模型描述表的**目標狀態**，revision 必須和它一致（見 Migration）。
-- `backend/src/app/main/schema.py` 的 `MODEL_MODULES` 列出所有有表的模組；新模組的 `models.py` 沒列進去時 `tests/test_schema.py` 會失敗。
+- 每個模組擁有自己的表，宣告在 `backend/src/app/modules/<m>/models.py`（共用 `app.core.db.Base`）：模型描述表的**目標狀態**，revision 必須和它一致（見 Migration）。
+- `backend/src/app/migrations/schema.py` 的 `MODEL_MODULES` 列出所有有表的模組；新模組的 `models.py` 沒列進去時 `tests/test_schema.py` 會失敗。
 - 跨模組的 FK 用字串（`ForeignKey("users.id")`），不建 ORM relationship（AGENTS.md「Backend layers」）。
 - 所有表都在 `public` schema，DDL 不寫 schema 前綴。
 - 查詢是 SQLAlchemy Core 的運算式，欄位取自 `models.py` 的類別（`select(User.id, ...)`、`insert(Session).values(...).returning(...)`、`sqlalchemy.dialects.postgresql.insert(...).on_conflict_do_update(...)`），在 `AsyncConnection` 上執行；值一律是 bound parameter。不用 ORM `Session` 的 unit of work 與 identity map：每個呼叫就是一句明確的 SQL，async 下也沒有 lazy load（[ADR FastAPI 版後端](../adr/2026-11-05-fastapi-backend-stack.md) D4）。
@@ -107,7 +107,7 @@ update(User).where(User.id == user_id).values(is_disabled=disabled, updated_at=f
 
 ## Migration
 
-Alembic（[ADR FastAPI 版後端](../adr/2026-11-05-fastapi-backend-stack.md) D3）。表定義在各模組的 `models.py`，revision 在 `backend/src/app/main/migrations/versions/`。
+Alembic（[ADR FastAPI 版後端](../adr/2026-11-05-fastapi-backend-stack.md) D3）。表定義在各模組的 `models.py`，revision 在 `backend/src/app/migrations/versions/`。
 
 ### 產生
 
@@ -137,7 +137,7 @@ Alembic（[ADR FastAPI 版後端](../adr/2026-11-05-fastapi-backend-stack.md) D3
 - 對既有的表建或刪索引一律 `CONCURRENTLY`：`op.create_index(..., postgresql_concurrently=True)`，包在 `with op.get_context().autocommit_block():` 裡（`CONCURRENTLY` 不能在 transaction 裡執行）。沒有 `CONCURRENTLY` 時 squawk 擋下（`require-concurrent-index-creation`）。
 - 對已有資料的表加帶常數 default 的 `NOT NULL` 欄位（`ADD COLUMN n bigint NOT NULL DEFAULT 0`）是安全的：PostgreSQL 11 起不重寫表，squawk 也放行。會重寫表或讓既有列違反約束的是 volatile default（例如 `DEFAULT uuidv7()`）與沒有 default 的 `NOT NULL` 欄位，squawk 會擋下。這兩種改走 expand 步驟，每一步是一支 revision：先加 nullable、沒有 default 的欄位 → 手寫 backfill。需要 default 時，backfill 之後再加：`ALTER COLUMN … SET DEFAULT` 只影響之後的新列，不重寫表。
 - 對已有資料的表補 `NOT NULL` 或加 FK、CHECK：照上面的例外手寫不鎖表的步驟。`NOT NULL` 的步驟是 `CHECK (x IS NOT NULL) NOT VALID` → 下一支 `VALIDATE CONSTRAINT` → 再下一支 `SET NOT NULL` 並 `DROP CONSTRAINT` 那個 CHECK（PostgreSQL 12 起 `SET NOT NULL` 會用已驗證的 CHECK 跳過掃表）。
-- **NEVER** 在 revision 裡寫 `SET lock_timeout`：`app migrate` 已在連線上設定 `lock_timeout` 5s（`app.platform.config.MigrateSettings`），每支 revision 在自己的 transaction 裡執行（`migrations/env.py` 的 `transaction_per_migration`）。
+- **NEVER** 在 revision 裡寫 `SET lock_timeout`：`app migrate` 已在連線上設定 `lock_timeout` 5s（`app.core.config.MigrateSettings`），每支 revision 在自己的 transaction 裡執行（`migrations/env.py` 的 `transaction_per_migration`）。
 
 ## DB 角色與權限
 
@@ -153,7 +153,7 @@ Alembic（[ADR FastAPI 版後端](../adr/2026-11-05-fastapi-backend-stack.md) D3
 
 ## 連線設定
 
-`app.platform.db.create_engine` 建立 SQLAlchemy 的 async engine（asyncpg），設定只有以下這些：
+`app.core.db.create_engine` 建立 SQLAlchemy 的 async engine（asyncpg），設定只有以下這些：
 
 | 設定 | 來源 | 預設 |
 |------|------|------|
@@ -165,10 +165,10 @@ Alembic（[ADR FastAPI 版後端](../adr/2026-11-05-fastapi-backend-stack.md) D3
 | `TimeZone` | 常數 | UTC |
 
 - 這些以 asyncpg 的 `server_settings` 設在每條連線上，讓失控的查詢、排隊等鎖或忘了結束的 transaction 佔不住連線。
-- 密碼不放進連線 URL（`DATABASE_PASSWORD` 或 `DATABASE_PASSWORD_FILE`）；`sslmode=verify-full` 用系統的 CA 驗證伺服器憑證與主機名稱，其他 sslmode 必須同時設 `DATABASE_PLAINTEXT=same-host`（`app.platform.config`）。
+- 密碼不放進連線 URL（`DATABASE_PASSWORD` 或 `DATABASE_PASSWORD_FILE`）；`sslmode=verify-full` 用系統的 CA 驗證伺服器憑證與主機名稱，其他 sslmode 必須同時設 `DATABASE_PLAINTEXT=same-host`（`app.core.config`）。
 - engine 是 lazy 連線：DB 暫時連不上不會讓啟動失敗，由 readiness（`/health/ready`，container healthcheck 打的就是它）回報。
 - 所有服務的 `DB_MAX_CONNS` 總和不得超過 PostgreSQL 的 `max_connections`。
-- migrate 連線改設 `lock_timeout` 5s、不設 `statement_timeout`（`app.platform.config.MigrateSettings`）。
+- migrate 連線改設 `lock_timeout` 5s、不設 `statement_timeout`（`app.core.config.MigrateSettings`）。
 
 ## Transaction
 

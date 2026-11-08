@@ -7,8 +7,8 @@ import pytest
 import yaml
 
 from apitest import CONTRACT_PATH
-from app.platform.errors import AppError, Kind
-from app.platform.pagination import DEFAULT_LIMIT, after, decode_cursor, encode_cursor, page_rows, trim_page
+from app.core.errors import AppError, Kind
+from app.core.pagination import DEFAULT_LIMIT, after, decode_cursor, encode_cursor, page_rows, trim_page
 
 
 def test_cursor_round_trip() -> None:

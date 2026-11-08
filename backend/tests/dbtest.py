@@ -1,7 +1,7 @@
 """PostgreSQL for the `db` tests, set up the way the compose stack is.
 
 The same image, the same initdb script creating the owner and app roles (deploy/postgres/initdb/10-roles.sh), and the
-revisions applied by app.main.migrate. Tests connect as the app role, so a query that only works with more privileges
+revisions applied by app.cli.migrate. Tests connect as the app role, so a query that only works with more privileges
 fails here as it would in production. One container per test run; each test gets its own database. Docker being
 unavailable fails the tests instead of skipping them.
 
@@ -20,9 +20,9 @@ from sqlalchemy.exc import DBAPIError
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
-from app.main.migrate import migrate
-from app.platform.config import DatabaseSettings
-from app.platform.db import create_engine
+from app.cli.migrate import migrate
+from app.core.config import DatabaseSettings
+from app.core.db import create_engine
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable

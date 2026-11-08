@@ -16,7 +16,7 @@ The contract is hand-written and is the source of truth for both clients.
   (`<name>` array and `next_cursor`), `Create<Entity>Request` and `<Entity>Patch`, both with
   `additionalProperties: false`. Length and range limits go here (`minLength`, `maxLength`, ...), and again as a
   CHECK in the table.
-- Run `make -C backend gen` (Pydantic models in `app/web/contract_models.py`) and `pnpm -C frontend gen:api`.
+- Run `make -C backend gen` (Pydantic models in `app/http/contract_models.py`) and `pnpm -C frontend gen:api`.
 
 ## 2. The module (`backend/src/app/modules/<name>/`)
 
@@ -32,11 +32,11 @@ Without a PATCH operation, leave out `Patch`, `update` and the update query.
 
 ## 3. Wiring
 
-- `app/main/factory.py`: add the service to `Modules`, include the router and set `app.state.<STATE_KEY>` where the
+- `app/main.py`: add the service to `Modules`, include the router and set `app.state.<STATE_KEY>` where the
   items ones are.
-- `app/main/server.py`, `tests/authtest.py` (`auth_api`) and `tests/authfake.py` (`fake_modules`): construct it.
-- `app/main/schema.py` `MODEL_MODULES`: add `app.modules.<name>.models` (`tests/test_schema.py` fails otherwise).
-- `app.main.routes` checks at startup that every contract operation has a route with one access marker: a missing or
+- `app/cli/server.py`, `tests/authtest.py` (`auth_api`) and `tests/authfake.py` (`fake_modules`): construct it.
+- `app/migrations/schema.py` `MODEL_MODULES`: add `app.modules.<name>.models` (`tests/test_schema.py` fails otherwise).
+- `app.main` checks at startup that every contract operation has a route with one access marker: a missing or
   misnamed route stops the app.
 
 ## 4. Migration

@@ -7,12 +7,12 @@ import pytest
 from alembic import command
 from sqlalchemy import text
 
-from app.main.migrate import alembic_config
-from app.main.schema import metadata
-from app.platform.db import create_engine
+from app.cli.migrate import alembic_config
+from app.core.db import create_engine
+from app.migrations.schema import metadata
 
 if TYPE_CHECKING:
-    from app.platform.config import DatabaseSettings
+    from app.core.config import DatabaseSettings
     from dbtest import Server
 
 pytestmark = pytest.mark.db

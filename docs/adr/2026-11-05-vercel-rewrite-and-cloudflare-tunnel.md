@@ -49,7 +49,7 @@ Go 版範本（template-go-nextjs@560106d）把前端、backend 與 PostgreSQL �
 
 ## Invariants
 
-- backend 只信任帶正確來源密鑰的請求所附的 `X-Real-IP`：`backend/src/app/web/origin.py`、per-IP 限流的 key、access log 的 `client_ip`。
+- backend 只信任帶正確來源密鑰的請求所附的 `X-Real-IP`：`backend/src/app/http/origin.py`、per-IP 限流的 key、access log 的 `client_ip`。
 - 來源密鑰不進 git：`scripts/init_env.py`、compose 的 `origin_secret` secret、`vercel.json` 以 `$ORIGIN_SECRET` 引用。
 - compose 沒有服務發佈 port：CI stack job 的檢查（用 `--profile tunnel` 的 config）。
 

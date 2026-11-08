@@ -5,8 +5,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from app.main import cli
-from app.main.routes import RouteContractError
+from app import cli
+from app.main import RouteContractError
 
 if TYPE_CHECKING:
     import pathlib
@@ -102,7 +102,7 @@ def test_serve_with_routes_that_disagree_with_the_contract_does_not_start(
         msg = "GET /api/users/me has no route"
         raise RouteContractError(msg)
 
-    monkeypatch.setattr("app.main.factory.check_routes", disagree)
+    monkeypatch.setattr("app.main.check_routes", disagree)
     assert cli.main(["serve"], environ=SERVE_ENV) == 1
     assert "serve: routes and contract disagree: GET /api/users/me has no route" in capsys.readouterr().err
 

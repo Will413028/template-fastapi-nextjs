@@ -22,15 +22,15 @@ from apitest import (
     stream_then_fail,
     stub_app,
 )
-from app.main.logs import configure_logging
-from app.web.origin import OriginPolicy
+from app.cli.logs import configure_logging
+from app.http.origin import OriginPolicy
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
 
     from starlette.types import Message
 
-    from app.platform.config import Mode
+    from app.core.config import Mode
 
 SECRET = "s" * 43
 PROD = OriginPolicy(secrets=(SECRET,), required=True)

@@ -16,7 +16,7 @@ run: ## Start `app serve` with MODE=dev on this machine
 # The Pydantic models of the contract (ADR fastapi-backend-stack D2; options in pyproject.toml [tool.datamodel-codegen]), then ruff's fixes and
 # format. ruff reads the code through stdin under the target's name, so ruff.toml applies as it does to the file and
 # the work tree is not touched. $(1) is where the result goes; $(1).raw and $(1).fixed are left next to it.
-CONTRACT_MODELS := src/app/web/contract_models.py
+CONTRACT_MODELS := src/app/http/contract_models.py
 define generate_contract_models
 $(UV) datamodel-codegen --output $(1).raw && \
 $(UV) ruff check --fix-only --quiet --stdin-filename $(CONTRACT_MODELS) < $(1).raw > $(1).fixed && \
@@ -24,12 +24,12 @@ $(UV) ruff format --quiet --stdin-filename $(CONTRACT_MODELS) < $(1).fixed > $(1
 endef
 
 .PHONY: gen
-gen: ## Regenerate src/app/web/contract_models.py from api/openapi.yaml
+gen: ## Regenerate src/app/http/contract_models.py from api/openapi.yaml
 	@tmp="$$(mktemp -d)"; trap 'rm -rf "$$tmp"' EXIT; \
 	$(call generate_contract_models,"$$tmp/out.py") && cp "$$tmp/out.py" $(CONTRACT_MODELS)
 
 .PHONY: gen-check
-gen-check: ## Fail when src/app/web/contract_models.py differs from what make gen writes
+gen-check: ## Fail when src/app/http/contract_models.py differs from what make gen writes
 	@tmp="$$(mktemp -d)"; trap 'rm -rf "$$tmp"' EXIT; \
 	$(call generate_contract_models,"$$tmp/out.py") || exit 1; \
 	cmp -s "$$tmp/out.py" $(CONTRACT_MODELS) || { echo "$(CONTRACT_MODELS) is stale: run make gen"; exit 1; }
@@ -53,7 +53,7 @@ typecheck: ## pyright in strict mode (pyrightconfig.json)
 	$(UV) pyright
 
 # Called by name, so they look unused: FastAPI route decorators, pytest fixtures, hooks and pytestmark, http.server's
-# do_<METHOD> handlers, each CLI command module's run(), which app.main.cli imports when its command runs, and what
+# do_<METHOD> handlers, each CLI command module's run(), which app.cli imports when its command runs, and what
 # Alembic reads from a revision file; tests/vulture_whitelist.py names the attributes openapi-core reads through its
 # protocols. models.py is left out: a column is part of the schema (tests/test_schema_db.py
 # compares it with the migrations) whether or not code reads it. contract_models.py is left out for the same reason: it
@@ -87,8 +87,8 @@ coverage: ## Markdown coverage report from .coverage
 migration: ## Needs Docker: generate a revision from the models, make migration MSG=add_widgets
 	@test -n "$(MSG)" || { echo "usage: make migration MSG=<name>"; exit 1; }
 	$(UV) python tests/generate_migration.py "$(MSG)"
-	$(UV) ruff format src/app/main/migrations/versions
-	$(UV) ruff check --fix src/app/main/migrations/versions
+	$(UV) ruff format src/app/migrations/versions
+	$(UV) ruff check --fix src/app/migrations/versions
 
 # squawk is pinned in tools/package.json (Dependabot reads it). --ignore-scripts: squawk-cli ships its binary as a
 # platform package and runs no install script.

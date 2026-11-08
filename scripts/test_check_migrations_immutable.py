@@ -9,7 +9,7 @@ import tempfile
 import unittest
 
 SCRIPT = pathlib.Path(__file__).resolve().parent / "check_migrations_immutable.py"
-VERSIONS = "backend/src/app/main/migrations/versions"
+VERSIONS = "backend/src/app/migrations/versions"
 
 
 class MigrationsImmutableTest(unittest.TestCase):

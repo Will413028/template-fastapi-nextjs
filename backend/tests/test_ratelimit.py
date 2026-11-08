@@ -13,8 +13,8 @@ from typing import TYPE_CHECKING
 from fastapi import Request, Response
 
 from apitest import assert_problem, bare_app, checked_client
-from app.web.origin import OriginPolicy
-from app.web.ratelimit import RATE_LIMITED, IPLimiter
+from app.http.origin import OriginPolicy
+from app.http.ratelimit import RATE_LIMITED, IPLimiter
 
 if TYPE_CHECKING:
     from fastapi.testclient import TestClient

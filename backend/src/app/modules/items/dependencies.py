@@ -1,4 +1,4 @@
-"""The items module's FastAPI dependencies: the service app.main.factory puts on the app's state."""
+"""The items module's FastAPI dependencies: the service app.main puts on the app's state."""
 
 from typing import Annotated
 

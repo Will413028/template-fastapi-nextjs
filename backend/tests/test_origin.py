@@ -6,7 +6,7 @@ X-Origin-Secret that Vercel's rewrite and the frontend's server-side calls add."
 import pytest
 
 from apitest import assert_problem, checked_client, stub_app
-from app.web.origin import OriginPolicy
+from app.http.origin import OriginPolicy
 
 SECRET = "current-" + "s" * 40
 PREVIOUS = "previous-" + "p" * 40

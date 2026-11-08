@@ -18,20 +18,20 @@ ignore = [
 # pytest's assertions are plain asserts; test function names describe behaviour instead of docstrings
 "tests/**" = ["S101", "PLR2004"]
 # the one module allowed to read the environment
-"src/app/platform/config.py" = ["TID251"]
+"src/app/core/config.py" = ["TID251"]
 # The contract names its path parameters id (/users/{id}). Path(alias="id") would avoid the builtin's name, but ruff's
 # FAST003 does not see an alias and reports the path parameter as missing, so routes take the contract's name.
 "src/app/modules/*/router.py" = ["A002"]
 # written by make gen: its docstrings are the contract's descriptions, which stay as the Go version wraps them (E501),
 # and the generator writes a nullable optional field as `T | None | MISSING` (RUF036 only orders the union)
-"src/app/web/contract_models.py" = ["E501", "RUF036"]
+"src/app/http/contract_models.py" = ["E501", "RUF036"]
 
 [lint.flake8-tidy-imports]
 ban-relative-imports = "all"
 
 [lint.flake8-tidy-imports.banned-api]
-"os.environ".msg = "Read settings through app.platform.config.Settings; it is the only module that reads the environment."
-"os.getenv".msg = "Read settings through app.platform.config.Settings; it is the only module that reads the environment."
+"os.environ".msg = "Read settings through app.core.config.Settings; it is the only module that reads the environment."
+"os.getenv".msg = "Read settings through app.core.config.Settings; it is the only module that reads the environment."
 "os.putenv".msg = "Configuration comes from the environment at startup; do not change it at runtime."
 
 [lint.mccabe]
@@ -46,7 +46,7 @@ max-statements = 50
 [lint.flake8-type-checking]
 # SQLAlchemy reads Mapped[...] annotations and Pydantic reads field annotations at runtime, so the types a model names
 # must be imported for real.
-runtime-evaluated-base-classes = ["app.platform.db.Base", "pydantic.BaseModel"]
+runtime-evaluated-base-classes = ["app.core.db.Base", "pydantic.BaseModel"]
 # FastAPI reads a route's parameter annotations (Annotated[..., Depends(...)]) when the route is declared.
 runtime-evaluated-decorators = [
     "fastapi.APIRouter.get",

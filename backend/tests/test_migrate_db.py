@@ -7,10 +7,10 @@ import pytest
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
 
-from app.main import cli
-from app.main.migrate import MigrateError, migrate
-from app.platform.config import DatabaseSettings
-from app.platform.db import Database, create_engine
+from app import cli
+from app.cli.migrate import MigrateError, migrate
+from app.core.config import DatabaseSettings
+from app.core.db import Database, create_engine
 from dbtest import APP_ROLE, OWNER_ROLE
 
 if TYPE_CHECKING:

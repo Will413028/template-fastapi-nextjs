@@ -6,24 +6,25 @@ include_external_packages = True
 exclude_type_checking_imports = True
 
 [importlinter:contract:top-layers]
-name = main > modules > web > platform
+name = cli > main | migrations > modules > http > core
 type = layers
 containers =
     app
 layers =
-    main
+    cli
+    main | migrations
     modules
-    web
-    platform
+    http
+    core
 exhaustive = true
-broken_contract_guidance = A lower layer must not import a higher one: move the shared code down (HTTP helpers to app.web, the rest to app.platform), or pass it in from app.main. Do not add ignore_imports.
+broken_contract_guidance = A lower layer must not import a higher one: move the shared code down (HTTP helpers to app.http, the rest to app.core), or pass it in from app.main or app.cli. app.main (the app factory) and app.migrations (the Alembic environment) do not import each other. Do not add ignore_imports.
 
 [importlinter:contract:modules-independent]
 name = Modules do not import each other
 type = independence
 modules =
     app.modules.*
-broken_contract_guidance = Modules talk only through app.platform (for example the Principal that auth's middleware sets) or through ids; reference another module's table with a string foreign key such as "users.id". Do not add ignore_imports.
+broken_contract_guidance = Modules talk only through app.core (for example the Principal that auth's middleware sets) or through ids; reference another module's table with a string foreign key such as "users.id". Do not add ignore_imports.
 
 [importlinter:contract:module-layers]
 name = Inside a module: router > service > repository > models
@@ -45,17 +46,17 @@ ancestors =
     app
 
 [importlinter:contract:http-stays-at-the-edge]
-name = Only routers, app.web and app.main use the web framework
+name = Only routers, app.http, app.main and app.cli use the web framework
 type = forbidden
 source_modules =
     app.modules.*.service
     app.modules.*.repository
     app.modules.*.models
-    app.platform
+    app.core
 forbidden_modules =
     fastapi
     starlette
-broken_contract_guidance = Business logic and tables stay framework-free so they can be tested and reused without HTTP: raise a domain error and translate it to a problem response in the router or app.web.
+broken_contract_guidance = Business logic and tables stay framework-free so they can be tested and reused without HTTP: raise a domain error and translate it to a problem response in the router or app.http.
 
 [importlinter:contract:sql-below-the-router]
 name = Routers do not run SQL
@@ -68,11 +69,11 @@ forbidden_modules =
     sqlalchemy
     app.modules.*.repository
     app.modules.*.models
-    app.platform.db
+    app.core.db
 # Only what these files import themselves: a router calls its service, which imports sqlalchemy, and that chain is the
 # layering this file asks for (router > service > repository > models). The queries, the tables and the engine are
 # forbidden too, or a router could run SQL through them without naming sqlalchemy (layers let it import lower layers).
-# http-stays-at-the-edge does check indirect imports, because a service must not reach starlette even through app.web.
+# http-stays-at-the-edge does check indirect imports, because a service must not reach starlette even through app.http.
 allow_indirect_imports = True
 broken_contract_guidance = Routers call the module's service, which owns the transaction; put queries in service.py or repository.py.
 
@@ -80,8 +81,11 @@ broken_contract_guidance = Routers call the module's service, which owns the tra
 name = The healthcheck does not load the web server
 type = forbidden
 source_modules =
-    app.main.healthcheck
-    app.main.cli
+    app.cli.healthcheck
+    app.cli
+# app.cli as a module, not a package: the dispatcher itself stays light, while app.cli.server and the other commands
+# it imports only when they run may load anything.
+as_packages = False
 forbidden_modules =
     fastapi
     starlette
@@ -89,4 +93,4 @@ forbidden_modules =
     pydantic
     sqlalchemy
     alembic
-broken_contract_guidance = `app healthcheck` runs every few seconds under a timeout; importing the web stack took it to 6.7 s on a loaded host. Keep it on the standard library and app.platform.config (which is why settings do not use pydantic-settings); app.main.cli imports a command's module only when that command runs.
+broken_contract_guidance = `app healthcheck` runs every few seconds under a timeout; importing the web stack took it to 6.7 s on a loaded host. Keep it on the standard library and app.core.config (which is why settings do not use pydantic-settings); app.cli imports a command's module only when that command runs.

@@ -3,7 +3,7 @@
 
 Usage: uv run --no-project --python 3.14 python scripts/check_vercel_config.py [path]   (default: frontend/vercel.json; run from the repository root)
 
-The backend refuses an /api request without its X-Origin-Secret (backend/src/app/web/origin.py), so the route that
+The backend refuses an /api request without its X-Origin-Secret (backend/src/app/http/origin.py), so the route that
 rewrites /api/* to BACKEND_ORIGIN must also set that header from the ORIGIN_SECRET environment variable. Vercel
 expands $VAR only for names listed in the route's or the transform's `env`; an unlisted name is sent literally, and
 then every API call fails in production while nothing fails here. The secret itself lives only in Vercel's

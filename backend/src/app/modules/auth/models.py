@@ -11,7 +11,7 @@ from sqlalchemy import CheckConstraint, ForeignKey, Index, text
 from sqlalchemy.dialects.postgresql import BIGINT, BOOLEAN, BYTEA, TEXT, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.platform.db import NOW, TIMESTAMPTZ, UUIDV7, Base
+from app.core.db import NOW, TIMESTAMPTZ, UUIDV7, Base
 
 
 class User(Base):
@@ -105,7 +105,7 @@ class AuditEvent(Base):
 
     The comment makes the table append-only: `app migrate` gives the app role INSERT and SELECT but not UPDATE or
     DELETE here, so the application cannot rewrite the record, and deletes rows older than the retention period
-    (app.main.migrate). actor_id and target_id have no foreign key, so the record outlives the accounts; a NULL actor
+    (app.cli.migrate). actor_id and target_id have no foreign key, so the record outlives the accounts; a NULL actor
     is the operator on the host (recover-admin).
     """
 

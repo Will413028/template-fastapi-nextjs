@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 from pydantic import MISSING, BaseModel, ValidationError
 
-from app.web.contract_models import ItemPatch, Problem, UserPatch
+from app.http.contract_models import ItemPatch, Problem, UserPatch
 
 
 @pytest.mark.parametrize(

@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any
 import pytest
 
 from apitest import assert_problem
-from app.main.logs import configure_logging
+from app.cli.logs import configure_logging
 from authfake import ADMIN_OPERATIONS
 from authtest import (
     DEVICE_COOKIE,

@@ -61,7 +61,7 @@ jobs:
       - name: make migration generates an empty revision when nothing changed
         run: |
           make migration MSG=ci_probe
-          new="$(git status --porcelain --untracked-files=all -- src/app/main/migrations/versions)"
+          new="$(git status --porcelain --untracked-files=all -- src/app/migrations/versions)"
           echo "$new"
           test "$(wc -l <<< "$new")" -eq 1
           file="$(sed 's/^?? backend\///' <<< "$new")"

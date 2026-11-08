@@ -13,7 +13,7 @@
 
 - 瀏覽器只看到 `https://example.com`：頁面與 `/api` 同源，所以 session cookie 是不帶 Domain 的 `__Host-session`，不需要 CORS。`/api/*` 由 `frontend/vercel.json` 的 rewrite 轉給 `BACKEND_ORIGIN`，同一條 route 用 transform 覆寫 `X-Origin-Secret`。
 - SSR 不繞經 Vercel 的網域，直接連 `API_URL`（就是 `https://api.example.com`），由伺服器端程式碼自己帶 `X-Origin-Secret`。
-- backend 在 `MODE=prod` 拒絕沒有密鑰的 `/api` 請求，帶錯一律 403；只有密鑰正確時才把 `X-Real-IP`（Vercel 會覆寫它）當成使用者位址（`backend/src/app/web/origin.py`）。
+- backend 在 `MODE=prod` 拒絕沒有密鑰的 `/api` 請求，帶錯一律 403；只有密鑰正確時才把 `X-Real-IP`（Vercel 會覆寫它）當成使用者位址（`backend/src/app/http/origin.py`）。
 - compose 沒有服務發佈 port：Docker 發佈的 port 會繞過 ufw 等主機防火牆（[Docker：Packet filtering and firewalls](https://docs.docker.com/engine/network/packet-filtering-firewalls/)）。VM 對外只需要 SSH；cloudflared 主動往外連 Cloudflare。
 
 ## Prerequisites
@@ -77,7 +77,7 @@ nano .env
 1. Cloudflare 後台 → Zero Trust → Networks → Tunnels → Create a tunnel（類型 Cloudflared），複製 token。
 2. 把 token 存到 VM 的 `.secrets/tunnel_token`（`chmod 600`），不要貼進 `.env` 或指令列。
 3. 在 tunnel 的 Public Hostname 加一條：主機名稱 `api.example.com`、路徑 `api/*`、服務 `http://backend:8000`。只轉送 `/api/*`：`/health` 與 `/health/ready` 只接受 loopback，backend 不依賴這條規則，但其他路徑本來就不該對外。
-4. SSL/TLS → Edge Certificates：開啟 Always Use HTTPS 與 HSTS（`api.example.com` 的 HSTS 由 Cloudflare 送；backend 不送，見 `backend/src/app/web/headers.py`）。
+4. SSL/TLS → Edge Certificates：開啟 Always Use HTTPS 與 HSTS（`api.example.com` 的 HSTS 由 Cloudflare 送；backend 不送，見 `backend/src/app/http/headers.py`）。
 
 ---
 

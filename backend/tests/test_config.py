@@ -3,7 +3,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from app.platform.config import ConfigError, HttpSettings, MigrateSettings, SeedSettings, Settings
+from app.core.config import ConfigError, HttpSettings, MigrateSettings, SeedSettings, Settings
 
 if TYPE_CHECKING:
     import pathlib

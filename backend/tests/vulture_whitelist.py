@@ -4,6 +4,6 @@ Passed to vulture by `make deadcode` (backend/Makefile); nothing imports or runs
 """
 
 from apitest import ContractResponse
-from app.web.contract import ContractRequest
+from app.http.contract import ContractRequest
 
 _ = (ContractRequest.host_url, ContractRequest.parameters, ContractResponse.data)

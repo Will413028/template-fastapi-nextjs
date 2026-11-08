@@ -11,7 +11,7 @@ from sqlalchemy import CheckConstraint, ForeignKey, Index, text
 from sqlalchemy.dialects.postgresql import TEXT, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.platform.db import NOW, TIMESTAMPTZ, UUIDV7, Base
+from app.core.db import NOW, TIMESTAMPTZ, UUIDV7, Base
 
 
 class Item(Base):

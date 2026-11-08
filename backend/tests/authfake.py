@@ -10,17 +10,17 @@ from typing import TYPE_CHECKING, override
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from apitest import contract, deps
-from app.main.factory import Modules, create_app
+from app.core.errors import AppError, Kind
+from app.core.principal import Principal, session_invalid
+from app.main import Modules, create_app
 from app.modules.auth.dependencies import Auth, SessionCookie
 from app.modules.auth.service import Authenticated, AuthService, CleanupCounts, SessionInfo, User
 from app.modules.items.service import ItemsService
-from app.platform.errors import AppError, Kind
-from app.platform.principal import Principal, session_invalid
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
-    from app.web.origin import OriginPolicy
+    from app.http.origin import OriginPolicy
 
 SECURE = SessionCookie(name="__Host-session", device_name="__Host-device", secure=True)
 ALICE = User(

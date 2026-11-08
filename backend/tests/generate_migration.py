@@ -2,7 +2,7 @@
 
 Needs Docker: autogenerate compares the models with a real database, so this starts the same PostgreSQL container the
 db tests use (dbtest.py), applies the existing revisions, generates the new one into
-src/app/main/migrations/versions and stops the container.
+src/app/migrations/versions and stops the container.
 """
 
 import asyncio
@@ -10,8 +10,8 @@ import sys
 
 from alembic import command
 
-from app.main.migrate import alembic_config
-from app.platform.db import create_engine
+from app.cli.migrate import alembic_config
+from app.core.db import create_engine
 from dbtest import Server
 
 

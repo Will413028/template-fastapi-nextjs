@@ -13,9 +13,9 @@ import pytest
 from fastapi.testclient import TestClient
 
 from apitest import PEER, assert_problem, checked_client, contract
-from app.main.routes import contract_operations
+from app.http.origin import OriginPolicy
+from app.main import contract_operations
 from app.modules.auth.dependencies import SessionCookie
-from app.web.origin import OriginPolicy
 from authfake import ADMIN_OPERATIONS, ALICE, SECURE, SESSION_ID, TOKEN, FakeAuthService, fake_app
 
 SECRET = "s" * 43
@@ -135,7 +135,7 @@ def test_a_user_who_is_not_an_admin_is_refused_and_it_is_logged(
     headers = SAME_ORIGIN | ({"Content-Type": "application/merge-patch+json"} if patch else {})
     with checked_client(fake_app(service), against=contract()) as client:
         client.cookies.set("__Host-session", TOKEN)
-        with caplog.at_level(logging.WARNING, logger="app.web.access"):
+        with caplog.at_level(logging.WARNING, logger="app.http.access"):
             response = client.request(method, url, json={} if patch else None, headers=headers)
     problem = assert_problem(response, 403, "/problems/forbidden")
     assert problem["code"] == "insufficient_role"
@@ -188,7 +188,7 @@ def test_serve_cleans_up_on_a_schedule_until_shutdown(caplog: pytest.LogCaptureF
     service = FakeAuthService()
     service.cleanup_fails = {1}
     deadline = time.monotonic() + 5
-    with caplog.at_level(logging.INFO, logger="app.main.factory"), TestClient(fake_app(service, cleanup_every=0.01)):
+    with caplog.at_level(logging.INFO, logger="app.main"), TestClient(fake_app(service, cleanup_every=0.01)):
         while service.cleanups < 3 and time.monotonic() < deadline:
             time.sleep(0.01)
     assert service.cleanups >= 3

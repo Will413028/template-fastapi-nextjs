@@ -8,7 +8,7 @@ dependencies = [
     "argon2-cffi==25.1.0",
     "asyncpg==0.32.0",
     "fastapi==0.162.0",
-    # app.web.validation reads its ValidationError directly; also what openapi-core uses
+    # app.http.validation reads its ValidationError directly; also what openapi-core uses
     "jsonschema==4.26.0",
     "openapi-core==0.23.1",
     "pydantic==2.14.1",
@@ -17,11 +17,11 @@ dependencies = [
 ]
 
 [project.scripts]
-app = "app.main.cli:main"
+app = "app.cli:main"
 
 [dependency-groups]
 dev = [
-    # make gen writes src/app/web/contract_models.py from api/openapi.yaml; make gen-check fails when it is stale
+    # make gen writes src/app/http/contract_models.py from api/openapi.yaml; make gen-check fails when it is stale
     "datamodel-code-generator==0.86.0",
     # make coverage: total and changed-line coverage, reported in CI, not gated (AGENTS.md Verification)
     "diff-cover==11.0.0",
@@ -38,9 +38,9 @@ dev = [
 [tool.coverage.run]
 source = ["app"]
 # generated from the contract (make gen)
-omit = ["*/app/web/contract_models.py"]
+omit = ["*/app/http/contract_models.py"]
 
-# `make gen` reads these: the Pydantic models of the contract's schemas (ADR fastapi-backend-stack D2), written to src/app/web/contract_models.py
+# `make gen` reads these: the Pydantic models of the contract's schemas (ADR fastapi-backend-stack D2), written to src/app/http/contract_models.py
 # after ruff fixes and formats them, so the generator's own formatting is switched off.
 [tool.datamodel-codegen]
 input = "api/openapi.yaml"

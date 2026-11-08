@@ -15,8 +15,10 @@
 - 錯誤代碼維持 `x-extensible-enum`（ADR `2026-10-18-api-and-auth-baseline` D3、`docs/rules/api-design.md:103`「不要改回 enum」：新增代碼不算破壞性變更）。code-first 以 `json_schema_extra` 產出（附件 B61、F16–F18）。已確認（現行 ADR，未被推翻）。
 - `origin/main` 只有 2026-11-03 的 Initial commit，落後 `dev` 110 個 commit，沒有 `backend/api/`（審查者實測 2026-11-08）。`api-breaking` 因此用 CI 既有的 `BASE`（PR 用 base 分支、push 用 `github.event.before`，`ci.yml:41-48`），不用 `origin/main`。已確認。
 - oasdiff v1.36.0 能比對 FastAPI 產生的 OpenAPI 3.1：刪除必填回應欄位與選填欄位改必填共抓到 5 個 error，`--fail-on ERR` exit 1；有 `--err-ignore`，`--prefix-base /api` 能把不含前綴的舊規格與含 `/api` 的新規格對齊（實測：加旗標 `No changes`，不加則 21 個 endpoint 全成新增）；openapi-typescript 7.13.0 吃同一份 3.1 規格產出正常，`ItemPatch.title?: string` 不含 null（實測 2026-11-08，scratchpad 原型：不帶 Deps 的 `FastAPI()` include items、auth router 後 `app.openapi()` 產生 9 個 path）。已確認。
-- FastAPI 0.162.0 先解析 body、再求解依賴、最後驗證參數與 body（盤點讀原始碼推論：`fastapi/routing.py:440-540`、`dependencies/utils.py:643-760`）。未確認，步驟 1 量測。
-- openapi-core 能驗證 3.1 規格的回應。未確認，步驟 1 量測（D5 依賴它）。
+- FastAPI 0.162.0 先解析 body、再求解依賴、最後回報參數與 body 的驗證錯誤：匿名送壞 JSON 回 422 `json_invalid`（先於 401），送合法 JSON 但 body 不合 schema 回 401（步驟 1 實測 2026-11-08，附件 `spike.md` (a)）。已確認。
+- openapi-core 0.23.1 能驗證 FastAPI 產生的 3.1 規格的回應：缺必填欄位、未宣告的 status、錯的 media type 都會拒絕；前提是 `application/problem+json` 註冊 deserializer（同現行 `app.web.contract`）（步驟 1 實測 2026-11-08，`spike.md` (e)）。已確認。
+- FastAPI 把 `responses=` 裡 model 的 schema 寫到 route 成功回應的 media type（`application/json`），沒有逐一 status 指定 media type 的原生寫法（`fastapi/openapi/utils.py:491`）；route 有參數或 body 卻沒宣告 422 時自動加 `HTTPValidationError`（`utils.py:507-525`）（步驟 1 實測 2026-11-08，`spike.md` (d)）。已確認；做法寫進步驟 4a。
+- oasdiff v1.36.0 發布於 2026-11-07，不滿 repo 對依賴的 7 天規則；v1.35.0 發布於 2026-10-28，步驟 1 的 (f) 用它量（`gh release list -R oasdiff/oasdiff`，2026-11-08）。已確認；步驟 3 的版本待 Will 重新核准。
 
 **驗收基線：** `4dbe59f` 上 `make -C backend check` exit 0：354 passed、95 deselected（db 測試只在 CI 跑），squawk 0 issues，revision 未被修改；`scripts/quality-locks.json` 鎖 backend 354、backend_db 95。前端基線在步驟 1 補跑 `pnpm test`、`pnpm gen:api:check`。db 測試、compose stack 只在 CI 跑，CI 一次只跑一個。
 
@@ -55,7 +57,7 @@
 
 ## 步驟
 
-- [ ] **1. spike：量測 code-first 的未知**（被擋於：無）
+- [x] **1. spike：量測 code-first 的未知**（被擋於：無；完成 2026-11-08，結果見附件 `spike.md`，停止條件都未觸發）
   - 範圍：在附件目錄 `spike/`（新增，不進產品程式碼）寫原型，量：(a) FastAPI 處理順序，匿名送壞 JSON 時誰先回；(b) custom `APIRoute` 能否在 body 解析前依序回 401→415→400；(c) `pydantic.MISSING` 欄位在 JSON Schema 與 openapi-typescript 的輸出；(d) `responses=` 宣告 `application/problem+json` 的產出結構；(e) openapi-core 對 `app.openapi()` 驗證回應；(f) `json_schema_extra` 產出的 `x-extensible-enum` 經 `gen-api.mjs` 是否成 union，以及在 x-extensible-enum 新增一個值時 `oasdiff breaking --fail-on ERR` 不失敗、改成 `enum` 新增值時的結果（對照）；(g) 前端基線 `pnpm test`、`pnpm gen:api:check`。
   - 消費端：無。
   - 不能動：產品程式碼。
@@ -75,12 +77,12 @@
   - 驗收：`make -C backend check` 354 passed 不變；`lint-imports` 合約數不變；消費端指令只剩 ADR 的歷史段落；mutation（複本）：在 `app.cli.healthcheck` 加 `import fastapi`，`lint-imports` 要失敗；`git diff -M100% --summary 4dbe59f HEAD -- backend/src/app` 顯示每支 revision 都是 100% 相似的 rename（搬移那次 `VERSIONS` 在舊 base 下沒有檔，檢查不會擋，以此補足）；以搬移後的 commit 為 base，在複本改一支 revision，`check_migrations_immutable.py <搬移後 commit>` 要失敗；docker build 經 CI。
   - commit：拆成「搬移」與「改引用」兩個 commit，或帶 `Large-Change:`；改 `.importlinter` 的那個帶 `Quality-Gate:`。
   - 停止條件：測試數或合約數變化。
-- [ ] **3. 固定 oasdiff 版本**（被擋於：無；Will 2026-11-08 核准 oasdiff v1.36.0，條件是本步列出發布日期與 checksum）
+- [ ] **3. 固定 oasdiff 版本**（被擋於：Will 重新核准版本——原核准的 v1.36.0 發布於 2026-11-07，不滿 7 天；建議 v1.35.0（2026-10-28，darwin_all sha256 `964ad2c0…f305c`，與 release `checksums.txt` 相符），或等到 2026-11-14 後用 v1.36.0）
   - 範圍：oasdiff 版本與 checksum 登錄在 `scripts/tool_versions.py`（比照 hadolint），`backend/Makefile` 下載到 `bin/`；AGENTS.md 必要工具清單更新。
   - 需要人做的事：Will 核准 oasdiff（Go binary，非 PyPI；版本、發布日期與 checksum 在此步列出）。
   - 驗收：乾淨 clone 跑 `make -C backend` 的安裝目標後 `bin/oasdiff --version` 為登錄版本；改錯 checksum 時下載失敗。
 - [ ] **4a. 契約改由 FastAPI 產生**（被擋於：步驟 1、2、3）
-  - 範圍：各模組新增 `schemas.py`（從 `contract_models.py` 搬內容並改成手寫 Pydantic 模型；錯誤代碼 `x-extensible-enum` 用 `json_schema_extra`），所有 import（兩個 router、`app/cli/seed.py` 等，附件 §3 contract_models 組）改到 `schemas.py`，**本步刪除 `contract_models.py`、datamodel-codegen 與 Makefile vulture 的 `--exclude '*/contract_models.py'`**；router 宣告 `response_model` 與 `responses=`（status 照附件 §2b）；`app/main.py` 新增不需 Deps 的 `build_openapi()`（include 全部 module router 後呼叫 `app.openapi()`）；`make -C backend gen` 改為匯出到 `backend/api/openapi.json`，`gen-check` 比對；FastAPI 的 `openapi_url` 只在 dev 開放，並加入 `ContractValidation` 的 skip 清單與 `check_routes` 的例外。舊 `openapi.yaml` 與 openapi-core 驗證本步仍在，當對照。
+  - 範圍：各模組新增 `schemas.py`（從 `contract_models.py` 搬內容並改成手寫 Pydantic 模型；錯誤代碼 `x-extensible-enum` 用 `json_schema_extra`），所有 import（兩個 router、`app/cli/seed.py` 等，附件 §3 contract_models 組）改到 `schemas.py`，**本步刪除 `contract_models.py`、datamodel-codegen 與 Makefile vulture 的 `--exclude '*/contract_models.py'`**；router 宣告 `response_model` 與 `responses=`（status 照附件 §2b）；`app/main.py` 新增不需 Deps 的 `build_openapi()`（include 全部 module router 後呼叫 `app.openapi()`）；`make -C backend gen` 改為匯出到 `backend/api/openapi.json`，`gen-check` 比對；FastAPI 的 `openapi_url` 只在 dev 開放，並加入 `ContractValidation` 的 skip 清單與 `check_routes` 的例外；`app.openapi` 掛一段後處理，把 problem 回應的 schema 從 `application/json` 搬到 `application/problem+json`（`build_openapi()` 與 dev 的 `/api/openapi.json` 共用，原型見 `spike/proto.py` 的 `problem_media_type_only`）；每個有參數或 body 的 route 宣告 422 problem，測試斷言 components 沒有 `HTTPValidationError`。舊 `openapi.yaml` 與 openapi-core 驗證本步仍在，當對照。
   - 消費端：附件 §3 的 openapi.yaml、contract_models、gen 三組（33、12、17 個檔）。
   - 不能動：附件 §2 標「保留」的契約特徵。
   - 驗收：`oasdiff diff backend/api/openapi.yaml backend/api/openapi.json --prefix-base /api`（D4 選 A；選 B 時不加）輸出的每一項差異對到附件 §2 的去向，寫進附件 `contract-delta.md`（沒對到的差異 = 失敗）；`make -C backend check` 綠燈；mutation（複本）：拿掉某個 schema 的 `max_length`，`gen-check` 要失敗。
@@ -112,7 +114,7 @@
   - 結論：FastAPI code-first；理由與量測見前提段。ADR：步驟 7 修訂 fastapi-backend-stack D1、D2。
 - **D1 套件命名**（已決 2026-11-08，Will：「這個命名併進上一則的重構計畫一起開工」，`web` 改 `http` 為該則建議）
   - 結論：`core`、`http`、`main.py`＋`cli/`＋`migrations/`；檔案對應見步驟 2。
-- **D2 錯誤優先順序與 415、嚴格 JSON**（未決；擋住：4b；需要：步驟 1 (a)(b)）
+- **D2 錯誤優先順序與 415、嚴格 JSON**（未決，事實已齊；擋住：4b；`spike.md` (a)(b)：A 做得到，原生行為下匿名壞 JSON 回 422、`NaN` 被接受、沒有 415）
   - A：custom `APIRoute`（FastAPI 文件記載的擴充點）在 body 解析前依序檢查 401→415→400，完整保留——`api-design.md:134` 要求 401 先於參數與 body，RFC 9110 的 415 語意（建議）
   - B：只用 exception handler——匿名送壞 JSON 時 400 先於 401，PATCH 送 `application/json` 會被接受
 - **D3 匿名 401 的 body**（已決 2026-11-08，Will：選 A；擋住：4a）
@@ -121,16 +123,16 @@
 - **D4 `/api` 前綴**（已決 2026-11-08，Will：選 A；擋住：4a、5）
   - A：paths 含 `/api`（router `prefix="/api"` 的原生產出），前端 baseUrl 改為 origin、path 字串加 `/api`——不需後處理規格（建議）
   - B：匯出時去掉前綴並加 `servers: [/api]`——前端不動，但多一段覆寫 `app.openapi` 的程式
-- **D5 測試中的回應驗證**（未決；擋住：4b；需要：步驟 1 (e)）
+- **D5 測試中的回應驗證**（未決，事實已齊；擋住：4b；`spike.md` (e)：openapi-core 對 3.1 規格可用，A 的前提成立）
   - A：openapi-core 降為 dev 依賴，測試對 `app.openapi()` 驗證每個回應（未宣告的 status、problem body 都抓得到）（建議，前提是 (e) 通過）
   - B：只靠 `response_model`——只驗成功回應的 body，未宣告的 status 與錯誤 body 不驗
   - C：schemathesis——業界針對產生規格的標準工具，但要新依賴與 db 環境，列為延後
-- **D6 被驗證擋下的請求是否扣限流額度**（未決；擋住：4b；需要：步驟 1 (a)）
+- **D6 被驗證擋下的請求是否扣限流額度**（未決，事實已齊；擋住：4b；`spike.md` D6 列：現行寫法 422 會扣、壞 JSON 不扣；B 寫法 422 不扣；D2 選 A 時 400、415 都不扣）
   - A：接受扣額度並改 `api-design.md:153`——FastAPI 原生（依賴在驗證前執行），per-IP 限流只限到送請求的人自己（建議）
   - B：限流依賴也宣告 body 參數，驗證失敗時 FastAPI 不呼叫它（`dependencies/utils.py:706-708`）——保留現行規則，但每個限流 route 多一個寫法
 - **D8 匯出格式**（預設，可推翻）：JSON，`backend/api/openapi.json`，不需新增 pyyaml；dev 模式由 `/api/openapi.json` 與既有文件頁提供。
 
-拍板順序：D3、D4、oasdiff 已決；D2、D5、D6 在步驟 1 之後交。
+拍板順序：D3、D4 已決；D2、D5、D6 與 oasdiff 版本（步驟 3）在步驟 1 完成後（2026-11-08）交 Will。
 
 ## 進度
 
@@ -138,7 +140,7 @@
 
 | 步驟 | 狀態 | 已跑的驗收 | 未跑的驗收與原因 | commit |
 |---|---|---|---|---|
-| 1 spike | 未開始 | | | |
+| 1 spike | 完成 | (a)–(g) 全部，指令與原始輸出在 `spike.md` | 無 | `docs(plans): record the step 1 spike of the code-first plan` |
 | 2 套件改名 | 未開始 | | | |
 | 3 固定 oasdiff | 未開始 | | | |
 | 4a 契約改由 FastAPI 產生 | 未開始 | | | |

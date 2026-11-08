@@ -16,7 +16,8 @@ The contract is hand-written and is the source of truth for both clients.
   (`<name>` array and `next_cursor`), `Create<Entity>Request` and `<Entity>Patch`, both with
   `additionalProperties: false`. Length and range limits go here (`minLength`, `maxLength`, ...), and again as a
   CHECK in the table.
-- Run `make -C backend gen` (Pydantic models in `app/http/contract_models.py`) and `pnpm -C frontend gen:api`.
+- Run `make -C backend gen` (writes `backend/api/openapi.json` from the routes and their `schemas.py` models) and
+  `pnpm -C frontend gen:api`.
 
 ## 2. The module (`backend/src/app/modules/<name>/`)
 

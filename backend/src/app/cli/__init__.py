@@ -18,6 +18,7 @@ COMMANDS = {
     "healthcheck": "app.cli.healthcheck",
     "seed-admin": "app.cli.seed",
     "recover-admin": "app.cli.recover",
+    "openapi": "app.cli.openapi",
 }
 
 

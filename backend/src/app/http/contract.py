@@ -172,8 +172,6 @@ class ContractError(Exception):
 @dataclass(frozen=True, slots=True)
 class Contract:
     openapi: OpenAPI
-    # the file as written, for MODE=dev's /api/openapi.yaml
-    raw: bytes
 
     @classmethod
     def load(cls, path: Path) -> Self:
@@ -188,7 +186,7 @@ class Contract:
             document: object = openapi.spec.read_value()
             for pattern in _patterns(document):
                 ecma_regex(pattern)
-            return cls(openapi, path.read_bytes())
+            return cls(openapi)
         except Exception as err:  # a missing file, YAML or OpenAPI errors, a pattern: each raises its own type
             msg = f"load the contract {path}: {err}"
             raise ContractError(msg) from err

@@ -10,7 +10,7 @@ from fastapi import Path, Response
 from fastapi.testclient import TestClient
 
 from apitest import (
-    CONTRACT_PATH,
+    GENERATED_CONTRACT_PATH,
     LOOPBACK,
     PEER,
     TEST_CONTRACT_PATH,
@@ -25,6 +25,7 @@ from apitest import (
 from app.http.contract import Contract, ContractError, ecma_regex
 from app.http.validation import MAX_BODY_BYTES
 from app.main import create_app
+from authfake import fake_modules
 
 if TYPE_CHECKING:
     import pathlib
@@ -259,21 +260,25 @@ def test_health_is_outside_validation() -> None:
 
 def test_docs_only_in_dev() -> None:
     with checked_client(stub_app(docs=True)) as client:
-        spec = client.get("/api/openapi.yaml")
+        spec = client.get("/api/openapi.json")
         assert spec.status_code == 200
-        assert spec.headers["content-type"] == "application/yaml"
+        assert spec.headers["content-type"] == "application/json"
         docs = client.get("/api/docs")
         assert docs.status_code == 200
         assert 'integrity="sha384-' in docs.text
-    with checked_client(stub_app()) as client:
-        for path in ("/api/openapi.yaml", "/api/docs"):
+        assert '"/api/openapi.json"' in docs.text
+    # MODE=prod serves neither: a deployed API does not publish its contract. The real routes, so FastAPI's openapi_url
+    # being on would fail the route check rather than hide behind the contract's 404 for a path it does not list.
+    app = create_app(dataclasses.replace(deps(contract()), modules=fake_modules()))
+    with checked_client(app, against=contract()) as client:
+        for path in ("/api/openapi.json", "/api/docs"):
             assert_problem(client.get(path), 404, "/problems/not-found")
 
 
-def test_docs_serve_the_contract_file() -> None:
-    app = create_app(dataclasses.replace(deps(contract()), docs=True))
+def test_docs_serve_the_generated_contract() -> None:
+    app = create_app(dataclasses.replace(deps(contract()), docs=True, modules=fake_modules()))
     with checked_client(app, against=contract()) as client:
-        assert client.get("/api/openapi.yaml").content == CONTRACT_PATH.read_bytes()
+        assert client.get("/api/openapi.json").json() == json.loads(GENERATED_CONTRACT_PATH.read_text(encoding="utf-8"))
 
 
 def test_binding_failure_on_a_missing_value_is_required() -> None:

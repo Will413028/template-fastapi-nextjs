@@ -6,7 +6,8 @@ from typing import TYPE_CHECKING
 
 import pytest
 from fastapi import APIRouter, FastAPI
-from starlette.routing import Mount
+from starlette.responses import PlainTextResponse
+from starlette.routing import Mount, Route
 
 from apitest import contract, deps, stub_contract
 from app.http.access import PUBLIC, SIGNED_IN
@@ -17,6 +18,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
     from fastapi.params import Depends
+    from starlette.requests import Request
 
 ME = ("GET", "/users/me")
 
@@ -120,6 +122,15 @@ def test_nothing_is_routed_outside_the_api_but_the_health_checks() -> None:
         app.routes.append(Mount("/static", app=FastAPI(openapi_url=None)))
 
     assert "/static/{path} is not an API route" in problems(full(extra=mount))
+
+    async def ok(_: Request) -> PlainTextResponse:
+        return PlainTextResponse("ok")
+
+    def plain_health(app: FastAPI) -> None:
+        app.routes.append(Route("/health", ok))
+
+    # the health paths are skipped as API routes, not as any route
+    assert "/health is not an API route" in problems(full(extra=plain_health))
 
 
 def test_every_writable_path_has_a_get() -> None:

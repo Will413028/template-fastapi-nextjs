@@ -65,7 +65,7 @@ nano .env
 > - `COOKIE_SECURE=true`：cookie 名稱為 `__Host-session` 並帶 `Secure`（`MODE=prod` 下設 `false` 會拒絕啟動）
 > - `APP_ORIGIN=https://example.com`：瀏覽器看到的前端網域，不帶結尾斜線
 >
-> `MODE` 不用改：`make up-prod` 一律以 `MODE=prod` 啟動（JSON log、不提供 `/api/openapi.yaml` 與 `/api/docs`、要求來源密鑰）。
+> `MODE` 不用改：`make up-prod` 一律以 `MODE=prod` 啟動（JSON log、不提供 `/api/openapi.json` 與 `/api/docs`、要求來源密鑰）。
 
 > [!WARNING]
 > `.secrets/` 裡的資料庫密碼在 postgres volume 第一次初始化時寫進資料庫角色。之後換掉檔案不會改資料庫裡的密碼；不要刪除 `.secrets/`，並把它和資料庫備份一起保存。

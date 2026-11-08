@@ -33,6 +33,8 @@ if TYPE_CHECKING:
     from app.http.ratelimit import IPLimiter
 
 CONTRACT_PATH = Path(__file__).parents[1] / "api" / "openapi.yaml"
+# the contract generated from the routes (make gen)
+GENERATED_CONTRACT_PATH = Path(__file__).parents[1] / "api" / "openapi.json"
 TEST_CONTRACT_PATH = Path(__file__).parent / "testdata" / "test-openapi.yaml"
 
 # MODE=dev without ORIGIN_SECRET: a request without X-Origin-Secret is let through (app.http.origin).

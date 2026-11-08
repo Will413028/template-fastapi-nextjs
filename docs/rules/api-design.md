@@ -1,10 +1,10 @@
 # API Design Rules
 
-本專案的 API 是 contract-first：`backend/api/openapi.yaml`（OpenAPI 3.0.3）是 API 形狀與限制的唯一來源，HTTP 層在 `backend/src/app/modules/<m>/router.py`（共用的在 `backend/src/app/http/`），業務邏輯在同一模組的 service。決策來源見 [ADR api-and-auth-baseline](../adr/2026-10-18-api-and-auth-baseline.md) 與 [ADR FastAPI 版後端](../adr/2026-11-05-fastapi-backend-stack.md)。
+本專案的 API 正從 contract-first 改為 code-first（`docs/plans/2026-11-08-fastapi-code-first.md`）：過渡期 `backend/api/openapi.yaml`（OpenAPI 3.0.3）仍驗證每個 request、前端仍從它產生型別，`backend/api/openapi.json` 由 route 與 `schemas.py` 產生，兩者以計畫附件的 `contract_delta.py` 核對（見下方「契約是唯一來源」第一條）；HTTP 層在 `backend/src/app/modules/<m>/router.py`（共用的在 `backend/src/app/http/`），業務邏輯在同一模組的 service。決策來源見 [ADR api-and-auth-baseline](../adr/2026-10-18-api-and-auth-baseline.md) 與 [ADR FastAPI 版後端](../adr/2026-11-05-fastapi-backend-stack.md)。
 
 ## 契約是唯一來源
 
-- 新增或修改 API 一律先改 `backend/api/openapi.yaml`，再重新生成：後端 `make -C backend gen`（`backend/src/app/http/contract_models.py` 的 Pydantic 模型，產生選項在 `backend/pyproject.toml` 的 `[tool.datamodel-codegen]`；**NEVER** 手改），前端 `pnpm gen:api`（`frontend/src/lib/api/schema.d.ts`）。CI 以 `make -C backend gen-check` 與 `pnpm gen:api:check` 擋下沒有重新生成的變更（ADR api-and-auth-baseline D2）。
+- 過渡期（`docs/plans/2026-11-08-fastapi-code-first.md` 步驟 4a–5）：新增或修改 API 要同時改 `backend/api/openapi.yaml`（仍驗證每個 request，前端仍從它產生型別）與各模組的 `schemas.py`、route 宣告，再重新生成：後端 `make -C backend gen`（`backend/api/openapi.json`，**NEVER** 手改），前端 `pnpm gen:api`（`frontend/src/lib/api/schema.d.ts`）；兩份契約的差異以計畫附件的 `contract_delta.py` 核對。CI 以 `make -C backend gen-check` 與 `pnpm gen:api:check` 擋下沒有重新生成的變更（ADR api-and-auth-baseline D2）。
 - 長度、格式、pattern、enum 只寫在契約裡。後端由 validator（`backend/src/app/http/validation.py` 的 `ContractValidation`，openapi-core 依契約檢查每個 `/api/` request）執行，前端取用生成的型別。正式環境只驗 request；response 由測試對照契約（`backend/tests/apitest.py` 的 `checked_client`）。**NEVER** 在 handler、service 或 zod schema 再寫一次相同的限制（ADR api-and-auth-baseline D6）。
 - 契約表達不了的規則（例如密碼在常見密碼清單內、帳號已被使用）才由 service 檢查，以 `AppError` 回報。
 - request body 的 schema 加 `additionalProperties: false`，多送的欄位回 422 `additional_property`。
@@ -121,7 +121,7 @@ raise HTTPException(status_code=409)
 
 ## 分層
 
-- 每個模組的 route 在 `app/modules/<m>/router.py`（`APIRouter(prefix="/api")`，由 `app.main` 掛上）：解 request、呼叫 service、轉成 `app.http.contract_models` 的契約模型，不寫業務邏輯，不 import sqlalchemy（`.importlinter` 的 `sql-below-the-router`）。route 的路徑與方法必須和契約的 operation 一一對應，路徑參數同名（契約寫 `{id}`，參數就叫 `id`）；`app/main.py` 在啟動時檢查，每個 operation 都要有 route（`test_routes.py`）。
+- 每個模組的 route 在 `app/modules/<m>/router.py`（`APIRouter(prefix="/api")`，由 `app.main` 掛上）：解 request、呼叫 service、轉成模組 `schemas.py` 的契約模型，不寫業務邏輯，不 import sqlalchemy（`.importlinter` 的 `sql-below-the-router`）。route 的路徑與方法必須和契約的 operation 一一對應，路徑參數同名（契約寫 `{id}`，參數就叫 `id`）；`app/main.py` 在啟動時檢查，每個 operation 都要有 route（`test_routes.py`）。
 - service 不 import fastapi、starlette（`http-stays-at-the-edge`），也不 import 其他模組（`modules-independent`）；分層由 `backend/.importlinter` 檢查，見 `AGENTS.md`「Backend layers」。
 - 目前使用者由 route 的依賴取得（`app.http.access` 的 `SignedIn`，或 auth 模組的 `Current`），再**顯式**當參數傳給 service；service 不讀 request 或 context。
 - 模組之間共用、但不碰 HTTP 的 helper（分頁 cursor）放在 `app.core`（`pagination.py`）。

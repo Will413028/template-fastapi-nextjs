@@ -19,10 +19,10 @@ import contextlib
 import logging
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.routing import APIRoute, iter_route_contexts
 
 from app.core.config import DEFAULT_AUTH_RATE_LIMIT_PER_MIN
@@ -33,7 +33,7 @@ from app.http.docs import DOCS_HTML
 from app.http.errors import RecoverMiddleware, install_exception_handlers
 from app.http.headers import SecurityHeadersMiddleware
 from app.http.origin import ClientMiddleware, OriginGuardMiddleware
-from app.http.problems import UNAVAILABLE, problem_response
+from app.http.problems import PROBLEM_CONTENT_TYPE, UNAVAILABLE, problem_response
 from app.http.ratelimit import IPLimiter
 from app.http.request_id import RequestIdMiddleware
 from app.http.validation import ContractValidation
@@ -89,8 +89,8 @@ class Deps:
     origin: OriginPolicy
     # the site's origin as browsers send it (APP_ORIGIN), for the CSRF check (app.http.cross_origin)
     app_origin: str
-    # MODE=dev only: the contract at /api/openapi.yaml and Swagger UI at /api/docs; without it those paths are
-    # undefined routes like any other
+    # MODE=dev only: the generated contract at /api/openapi.json and Swagger UI at /api/docs; without it those paths
+    # are undefined routes like any other
     docs: bool = False
     # the per-address buckets of the operations with dependencies=[app.http.ratelimit.RATE_LIMITED]; by default
     # AUTH_RATE_LIMIT_PER_MIN's default on the monotonic clock
@@ -145,8 +145,8 @@ def create_app(deps: Deps) -> FastAPI:
                 auth.service.close()
             await database.close()
 
-    # The contract is the hand-written api/openapi.yaml, so FastAPI's generated schema and docs stay off.
-    app = FastAPI(openapi_url=None, docs_url=None, redoc_url=None, lifespan=lifespan)
+    # The generated contract is served in MODE=dev only (Swagger UI is app.http.docs, not FastAPI's).
+    app = _api(openapi_url=OPENAPI_PATH if deps.docs else None, lifespan=lifespan)
     app.state.ip_limiter = deps.limiter or IPLimiter(DEFAULT_AUTH_RATE_LIMIT_PER_MIN, time.monotonic)
 
     # /health is liveness: 200 while the process runs, without checking dependencies. /health/ready is readiness:
@@ -166,10 +166,10 @@ def create_app(deps: Deps) -> FastAPI:
             return problem_response(UNAVAILABLE)
         return JSONResponse({"status": "ready"})
 
-    docs_paths = _add_docs(app, contract) if deps.docs else frozenset[str]()
+    docs_paths = _add_docs(app) if deps.docs else frozenset[str]()
     if deps.modules is not None:
-        app.include_router(auth_router)
-        app.include_router(items_router)
+        for router in ROUTERS:
+            app.include_router(router)
         app.state.items_service = deps.modules.items  # app.modules.items.dependencies
         check_routes(app, contract, docs_paths=docs_paths)
     install_exception_handlers(app)
@@ -177,18 +177,78 @@ def create_app(deps: Deps) -> FastAPI:
     return app
 
 
-def _add_docs(app: FastAPI, contract: Contract) -> frozenset[str]:
-    """MODE=dev's contract and Swagger UI; returns their paths, which are outside validation."""
+def _add_docs(app: FastAPI) -> frozenset[str]:
+    """MODE=dev's Swagger UI; returns its path and the contract's (FastAPI's openapi_url), which are outside
+    validation."""
 
-    @app.get("/api/openapi.yaml", include_in_schema=False)
-    async def contract_file() -> Response:
-        return Response(contract.raw, media_type="application/yaml")
-
-    @app.get("/api/docs", include_in_schema=False)
+    @app.get(DOCS_PATH, include_in_schema=False)
     async def swagger_ui() -> HTMLResponse:
         return HTMLResponse(DOCS_HTML)
 
-    return frozenset({"/api/openapi.yaml", "/api/docs"})
+    return frozenset({OPENAPI_PATH, DOCS_PATH})
+
+
+# Every module's routes, in create_app and in the generated contract (build_openapi).
+ROUTERS = (auth_router, items_router)
+
+# MODE=dev's generated contract and its Swagger UI (app.http.docs loads OPENAPI_PATH).
+OPENAPI_PATH = "/api/openapi.json"
+DOCS_PATH = "/api/docs"
+
+_INFO: dict[str, Any] = {
+    "title": "template-fastapi-nextjs API",
+    "version": "0.1.0",
+    "description": "Errors are RFC 9457 problem details (`application/problem+json`). Clients choose messages by "
+    "`type` and `code` and never parse `detail`.",
+}
+
+
+def _api(
+    *,
+    openapi_url: str | None,
+    lifespan: Callable[[FastAPI], contextlib.AbstractAsyncContextManager[None]] | None = None,
+) -> FastAPI:
+    """The FastAPI app with the contract's info, whose generated schema puts problems under application/problem+json
+    (problem_media_type)."""
+    app = FastAPI(openapi_url=openapi_url, docs_url=None, redoc_url=None, lifespan=lifespan, **_INFO)
+    generate = app.openapi
+
+    def openapi() -> dict[str, Any]:
+        if app.openapi_schema is None:
+            app.openapi_schema = problem_media_type(generate())
+        return app.openapi_schema
+
+    app.openapi = openapi
+    return app
+
+
+def build_openapi() -> dict[str, Any]:
+    """The contract: the OpenAPI document of every module's routes, without building the app's dependencies.
+    `make gen` writes it to api/openapi.json (the frontend's types move to that file with
+    docs/plans/2026-11-08-fastapi-code-first.md)."""
+    app = _api(openapi_url=None)
+    for router in ROUTERS:
+        app.include_router(router)
+    return app.openapi()
+
+
+def problem_media_type(spec: dict[str, Any]) -> dict[str, Any]:
+    """FastAPI writes an additional response's model under the operation's success media type, application/json
+    (fastapi/openapi/utils.py), and has no per-status media type; a problem is application/problem+json
+    (app.http.schemas.problems declares it empty). Moves the schema there."""
+    for operations in spec.get("paths", {}).values():
+        for operation in operations.values():
+            for response in operation.get("responses", {}).values():
+                content = response.get("content", {})
+                if PROBLEM_CONTENT_TYPE not in content:
+                    continue
+                # whatever the success media type is (a route's response_class chooses it)
+                others = [media_type for media_type in content if media_type != PROBLEM_CONTENT_TYPE]
+                for media_type in others:
+                    schema = content.pop(media_type)
+                    if not content[PROBLEM_CONTENT_TYPE]:
+                        content[PROBLEM_CONTENT_TYPE] = schema
+    return spec
 
 
 def _add_middleware(app: FastAPI, deps: Deps, docs_paths: frozenset[str]) -> None:
@@ -276,10 +336,13 @@ def _api_routes(
     problems: list[str] = []
     for context in iter_route_contexts(app.routes):
         path = context.path_format or context.path or ""
+        # FastAPI's openapi_url is a plain Starlette route
+        if path in docs_paths:
+            continue
         if not isinstance(context.original_route, APIRoute):
             problems.append(f"{path} is not an API route (a mount or a plain Starlette route); route it under /api")
             continue
-        if path in HEALTH_PATHS or path in docs_paths:
+        if path in HEALTH_PATHS:
             continue
         if not path.startswith(API_PREFIX + "/"):
             problems.append(f"{path} is routed outside {API_PREFIX}; only the health checks are")

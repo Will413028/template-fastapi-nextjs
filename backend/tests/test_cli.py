@@ -1,6 +1,7 @@
 import http.server
 import importlib
 import threading
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import pytest
@@ -63,6 +64,12 @@ def test_unknown_command_is_a_usage_error() -> None:
     with pytest.raises(SystemExit) as exc:
         cli.main(["no-such-command"], environ={})
     assert exc.value.code == 2
+
+
+def test_openapi_writes_the_committed_contract(capsys: pytest.CaptureFixture[str]) -> None:
+    # make gen saves this output as api/openapi.json; it needs no settings
+    assert cli.main(["openapi"], environ={}) == 0
+    assert capsys.readouterr().out == (Path(__file__).parents[1] / "api" / "openapi.json").read_text(encoding="utf-8")
 
 
 def test_every_command_resolves() -> None:

@@ -11,7 +11,7 @@ The backend serves `GET /health`, `GET /health/ready` and every operation of the
 ## Verification
 
 - Branch model: daily work goes to `dev`; `main` changes only through a `dev`→`main` PR merged with a merge commit (no squash, no rebase); never push to `main` directly.
-- Backend tests use `pytest`, frontend tests use `vitest`; a task is complete only when `make -C backend check` (backend) and `pnpm test` (frontend) pass, and CI's backend job passes when the change touches the database. `make -C backend check` runs what CI's backend job runs except the database tests: `uv lock --check`, `gen-check` (the Pydantic models in `backend/src/app/http/contract_models.py` match `backend/api/openapi.yaml`), `ruff format --check`, `ruff check`, the import-linter contracts (`lint-imports`), `pyright` in strict mode, `vulture`, `pytest -m "not db"`, squawk on every revision's SQL (needs Node; `backend/tools/package.json`) and the revision immutability check.
+- Backend tests use `pytest`, frontend tests use `vitest`; a task is complete only when `make -C backend check` (backend) and `pnpm test` (frontend) pass, and CI's backend job passes when the change touches the database. `make -C backend check` runs what CI's backend job runs except the database tests: `uv lock --check`, `gen-check` (`backend/api/openapi.json` matches the contract generated from the routes and their `schemas.py` models), `ruff format --check`, `ruff check`, the import-linter contracts (`lint-imports`), `pyright` in strict mode, `vulture`, `pytest -m "not db"`, squawk on every revision's SQL (needs Node; `backend/tools/package.json`) and the revision immutability check.
 - Tests that need PostgreSQL carry `@pytest.mark.db` (a test using the `postgres` fixture without it fails collection) and start a container with testcontainers (`backend/tests/dbtest.py`). They run only in CI (`make -C backend test-db`); do not run them, or `make migration`, on a shared development machine.
 - Coverage is reported, not gated: CI's backend job writes the total line coverage of both pytest runs and, on a pull request, the coverage of the changed lines (`make -C backend coverage COVER_BASE=<ref>` after `make test`) to the run summary.
 - pytest turns every warning into an error (`backend/pytest.ini`): fix a deprecation when an upgrade brings it, do not filter it.
@@ -30,7 +30,7 @@ The backend is a modular monolith organized by feature. `backend/.importlinter` 
 
 | Package | Holds | May import |
 |---|---|---|
-| `app.cli` | the `app` command: the dispatcher imports each subcommand's module (`serve`, `migrate`, `healthcheck`, `seed-admin`, `recover-admin`) only when it runs; `logs.py` is the logging setup `serve` uses | everything below |
+| `app.cli` | the `app` command: the dispatcher imports each subcommand's module (`serve`, `migrate`, `healthcheck`, `seed-admin`, `recover-admin`, `openapi`) only when it runs; `logs.py` is the logging setup `serve` uses | everything below |
 | `app.main` | app factory and middleware assembly (`create_app`) | everything below except `app.migrations` |
 | `app.migrations` | Alembic environment, revisions and the schema metadata | everything below except `app.main` |
 | `app.modules.<name>` | one feature: `router.py`, `schemas.py`, `dependencies.py` (HTTP: routes, FastAPI dependencies, and any ASGI middleware `app.main` mounts for the module); `service.py`, or a `service/` package when it grows (business rules, owns the transaction); optional `repository.py` (complex queries); `models.py` (tables) | `app.http`, `app.core`; never another module |
@@ -96,7 +96,7 @@ make run              # Start the API server with MODE=dev
 make test             # pytest without the db tests
 make test-db          # The db tests (needs Docker; CI runs them)
 make check            # CI's backend job, minus the db tests
-make gen              # Regenerate src/app/http/contract_models.py from api/openapi.yaml (gen-check fails when stale)
+make gen              # Regenerate api/openapi.json from the routes (app openapi; gen-check fails when stale)
 make migration MSG=x  # Generate an Alembic revision from the models (needs Docker)
 make squawk           # Lock and compatibility checks on every revision's SQL (needs Node)
 make tools            # Download the pinned release binaries (oasdiff) into bin/
@@ -129,4 +129,4 @@ pnpm gen:api          # Regenerate API types from backend/api/openapi.yaml
 ## Conventions
 
 - Backend is Python 3.14 managed with `uv` (`backend/pyproject.toml`, `backend/uv.lock`); frontend uses `pnpm`. `scripts/` run on the same Python 3.14 through `uv run --no-project --python 3.14 python scripts/<name>.py` (lefthook, Makefiles and CI do), never the host `python3`.
-- The HTTP contract is the hand-written `backend/api/openapi.yaml`; FastAPI's generated schema is off; the backend generates its Pydantic models (`make -C backend gen`) and the frontend its types (`pnpm gen:api`) from the contract.
+- The HTTP contract is moving to code-first (`docs/plans/2026-11-08-fastapi-code-first.md`): `make -C backend gen` writes `backend/api/openapi.json` from the routes and their `schemas.py` models; until the plan moves request checks and the frontend's types to the generated contract, the hand-written `backend/api/openapi.yaml` still validates every request and is what the frontend generates its types from (`pnpm gen:api`), so a change goes into both and the plan's `contract_delta.py` must stay green.

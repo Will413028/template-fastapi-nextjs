@@ -21,8 +21,10 @@ markers among all of a route's dependencies).
 import logging
 from typing import Annotated
 
-from fastapi import Depends, Request
+from fastapi import Depends, Request, Security
+from fastapi.security import APIKeyCookie
 
+from app.core.config import SECURE_SESSION_COOKIE
 from app.core.errors import AppError, Kind
 from app.core.principal import ROLE_ADMIN, Principal, current_principal, session_invalid
 
@@ -33,11 +35,24 @@ logger = logging.getLogger(__name__)
 CODE_INSUFFICIENT_ROLE = "insufficient_role"
 
 
+# The contract's security scheme, so SIGNED_IN and ADMIN operations declare it. Documentation only: it never refuses a
+# request (auto_error=False) and its value is not read; AuthenticateMiddleware resolves the cookie, whichever name
+# COOKIE_SECURE gives it.
+_SESSION_COOKIE = APIKeyCookie(
+    name=SECURE_SESSION_COOKIE,
+    scheme_name="sessionCookie",
+    description="Opaque session token, HttpOnly. Named `session` instead when the server runs with COOKIE_SECURE=false "
+    "(local http development), because the `__Host-` prefix requires Secure.",
+    auto_error=False,
+)
+_Documented = Annotated[str | None, Security(_SESSION_COOKIE)]
+
+
 async def public() -> None:
     """The marker of an operation anyone may call."""
 
 
-async def signed_in() -> Principal:
+async def signed_in(_: _Documented = None) -> Principal:
     """The marker of an operation that needs a session; returns the signed-in user. The contract check refuses an
     anonymous request before it gets here, so a missing principal means the route and the contract disagree."""
     principal = current_principal()
@@ -46,7 +61,7 @@ async def signed_in() -> Principal:
     return principal
 
 
-async def admin(request: Request) -> Principal:
+async def admin(request: Request, _: _Documented = None) -> Principal:
     """The marker of an operation only admins may call; returns the signed-in admin. The role is the one the
     middleware read from the database for this request, so a demotion takes effect on the next one. A refusal is
     logged as authz.denied (OWASP Logging Cheat Sheet: authorization failures)."""

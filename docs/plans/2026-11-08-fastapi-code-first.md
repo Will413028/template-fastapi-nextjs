@@ -1,6 +1,6 @@
 # 後端改為 FastAPI code-first，套件改用業界命名
 
-**Goal：** 契約由各模組的 Pydantic `schemas.py` 經 FastAPI 產生（OpenAPI 3.1），匯出到 `backend/api/openapi.json` 進版控並由 `gen-check` 守住；前端從它產生型別；openapi-core（D5 選 A 時只留作測試依賴）、`contract.py`、`validation.py`、`routes.py`、`contract_models.py`、datamodel-codegen 移除，舊驗證層的對外行為逐項保留或依決定改變（附件 §1 每列有去向與測試）；套件為 `app.core`、`app.http`、`app.modules`、`app/main.py`、`app/cli/`、`app/migrations/`；`make -C backend api-breaking` 接進 `check`，CI 的 PR 與 push 以 `BASE` 比對（pre-push 用本機預設 `origin/main`，在 `dev`→`main` 合併前沒有可比的規格，只印說明）。驗收見步驟 8。
+**Goal：** 契約由各模組的 Pydantic `schemas.py` 經 FastAPI 產生（OpenAPI 3.1），匯出到 `backend/api/openapi.json` 進版控並由 `gen-check` 守住；前端從它產生型別；openapi-core（D5：只留作測試依賴）、`contract.py`、`validation.py`、`routes.py`、`contract_models.py`、datamodel-codegen 移除，舊驗證層的對外行為逐項保留或依決定改變（附件 §1 每列有去向與測試）；套件為 `app.core`、`app.http`、`app.modules`、`app/main.py`、`app/cli/`、`app/migrations/`；`make -C backend api-breaking` 接進 `check`，CI 的 PR 與 push 以 `BASE` 比對（pre-push 用本機預設 `origin/main`，在 `dev`→`main` 合併前沒有可比的規格，只印說明）。驗收見步驟 8。
 
 **上層：** 見本機個人脈絡檔（`AGENTS.local.md` 記的主清單）。
 
@@ -53,7 +53,7 @@
 
 - 做：套件改名；code-first 契約；舊驗證行為搬到 FastAPI 原生擴充點；前端跟上；`api-breaking` 接上 CI；ADR 與 `docs/rules/` 更新；處理主清單 Pending「gen-api 檢查每個 x-extensible-enum 都轉成 union」（步驟 5 一併做或保留原觸發，見步驟 5）。
 - 不做：schema 或業務邏輯改動；新增 API 功能；改認證、限流演算法（只改套用位置）。
-- 延後：schemathesis 這類以規格產生測試案例的工具（觸發：D5 選 A 但 openapi-core 量測失敗，或出現手寫測試沒抓到的契約漂移）。
+- 延後：schemathesis 這類以規格產生測試案例的工具（觸發：出現 `checked_client` 與手寫測試沒抓到的契約漂移；openapi-core 對 3.1 已在步驟 1 量過可用）。
 
 ## 步驟
 
@@ -85,17 +85,17 @@
   - 範圍：各模組新增 `schemas.py`（從 `contract_models.py` 搬內容並改成手寫 Pydantic 模型；錯誤代碼 `x-extensible-enum` 用 `json_schema_extra`），所有 import（兩個 router、`app/cli/seed.py` 等，附件 §3 contract_models 組）改到 `schemas.py`，**本步刪除 `contract_models.py`、datamodel-codegen 與 Makefile vulture 的 `--exclude '*/contract_models.py'`**；router 宣告 `response_model` 與 `responses=`（status 照附件 §2b）；`app/main.py` 新增不需 Deps 的 `build_openapi()`（include 全部 module router 後呼叫 `app.openapi()`）；`make -C backend gen` 改為匯出到 `backend/api/openapi.json`，`gen-check` 比對；FastAPI 的 `openapi_url` 只在 dev 開放，並加入 `ContractValidation` 的 skip 清單與 `check_routes` 的例外；`app.openapi` 掛一段後處理，把 problem 回應的 schema 從 `application/json` 搬到 `application/problem+json`（`build_openapi()` 與 dev 的 `/api/openapi.json` 共用，原型見 `spike/proto.py` 的 `problem_media_type_only`）；每個有參數或 body 的 route 宣告 422 problem，測試斷言 components 沒有 `HTTPValidationError`。舊 `openapi.yaml` 與 openapi-core 驗證本步仍在，當對照。
   - 消費端：附件 §3 的 openapi.yaml、contract_models、gen 三組（33、12、17 個檔）。
   - 不能動：附件 §2 標「保留」的契約特徵。
-  - 驗收：`oasdiff diff backend/api/openapi.yaml backend/api/openapi.json --prefix-base /api`（D4 選 A；選 B 時不加）輸出的每一項差異對到附件 §2 的去向，寫進附件 `contract-delta.md`（沒對到的差異 = 失敗）；`make -C backend check` 綠燈；mutation（複本）：拿掉某個 schema 的 `max_length`，`gen-check` 要失敗。
+  - 驗收：`oasdiff diff backend/api/openapi.yaml backend/api/openapi.json --prefix-base /api`（D4）輸出的每一項差異對到附件 §2 的去向，寫進附件 `contract-delta.md`（沒對到的差異 = 失敗）；`make -C backend check` 綠燈；mutation（複本）：拿掉某個 schema 的 `max_length`，`gen-check` 要失敗。
   - 停止條件：出現附件沒列的差異且無法歸類。
-- [ ] **4b. 舊驗證行為搬到原生擴充點，移除 spec-first 機制**（被擋於：4a、D2、D5、D6）
-  - 範圍：附件 §1 每一列照去向實作：custom `APIRoute`（401→415→400 順序、merge-patch media type、嚴格 JSON、413 上限）、`RequestValidationError` 到穩定錯誤代碼的對照表、`redirect_slashes=False`；刪 `contract.py`、`validation.py`、`routes.py`（從 `app/main.py` 移除）、`openapi.yaml`、`tests/testdata/test-openapi.yaml`、openapi-core（D5 選 A 時改為 dev 依賴）；改寫 3 個 `import yaml` 的測試；`tests/vulture_whitelist.py` 照附件去向刪除（Makefile 的 vulture 參數同步）；`scripts/quality-locks.json` 改成新的測試數。
+- [ ] **4b. 舊驗證行為搬到原生擴充點，移除 spec-first 機制**（被擋於：4a；D2、D5、D6 已決）
+  - 範圍：附件 §1 每一列照去向實作：custom `APIRoute`（D2：access 401／403 → 限流 429 → 415（含 `Accept-Patch`）→ 嚴格 JSON 400，並自動宣告這些 status；D6：`RATE_LIMITED` 從 dependency 改成 route class 讀的 marker）、body 上限 middleware（413，附件 B2–B7）、`RequestValidationError` 到穩定錯誤代碼的對照表、`Problem` 改由 Pydantic model 建構（D5）、`checked_client` 改對產生的規格驗證（D5）、`redirect_slashes=False`；刪 `contract.py`、`validation.py`、`routes.py`（從 `app/main.py` 移除）、`openapi.yaml`、`tests/testdata/test-openapi.yaml`、openapi-core 改為 dev 依賴（D5）；改寫 3 個 `import yaml` 的測試；`tests/vulture_whitelist.py` 照附件去向刪除（Makefile 的 vulture 參數同步）；`scripts/quality-locks.json` 改成新的測試數。
   - 消費端：附件 §3 的 openapi-core 組（13 個檔）與 §5 的測試清單。
   - 不能動：附件 §1 標「保留」的每一列的 status、`code`、header。
-  - 驗收：附件 §1 每個 B 編號出現在某個測試名稱或 docstring，或在附件標明刪除理由（一次性腳本 `check_b_coverage.py` 放附件目錄）；mutation（複本）：拿掉 route class 的 401 檢查，匿名 401 的測試要失敗；拿掉 merge-patch 檢查，415 測試要失敗；`make -C backend check`；改 `quality-locks.json` 的 commit 帶 `Quality-Gate:` 並列出刪掉的測試與對應 B 編號。CI 驗收併入步驟 5。
+  - 驗收：附件 §1 每個 B 編號出現在某個測試名稱或 docstring，或在附件標明刪除理由（一次性腳本 `check_b_coverage.py` 放附件目錄）；mutation（複本）：拿掉 route class 的 401 檢查，匿名 401 的測試要失敗；把 403 檢查移回依賴（內容檢查之後），「非 admin 送錯 body 回 403」的測試要失敗；拿掉 merge-patch 檢查，415 測試要失敗；拿掉 `Accept-Patch`，對應測試要失敗；把限流移到內容檢查之後，「被 422 擋下也扣 token」的測試要失敗；拿掉 route class 自動宣告的某個 status，`checked_client` 的回應驗證要失敗；`make -C backend check`；改 `quality-locks.json` 的 commit 帶 `Quality-Gate:` 並列出刪掉的測試與對應 B 編號。CI 驗收併入步驟 5。
   - 停止條件：某列行為無法用 FastAPI 原生擴充點保留 → 回報，列成決定題。
   - 完成後的狀態：前端型別與後端不同步，必須和步驟 5 連著做。
 - [ ] **5. 前端跟上**（被擋於：4b）
-  - 範圍：`gen-api.mjs` 讀 `backend/api/openapi.json`（extensible enum 轉換保留，並補上主清單那項「每個 x-extensible-enum 都轉成 union」的檢查，因為規格改由程式產生後手寫型別檢查的保護變弱）；D4 選 A 時 `client.ts`、`auth-api.ts`、`server.ts` 與測試的 path 改成含 `/api`。
+  - 範圍：`gen-api.mjs` 讀 `backend/api/openapi.json`（extensible enum 轉換保留，並補上主清單那項「每個 x-extensible-enum 都轉成 union」的檢查，因為規格改由程式產生後手寫型別檢查的保護變弱）；`client.ts`、`auth-api.ts`、`server.ts` 與測試的 path 改成含 `/api`（D4）。
   - 消費端：`rg -n 'openapi\.yaml|x-extensible-enum|schemaPath|"/(sessions|users|items|admin)' /Users/will/second-brain/.projects/personal/template-fastapi-nextjs/frontend --glob '!**/schema.d.ts'`（附件 §4 E1–E9）。
   - 不能動：使用者看得到的行為與訊息文字。
   - 驗收：`pnpm test`、`pnpm lint`、`pnpm gen:api:check`、`pnpm build` 綠燈；開 PR 進 `dev`，CI 的 backend（含 db 測試）、frontend、stack job 綠燈；mutation（複本）：後端新增一個錯誤代碼並重新產生 `schema.d.ts`、不補翻譯，`pnpm test`（`messages.test.ts`）要失敗；把 `auth-api.ts` 的一個 path 改回不含 `/api`，型別檢查要失敗。
@@ -104,8 +104,8 @@
   - 消費端：`api-design.md:165`、`.github/workflows/ci.yml`、`backend/Makefile`、`lefthook.yml`。
   - 驗收：開一個 PR 進 `dev`，刪一個必填回應欄位，CI 的 `api-breaking` 失敗；在 `breaking-ignore.txt` 加上該項後綠燈；本機 `make -C backend api-breaking BASE=<含 openapi.json 的 commit>` 重現同樣結果。
 - [ ] **7. ADR 與規則文件**（被擋於：2–6）
-  - 範圍：修訂 ADR `2026-11-05-fastapi-backend-stack` 的 D1、D2、D5 與 Invariants，以及 ADR `2026-10-18-api-and-auth-baseline` 的 D2 與相關 Invariants（decision-log skill）；D6 選 A 時修訂 `api-design.md:153`；改寫 `docs/rules/api-design.md`（契約、401 段）、`add-module.md`（`schemas.py`、新套件名）、AGENTS.md、`frontend/AGENTS.md`、`frontend/README.md`、`template/derived/README.md`、根目錄 `README.md`、`.env-example`。
-  - 驗收：`scripts/check_doc_refs.py` 綠燈；`rg -n --hidden -g '!.git' -g '!docs/plans/**' -g '!**/node_modules/**' -g '!**/*.lock' -g '!**/pnpm-lock.yaml' 'openapi\.yaml|contract_models|openapi-core|hand-written|3\.0\.3|app\.(web|platform)\b' /Users/will/second-brain/.projects/personal/template-fastapi-nextjs` 只剩 ADR 的歷史段落（D5 選 A 時另允許 `pyproject.toml`、`uv.lock` 的 openapi-core）。
+  - 範圍：修訂 ADR `2026-11-05-fastapi-backend-stack` 的 D1、D2、D5 與 Invariants，以及 ADR `2026-10-18-api-and-auth-baseline` 的 D2 與相關 Invariants（decision-log skill）；把 D2、D5、D6 寫進 ADR（decision-log skill，可與上述修訂合併），附件 `brief-d2-d5-d6.md` 的決定併入後不留在計畫目錄；改寫 `docs/rules/api-design.md`（契約段；認證段寫明錯誤順序表 404/405 > 413 > 401/403 > 429 > 415 > 400 > 422；限流段 `:153` 改成每個請求都扣）、`add-module.md`（`schemas.py`、新套件名）、AGENTS.md、`frontend/AGENTS.md`、`frontend/README.md`、`template/derived/README.md`、根目錄 `README.md`、`.env-example`。
+  - 驗收：`scripts/check_doc_refs.py` 綠燈；`rg -n --hidden -g '!.git' -g '!docs/plans/**' -g '!**/node_modules/**' -g '!**/*.lock' -g '!**/pnpm-lock.yaml' 'openapi\.yaml|contract_models|openapi-core|hand-written|3\.0\.3|app\.(web|platform)\b' /Users/will/second-brain/.projects/personal/template-fastapi-nextjs` 只剩 ADR 的歷史段落（另允許 `pyproject.toml`、`uv.lock` 的 openapi-core，D5）。
 - [ ] **8. 收尾**：完成定義逐項核對（Goal 每一句對到一個驗收）；design-review skill 對整個 diff 跑一次；長期檢查（`gen-check`、`api-breaking`）已在 CI，一次性腳本留附件；延後項附觸發條件搬回主清單，主清單 x-extensible-enum 那項依步驟 5 結果勾掉或保留；附件中的決定併入 ADR。驗收：CI 全綠的 run 連結、design-review 的 finding 清單與處置。
 
 ## 決定
@@ -114,25 +114,24 @@
   - 結論：FastAPI code-first；理由與量測見前提段。ADR：步驟 7 修訂 fastapi-backend-stack D1、D2。
 - **D1 套件命名**（已決 2026-11-08，Will：「這個命名併進上一則的重構計畫一起開工」，`web` 改 `http` 為該則建議）
   - 結論：`core`、`http`、`main.py`＋`cli/`＋`migrations/`；檔案對應見步驟 2。
-- **D2 錯誤優先順序與 415、嚴格 JSON**（未決，事實已齊；擋住：4b；`spike.md` (a)(b)：A 做得到，原生行為下匿名壞 JSON 回 422、`NaN` 被接受、沒有 415）
-  - A：custom `APIRoute`（FastAPI 文件記載的擴充點）在 body 解析前依序檢查 401→415→400，完整保留——`api-design.md:134` 要求 401 先於參數與 body，RFC 9110 的 415 語意（建議）
-  - B：只用 exception handler——匿名送壞 JSON 時 400 先於 401，PATCH 送 `application/json` 會被接受
+- **D2 錯誤優先順序與請求格式**（已決 2026-11-08，Will：照簡報建議；擋住：4b；簡報：附件 `brief-d2-d5-d6.md` §3，事實：`spike.md` (a)(b)）
+  - 結論：`app.web`（改名後 `app.http`）的 custom `APIRoute` 在 FastAPI 讀 body 之前依序檢查 access marker（401／403，含 admin）→ 限流（429，見 D6）→ 宣告的 media type（415；PATCH 只收 `application/merge-patch+json`，415 回應帶 `Accept-Patch`）→ 嚴格 JSON（400：語法錯、尾巴多字、NaN／Infinity、非 UTF-8，以 custom `Request.json()` 實作）；之後 Pydantic 驗證失敗回 422 `{pointer, code, detail}`。整體順序 404/405 > 413 > 401/403 > 429 > 415 > 400 > 422；413 由獨立的 body 上限 middleware 負責。route class 依 route 的 marker 與 body 自動把它負責的 status 寫進 OpenAPI。
+  - 理由：Spring Security、ASP.NET Core、DRF、Kubernetes 都先驗身分與權限再解析 body；RFC 9110（415）、5789（`Accept-Patch`）、7396、8259。改變現況的兩點：403 提前到內容檢查之前（現在非 admin 送錯 body 先拿 422），415 補 `Accept-Patch`。被推翻的選項：只用 exception handler（匿名壞 JSON 先於 401、接受 NaN、415 只能猜）。
 - **D3 匿名 401 的 body**（已決 2026-11-08，Will：選 A；擋住：4a）
   - A：統一用 access marker 現有的 `code: session_invalid`——只剩一條路徑；前端只看 status（`client.ts:23-28`），`session_invalid` 已在 enum 與訊息裡（建議）
   - B：保留舊的無 `code`、detail `this operation needs a signed-in session`——要多一個錯誤種類
 - **D4 `/api` 前綴**（已決 2026-11-08，Will：選 A；擋住：4a、5）
   - A：paths 含 `/api`（router `prefix="/api"` 的原生產出），前端 baseUrl 改為 origin、path 字串加 `/api`——不需後處理規格（建議）
   - B：匯出時去掉前綴並加 `servers: [/api]`——前端不動，但多一段覆寫 `app.openapi` 的程式
-- **D5 測試中的回應驗證**（未決，事實已齊；擋住：4b；`spike.md` (e)：openapi-core 對 3.1 規格可用，A 的前提成立）
-  - A：openapi-core 降為 dev 依賴，測試對 `app.openapi()` 驗證每個回應（未宣告的 status、problem body 都抓得到）（建議，前提是 (e) 通過）
-  - B：只靠 `response_model`——只驗成功回應的 body，未宣告的 status 與錯誤 body 不驗
-  - C：schemathesis——業界針對產生規格的標準工具，但要新依賴與 db 環境，列為延後
-- **D6 被驗證擋下的請求是否扣限流額度**（未決，事實已齊；擋住：4b；`spike.md` D6 列：現行寫法 422 會扣、壞 JSON 不扣；B 寫法 422 不扣；D2 選 A 時 400、415 都不扣）
-  - A：接受扣額度並改 `api-design.md:153`——FastAPI 原生（依賴在驗證前執行），per-IP 限流只限到送請求的人自己（建議）
-  - B：限流依賴也宣告 body 參數，驗證失敗時 FastAPI 不呼叫它（`dependencies/utils.py:706-708`）——保留現行規則，但每個限流 route 多一個寫法
+- **D5 測試中的回應驗證**（已決 2026-11-08，Will：照簡報建議；擋住：4b；簡報 §4，事實：`spike.md` (e)）
+  - 結論：openapi-core 降為 dev 依賴，`checked_client` 對產生的規格驗證每個測試回應（status、media type、header、body；`application/problem+json` 註冊 deserializer）；problem 改由 Pydantic `Problem` model 建構。schemathesis 維持延後。
+  - 理由：規格由同一份 model 產生只讓成功 body 的驗證重複；錯誤 body、未宣告的 status、media type 仍會漂移（Schemathesis 的 conformance 檢查、ASP.NET `TypedResults` 為基準）。
+- **D6 被擋下的請求是否扣限流額度**（已決 2026-11-08，Will：照簡報建議；擋住：4b；簡報 §5）
+  - 結論：每個打到限流 operation 的請求都扣一個 token，含被 415、400、422 擋下的；限流改成 route class 讀取的 marker，位置在 access 檢查之後、內容檢查之前。額度維持 `AUTH_RATE_LIMIT_PER_MIN` 預設 5、註冊與登入共用一個 bucket。
+  - 理由：Rails `rate_limit`、DRF throttle、ASP.NET `UseRateLimiter` 都在解析與驗證前計數；現行「被驗證擋下不扣」是 middleware 順序的副作用，且不一致（契約層 422 不扣、service 層 422／409 會扣）；猜密碼另由 `sign_in_throttles` 依帳號＋來源節流。重新評估的觸發：衍生專案上線後合法使用者因 422 撞到 429——調額度或拆 bucket，不改計數規則。
 - **D8 匯出格式**（預設，可推翻）：JSON，`backend/api/openapi.json`，不需新增 pyyaml；dev 模式由 `/api/openapi.json` 與既有文件頁提供。
 
-拍板順序：D3、D4、oasdiff 版本已決；D2、D5、D6 在步驟 1 完成後（2026-11-08）交 Will，Will 要求先對照業界做法與治本方案，簡報準備中。
+拍板順序：全部已決（D2、D5、D6 於 2026-11-08 依附件 `brief-d2-d5-d6.md` 的業界基準簡報拍板）。
 
 ## 進度
 

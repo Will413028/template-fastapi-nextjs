@@ -4,7 +4,7 @@
 
 **上層：** 見本機個人脈絡檔（`AGENTS.local.md` 記的主清單）。
 
-**附件：** `docs/plans/2026-11-08-fastapi-code-first/inventory.md`（舊行為 B1–B68、契約特徵 F1–F36、引用點、前端耦合、測試；快照 `4dbe59f`；決定編號已對齊本檔）。
+**附件：** `docs/plans/2026-11-08-fastapi-code-first/inventory.md`（舊行為 B1–B68、契約特徵 F1–F36、引用點、前端耦合、測試；快照 `4dbe59f`；決定編號已對齊本檔）；`spike.md`（步驟 1）；`brief-d2-d5-d6.md`（D2、D5、D6 的業界基準簡報）；`survey-fastapi-templates.md`（9 個 FastAPI 範本與大型應用的作法對照，2026-11-09）。
 
 ## 前提（開工時核對過，2026-11-08）
 
@@ -85,7 +85,7 @@
   - 範圍：各模組新增 `schemas.py`（從 `contract_models.py` 搬內容並改成手寫 Pydantic 模型；錯誤代碼 `x-extensible-enum` 用 `json_schema_extra`），所有 import（兩個 router、`app/cli/seed.py` 等，附件 §3 contract_models 組）改到 `schemas.py`，**本步刪除 `contract_models.py`、datamodel-codegen 與 Makefile vulture 的 `--exclude '*/contract_models.py'`**；router 宣告 `response_model` 與 `responses=`（status 照附件 §2b）；`app/main.py` 新增不需 Deps 的 `build_openapi()`（include 全部 module router 後呼叫 `app.openapi()`）；`make -C backend gen` 改為匯出到 `backend/api/openapi.json`，`gen-check` 比對；FastAPI 的 `openapi_url` 只在 dev 開放，並加入 `ContractValidation` 的 skip 清單與 `check_routes` 的例外；`app.openapi` 掛一段後處理，把 problem 回應的 schema 從 `application/json` 搬到 `application/problem+json`（`build_openapi()` 與 dev 的 `/api/openapi.json` 共用，原型見 `spike/proto.py` 的 `problem_media_type_only`）；每個有參數或 body 的 route 宣告 422 problem，測試斷言 components 沒有 `HTTPValidationError`。舊 `openapi.yaml` 與 openapi-core 驗證本步仍在，當對照。
   - 消費端：附件 §3 的 openapi.yaml、contract_models、gen 三組（33、12、17 個檔）。
   - 不能動：附件 §2 標「保留」的契約特徵。
-  - 驗收：`oasdiff diff backend/api/openapi.yaml backend/api/openapi.json --prefix-base /api`（D4）輸出的每一項差異對到附件 §2 的去向，寫進附件 `contract-delta.md`（沒對到的差異 = 失敗）；`make -C backend check` 綠燈；mutation（複本）：拿掉某個 schema 的 `max_length`，`gen-check` 要失敗。
+  - 驗收：`oasdiff diff backend/api/openapi.yaml backend/api/openapi.json --prefix-base /api`（D4）輸出的每一項差異對到附件 §2 的去向，寫進附件 `contract-delta.md`（沒對到的差異 = 失敗）；`make -C backend check` 綠燈；MODE=prod 時 `/api/openapi.json` 回 404 problem 的測試（對照：teamhide 範本關了 docs 卻漏關 `/openapi.json`，`survey-fastapi-templates.md` 問題 2）；mutation（複本）：拿掉某個 schema 的 `max_length`，`gen-check` 要失敗；把 prod 的 `openapi_url` 改成開著，上述測試要失敗。
   - 停止條件：出現附件沒列的差異且無法歸類。
 - [ ] **4b. 舊驗證行為搬到原生擴充點，移除 spec-first 機制**（被擋於：4a；D2、D5、D6 已決）
   - 範圍：附件 §1 每一列照去向實作：custom `APIRoute`（D2：access 401／403 → 限流 429 → 415（含 `Accept-Patch`）→ 嚴格 JSON 400，並自動宣告這些 status；D6：`RATE_LIMITED` 從 dependency 改成 route class 讀的 marker）、body 上限 middleware（413，附件 B2–B7）、`RequestValidationError` 到穩定錯誤代碼的對照表、`Problem` 改由 Pydantic model 建構（D5）、`checked_client` 改對產生的規格驗證（D5）、`redirect_slashes=False`；刪 `contract.py`、`validation.py`、`routes.py`（從 `app/main.py` 移除）、`openapi.yaml`、`tests/testdata/test-openapi.yaml`、openapi-core 改為 dev 依賴（D5）；改寫 3 個 `import yaml` 的測試；`tests/vulture_whitelist.py` 照附件去向刪除（Makefile 的 vulture 參數同步）；`scripts/quality-locks.json` 改成新的測試數。

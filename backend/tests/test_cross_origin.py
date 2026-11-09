@@ -10,7 +10,6 @@ here it is compared with APP_ORIGIN, because the Host the backend receives is no
 from typing import TYPE_CHECKING
 
 import pytest
-from fastapi import Request, Response
 
 from apitest import assert_problem, bare_app, checked_client
 
@@ -24,9 +23,9 @@ WIDGET = {"name": "gear"}
 def client() -> TestClient:
     app = bare_app(app_origin=SITE)
 
-    @app.post("/api/widgets")
-    async def create_widget(request: Request) -> Response:
-        return Response(await request.body(), status_code=201)
+    @app.post("/api/widgets", status_code=201)
+    async def create_widget(body: dict[str, object]) -> dict[str, object]:
+        return body
 
     @app.get("/api/widgets")
     async def list_widgets() -> dict[str, list[object]]:

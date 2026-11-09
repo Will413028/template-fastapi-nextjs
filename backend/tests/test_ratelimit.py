@@ -10,11 +10,12 @@ import ipaddress
 from datetime import timedelta
 from typing import TYPE_CHECKING
 
-from fastapi import Request, Response
+import pytest
 
 from apitest import assert_problem, bare_app, checked_client
 from app.http.origin import OriginPolicy
 from app.http.ratelimit import RATE_LIMITED, IPLimiter
+from widget_schemas import Widget, WidgetPage
 
 if TYPE_CHECKING:
     from fastapi.testclient import TestClient
@@ -38,13 +39,13 @@ def limited_client(per_min: int, origin: OriginPolicy) -> TestClient:
     # a stopped clock: Retry-After does not depend on how fast the machine runs the requests
     app = bare_app(origin=origin, limiter=IPLimiter(per_min, Clock()))
 
-    @app.post("/api/widgets", dependencies=[RATE_LIMITED])
-    async def create_widget(request: Request) -> Response:
-        return Response(await request.body(), status_code=201)
+    @app.post("/api/widgets", status_code=201, dependencies=[RATE_LIMITED])
+    async def create_widget(body: Widget) -> Widget:
+        return body
 
     @app.get("/api/widgets")
-    async def list_widgets() -> Response:
-        return Response()
+    async def list_widgets() -> WidgetPage:
+        return WidgetPage(widgets=[])
 
     return checked_client(app)
 
@@ -98,11 +99,22 @@ def test_rate_limit_only_named_operations() -> None:
             assert client.get("/api/widgets").status_code == 200
 
 
-def test_a_request_the_contract_rejects_uses_no_token() -> None:
+@pytest.mark.parametrize(
+    ("content", "content_type", "status"),
+    [
+        pytest.param('{"name": "x"}', "application/json", 422, id="invalid body"),
+        pytest.param('{"name":', "application/json", 400, id="not JSON"),
+        pytest.param('{"name": "gear"}', "text/plain", 415, id="wrong media type"),
+    ],
+)
+def test_a_refused_request_uses_a_token(content: str, content_type: str, status: int) -> None:
+    # every request that reaches a limited operation counts, the ones its checks refuse too (app.http.ratelimit), so
+    # sending invalid requests does not buy more guesses
     with limited_client(1, DEV) as client:
-        for _ in range(3):
-            assert client.post("/api/widgets", json={"name": "x"}).status_code == 422
-        assert post_from(client, secret="") == 201
+        assert (
+            client.post("/api/widgets", content=content, headers={"content-type": content_type}).status_code == status
+        )
+        assert post_from(client, secret="") == 429
 
 
 def test_ip_limiter_refills_and_sweeps() -> None:

@@ -23,8 +23,8 @@ from apitest import (
     values_outside_contract,
 )
 from app.core.errors import AppError, Kind
-from app.http.problems import KIND_PROBLEMS, PROBLEM_TYPES
-from app.http.validation import SCHEMA_CODES
+from app.http.errors import VALIDATION_CODES
+from app.http.problems import FIELD_ERROR_CODES, KIND_PROBLEMS, PROBLEM_CODES, PROBLEM_TYPES
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -118,10 +118,13 @@ def test_unknown_path_outside_the_api_is_a_problem() -> None:
 
 
 def test_problem_values_are_in_the_contract() -> None:
+    # the contract's lists are generated from these registers (x-extensible-enum on the problem models)
     values = contract_values()
-    assert {p.uri for p in PROBLEM_TYPES} <= values["type"]
+    assert values["type"] == {p.uri for p in PROBLEM_TYPES}
     assert {p.uri for p in KIND_PROBLEMS.values()} <= values["type"]
-    assert set(SCHEMA_CODES.values()) | {"invalid", "invalid_type", "required"} <= values["field"]
+    assert values["code"] == set(PROBLEM_CODES)
+    assert values["field"] == set(FIELD_ERROR_CODES)
+    assert set(VALIDATION_CODES.values()) | {"invalid", "null_not_allowed"} <= values["field"]
 
 
 def test_values_outside_the_contract_are_reported() -> None:

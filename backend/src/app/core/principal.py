@@ -1,8 +1,8 @@
 """The signed-in user of the request being served (ADR fastapi-backend-stack D5: what modules need from auth goes
 through app.core).
 
-The auth module's middleware (app.modules.auth.dependencies) sets it from the session cookie before the contract is
-checked, so the contract's security check (app.http.contract) and the routes' access markers (app.http.access) see it.
+The auth module's middleware (app.modules.auth.dependencies) sets it from the session cookie before routing, so
+the routes' access markers (app.http.access), which app.http.route runs before anything else, see it.
 Services do not read it: a router passes the principal to a service explicitly.
 """
 

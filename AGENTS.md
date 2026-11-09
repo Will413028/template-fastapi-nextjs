@@ -6,7 +6,7 @@ Fullstack monorepo template with a FastAPI backend and a Next.js frontend. The f
 This repository is a template: `make new NAME=x DEST=<dir>` generates a project from it (`template/new_project.py`), dropping `template/`, `docs/plans/` and every block between template-only markers (the comment lines that open and close this paragraph), and replacing `README.md` with `template/derived/README.md`. A line that only makes sense in the template goes inside such a block; CI's generate job runs the checks that need no database on a generated project.
 <!-- <<< template-only -->
 
-The backend serves `GET /health`, `GET /health/ready` and every operation of the contract (accounts, sessions, the admin's user management and sign-in locks, and the items CRUD), with the `serve`, `migrate`, `healthcheck`, `seed-admin` and `recover-admin` commands (`make seed` creates the admin, `make recover-admin` gives an existing admin a new password); `backend/src/app/main.py` refuses to start when an operation has no route.
+The backend serves `GET /health`, `GET /health/ready` and every operation of the contract (accounts, sessions, the admin's user management and sign-in locks, and the items CRUD), with the `serve`, `migrate`, `healthcheck`, `seed-admin` and `recover-admin` commands (`make seed` creates the admin, `make recover-admin` gives an existing admin a new password); `backend/src/app/main.py` refuses to start when a route breaks the route check (`check_routes`).
 
 ## Verification
 
@@ -34,12 +34,12 @@ The backend is a modular monolith organized by feature. `backend/.importlinter` 
 | `app.main` | app factory and middleware assembly (`create_app`) | everything below except `app.migrations` |
 | `app.migrations` | Alembic environment, revisions and the schema metadata | everything below except `app.main` |
 | `app.modules.<name>` | one feature: `router.py`, `schemas.py`, `dependencies.py` (HTTP: routes, FastAPI dependencies, and any ASGI middleware `app.main` mounts for the module); `service.py`, or a `service/` package when it grows (business rules, owns the transaction); optional `repository.py` (complex queries); `models.py` (tables) | `app.http`, `app.core`; never another module |
-| `app.http` | HTTP helpers shared by routers (problem responses, request ids, rate limits, headers) | `app.core` |
+| `app.http` | HTTP helpers shared by routers (the `ApiRoute` route class, problem responses, request ids, rate limits, headers) | `app.core` |
 | `app.core` | settings, database session, pagination, clock, the authenticated principal | third-party packages only; no `fastapi` or `starlette` |
 
 - Inside a module the order is router > service > repository > models; every file in a module belongs to one of those layers.
 - `service`, `repository` and `models` do not import `fastapi` or `starlette`, directly or through another module; routers do not import `sqlalchemy`, a repository, models or `app.core.db` themselves (they call the service, which does).
-- Every `/api` route carries exactly one access marker from `app.http.access` (`PUBLIC`, `SIGNED_IN`) and matches a contract operation (method, path, path parameter names); `app.main` checks both at startup.
+- Every `/api` route is an `app.http.route.ApiRoute` (it checks access, the rate limit, the media type and the JSON before FastAPI reads the body), carries exactly one access marker from `app.http.access` (`PUBLIC`, `SIGNED_IN`, `ADMIN`), and takes a body model with `app.http.schemas.REQUEST_CONFIG`; `app.main` checks all three at startup.
 - Modules share nothing directly: what one needs from another goes through `app.core` (for example the principal auth's middleware sets), and a table refers to another module's table by a string foreign key such as `"users.id"`, without an ORM relationship.
 - Only `app.core.config` reads environment variables (ruff `TID251`).
 - No import cycles between sibling packages (`acyclic_siblings`).
@@ -54,7 +54,7 @@ The backend is a modular monolith organized by feature. `backend/.importlinter` 
 ## Monorepo Structure
 
 ```
-├── backend/                # FastAPI (modular monolith, uv), contract in backend/api/openapi.yaml
+├── backend/                # FastAPI (modular monolith, uv), contract generated into backend/api/openapi.json
 ├── frontend/               # Next.js 16 (App Router, TypeScript, Tailwind, shadcn/ui); deployed to Vercel
 ├── deploy/                 # PostgreSQL initdb scripts (DB roles)
 ├── docker-compose.yml      # VM stack (postgres + backend; cloudflared with --profile tunnel)
@@ -107,7 +107,7 @@ pnpm dev              # Start Next.js dev server (Turbopack)
 pnpm build            # Production build
 pnpm lint             # TypeScript check + Biome lint
 pnpm format           # Biome format
-pnpm gen:api          # Regenerate API types from backend/api/openapi.yaml
+pnpm gen:api          # Regenerate API types from backend/api/openapi.json
 ```
 
 ## Architecture
@@ -129,7 +129,4 @@ pnpm gen:api          # Regenerate API types from backend/api/openapi.yaml
 ## Conventions
 
 - Backend is Python 3.14 managed with `uv` (`backend/pyproject.toml`, `backend/uv.lock`); frontend uses `pnpm`. `scripts/` run on the same Python 3.14 through `uv run --no-project --python 3.14 python scripts/<name>.py` (lefthook, Makefiles and CI do), never the host `python3`.
-- The HTTP contract is moving to code-first: `make -C backend gen` writes `backend/api/openapi.json` from the routes and their `schemas.py` models, while the hand-written `backend/api/openapi.yaml` still validates every request and is what the frontend generates its types from (`pnpm gen:api`), so an API change goes into both.
-<!-- >>> template-only -->
-- The two contracts are compared with `docs/plans/2026-11-08-fastapi-code-first/contract_delta.py`, which must stay green until that plan moves request checks and the frontend's types to the generated contract.
-<!-- <<< template-only -->
+- The HTTP contract is generated: `make -C backend gen` writes `backend/api/openapi.json` from the routes and their `schemas.py` models (`gen-check` fails when it is stale), and the frontend generates its types from it (`pnpm gen:api`). Requests are checked by the routes' models and `app.http.route.ApiRoute`; tests check every response against the generated contract (`backend/tests/apitest.py` `checked_client`).

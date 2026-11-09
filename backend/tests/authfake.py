@@ -1,5 +1,5 @@
 """The real API app around a stand-in AuthService, for the HTTP behaviour of authentication that needs no database:
-the middleware, the contract's security check, the cookie and the access markers. What the service does with the
+the middleware, the route access checks, the cookie and the access markers. What the service does with the
 database is tested against PostgreSQL (test_auth_db.py)."""
 
 import dataclasses
@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING, override
 
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from apitest import contract, deps
+from apitest import deps
 from app.core.errors import AppError, Kind
 from app.core.principal import Principal, session_invalid
 from app.main import Modules, create_app
@@ -97,7 +97,7 @@ def fake_app(
     origin: OriginPolicy | None = None,
     cleanup_every: float = 3600.0,
 ) -> FastAPI:
-    base = deps(contract())
+    base = deps()
     return create_app(
         dataclasses.replace(
             base,

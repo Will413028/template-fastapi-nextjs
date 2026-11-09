@@ -4,7 +4,9 @@ A model's docstring and its fields' descriptions are the contract's text."""
 import uuid
 from typing import Annotated
 
-from pydantic import MISSING, AwareDatetime, BaseModel, ConfigDict, Field
+from pydantic import MISSING, AwareDatetime, BaseModel, Field
+
+from app.http.schemas import REQUEST_CONFIG
 
 _TITLE = Field(min_length=1, max_length=200, description="1 to 200 characters (code points).")
 _NEXT_CURSOR = Field(description="Cursor for the next page; null on the last page.")
@@ -25,14 +27,14 @@ class ItemPage(BaseModel):
 
 
 class CreateItemRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = REQUEST_CONFIG
 
     title: Annotated[str, _TITLE]
     description: str | MISSING | None = MISSING
 
 
 class ItemPatch(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = REQUEST_CONFIG
 
     title: Annotated[str | MISSING, _TITLE] = MISSING
     description: str | MISSING | None = MISSING

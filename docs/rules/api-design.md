@@ -1,16 +1,13 @@
 # API Design Rules
 
-本專案的 API 正從 contract-first 改為 code-first：過渡期 `backend/api/openapi.yaml`（OpenAPI 3.0.3）仍驗證每個 request、前端仍從它產生型別，`backend/api/openapi.json` 由 route 與 `schemas.py` 產生（見下方「契約是唯一來源」第一條）；HTTP 層在 `backend/src/app/modules/<m>/router.py`（共用的在 `backend/src/app/http/`），業務邏輯在同一模組的 service。決策來源見 [ADR api-and-auth-baseline](../adr/2026-10-18-api-and-auth-baseline.md) 與 [ADR FastAPI 版後端](../adr/2026-11-05-fastapi-backend-stack.md)。
+本專案的 API 契約是 code-first：`backend/api/openapi.json`（OpenAPI 3.1）由 route 與各模組的 `schemas.py` 產生，前端從它產生型別（見下方「契約是唯一來源」第一條）；HTTP 層在 `backend/src/app/modules/<m>/router.py`（共用的在 `backend/src/app/http/`），業務邏輯在同一模組的 service。決策來源見 [ADR api-and-auth-baseline](../adr/2026-10-18-api-and-auth-baseline.md) 與 [ADR FastAPI 版後端](../adr/2026-11-05-fastapi-backend-stack.md)。
 
 ## 契約是唯一來源
 
-<!-- >>> template-only -->
-- 兩份契約的差異以 `docs/plans/2026-11-08-fastapi-code-first/contract_delta.py` 核對，直到該計畫把 request 檢查與前端型別都改到產生的契約。
-<!-- <<< template-only -->
-- 過渡期：新增或修改 API 要同時改 `backend/api/openapi.yaml`（仍驗證每個 request，前端仍從它產生型別）與各模組的 `schemas.py`、route 宣告，再重新生成：後端 `make -C backend gen`（`backend/api/openapi.json`，**NEVER** 手改），前端 `pnpm gen:api`（`frontend/src/lib/api/schema.d.ts`）。CI 以 `make -C backend gen-check` 與 `pnpm gen:api:check` 擋下沒有重新生成的變更（ADR api-and-auth-baseline D2）。
-- 長度、格式、pattern、enum 只寫在契約裡。後端由 validator（`backend/src/app/http/validation.py` 的 `ContractValidation`，openapi-core 依契約檢查每個 `/api/` request）執行，前端取用生成的型別。正式環境只驗 request；response 由測試對照契約（`backend/tests/apitest.py` 的 `checked_client`）。**NEVER** 在 handler、service 或 zod schema 再寫一次相同的限制（ADR api-and-auth-baseline D6）。
+- 新增或修改 API 改的是各模組的 `schemas.py` 與 route 宣告，再重新生成：後端 `make -C backend gen`（`backend/api/openapi.json`，**NEVER** 手改），前端 `pnpm gen:api`（`frontend/src/lib/api/schema.d.ts`）。CI 以 `make -C backend gen-check` 與 `pnpm gen:api:check` 擋下沒有重新生成的變更（ADR api-and-auth-baseline D2）。
+- 長度、格式、pattern、enum 只寫在 `schemas.py` 的 model（`Field(min_length=...)` 等），契約由它產生。後端由 route 的 model 與 `app.http.route.ApiRoute` 檢查每個 request（錯誤順序見「認證」），前端取用生成的型別。正式環境只驗 request；response 由測試對照產生的契約（`backend/tests/apitest.py` 的 `checked_client`）。**NEVER** 在 handler、service 或 zod schema 再寫一次相同的限制（ADR api-and-auth-baseline D6）。
 - 契約表達不了的規則（例如密碼在常見密碼清單內、帳號已被使用）才由 service 檢查，以 `AppError` 回報。
-- request body 的 schema 加 `additionalProperties: false`，多送的欄位回 422 `additional_property`。
+- request body 的 model 用 `app.http.schemas.REQUEST_CONFIG`（`extra="forbid"`、`strict=True`；啟動檢查會擋）：多送的欄位回 422 `additional_property`，型別不符（例如布林欄位送 `"true"`）回 422 `invalid_type`，不做轉換。pattern 只用明確的字元類（`[A-Za-z0-9]`，不用 `\d`、`\w`）：pydantic-core 的 regex 與 ECMA-262 在這些縮寫上不同。
 - DB 的 CHECK 是第二道防線，數值必須和契約一致（見 `database-design.md`）。
 
 ```typescript
@@ -76,7 +73,7 @@ return gen.CreateItem201JSONResponse{Body: toItem(it), Headers: gen.CreateItem20
 - `cursor` 是 opaque 字串，由 `app.core.pagination.encode_cursor` 產生（最後一筆 id 的 base64url），client 原樣傳回，**NEVER** 自行組或解析。不合法的 cursor 回 422。
 - 不提供總數（不跑 `COUNT(*)`）。排序以 UUIDv7 的 `id DESC`（等於建立時間新到舊），查詢多取一筆判斷是否有下一頁：`page_rows`、`trim_page`（`app.core.pagination`）。
 - 需要頁碼的後台表格才另外用 offset 實作，且只限該 endpoint（ADR api-and-auth-baseline D2 Rationale）。
-- 契約的 `default` 不會被 validator 填入，handler 的預設值要和契約一致並有測試（`test_the_default_limit_is_the_contracts`，`test_pagination.py`）。
+- 契約的 `default` 由 route 參數的預設值產生，list operation 一律寫 `limit: Limit = DEFAULT_LIMIT`，有測試（`test_the_default_limit_is_the_contracts`，`test_pagination.py`）。
 
 ## 部分更新（PATCH）
 
@@ -134,7 +131,7 @@ raise HTTPException(status_code=409)
 - Session 是 opaque token，只放在 `HttpOnly; Secure; SameSite=Lax` 的 `__Host-session` cookie（不帶 Domain；`COOKIE_SECURE=false` 的本機 http 開發改名為 `session`），DB 只存 SHA-256（ADR api-and-auth-baseline D4）。
 - 不接受 Bearer token，也不把 token 放進 response body 或 JS 讀得到的地方（ADR api-and-auth-baseline D4）。
 - 整個 app 外層包 `app.http.cross_origin.CrossOriginMiddleware`，跨來源的狀態變更請求回 403 `cross_origin_request`：看 `Sec-Fetch-Site`，沒有時比對 `Origin` 與 `APP_ORIGIN`（ADR api-and-auth-baseline D5；比對 `APP_ORIGIN` 而不是 `Host` 是因為 ADR vercel-rewrite-and-cloudflare-tunnel D1 的 rewrite）。
-- 需要登入的 operation 由契約的 `security: sessionCookie` 宣告；未登入由 validator 在檢查參數與 body 之前回 401。「登入」指 `app.modules.auth.dependencies.AuthenticateMiddleware` 驗過 session，不是 cookie 存在（`app.http.contract` 的 security provider）。只有登入、註冊、登出這類操作在契約寫 `security: []`。
+- 每個 route 用 `app.http.access` 的 marker 標出誰能呼叫（`PUBLIC`、`SIGNED_IN`、`ADMIN`），契約的 `security` 由 marker 產生。`app.http.route.ApiRoute` 在 FastAPI 讀 body 之前依序檢查：access（401 未登入、403 角色不符）→ 限流（429，每個打到的請求都扣額度）→ Content-Type（415；PATCH 的 415 帶 `Accept-Patch`）→ 嚴格 JSON（400），之後才是參數與 body 的 422；在它之前是路由的 404/405，再之前是 body 上限 413（在路由之前讀 body，未定義的路徑也是）。整體順序 413 > 404/405 > 401/403 > 429 > 415 > 400 > 422。「登入」指 `app.modules.auth.dependencies.AuthenticateMiddleware` 驗過 session，不是 cookie 存在。只有登入、註冊、登出這類操作用 `PUBLIC`。
 - 登入一律發新 token。
 
 ### Session 撤銷（新增功能必須遵守）
@@ -147,13 +144,13 @@ raise HTTPException(status_code=409)
 - role 只有 `admin` 和 `user`（`app.modules.auth.service` 的 `ROLE_ADMIN`、`ROLE_USER`），註冊預設 `user`，admin 只能用 `seed-admin` 建立（ADR api-and-auth-baseline D7）。
 - 使用者擁有的資源，**每個查詢**都帶 owner 條件（`.where(Item.id == item_id, Item.owner_id == caller.id)`）；別人的資源回 404，不回 403，不透露它存在（`test_another_users_item_is_not_found_like_a_missing_one`，`test_items_db.py`）。
 - UPDATE 與 DELETE 回報影響的列（`.returning(...)` 加 `one_or_none()`，或結果的 `rowcount`），0 列回 404，不可靜默成功。
-- 每個 route 都要剛好帶一個 `app.http.access` 的存取標記，寫明誰能呼叫：`dependencies=[PUBLIC]`，或用 `SIGNED_IN`／`SignedIn` 參數、`ADMIN`／`Admin`；缺標記、多標記、或「公開」與契約的 `security: []` 不一致時 server 不會啟動（`app/main.py`、`test_routes.py`）。admin 的 operation 在 route 執行前回 403 `insufficient_role`（`app/http/access.py` 的 `admin`）。
+- 每個 route 都要剛好帶一個 `app.http.access` 的存取標記，寫明誰能呼叫：`dependencies=[PUBLIC]`，或用 `SIGNED_IN`／`SignedIn` 參數、`ADMIN`／`Admin`；缺標記、多標記、route 不是 `ApiRoute`、或標記由 `include_router` 加上時 server 不會啟動（`app/main.py`、`test_routes.py`）；契約的 `security` 由標記產生（`test_openapi.py`）。admin 的 operation 在 route 執行前回 403 `insufficient_role`（`app/http/access.py` 的 `admin`）。
 - 授權分三處，依「判斷需要什麼」選一處：只看是否登入的寫在契約的 `security`；只看 role 的寫在 route 的存取標記；要看呼叫者與資源的關係的（例如 `GET /api/users/{id}` 的「本人或 admin」）寫在 service 或查詢條件，非授權者回 404（`AuthService.user`、`test_another_users_account_is_not_found_like_a_missing_one`）。
 - **NEVER** 先查出資源再在 handler 比對 owner：條件必須在 SQL 裡。
 
 ## 限流
 
-- per-IP 限流以 route 套用：在 route 的 `dependencies` 加 `app.http.ratelimit.RATE_LIMITED`（目前是 `createUser`、`createSession`），次數由 `AUTH_RATE_LIMIT_PER_MIN` 設定。它在契約驗證之後才執行，被驗證擋下的請求不扣額度。
+- per-IP 限流以 route 套用：在 route 的 `dependencies` 加 `app.http.ratelimit.RATE_LIMITED`（目前是 `createUser`、`createSession`），次數由 `AUTH_RATE_LIMIT_PER_MIN` 設定。它是 `ApiRoute` 讀的 marker：在 access 檢查之後、內容檢查之前扣額度，所以被 415、400、422 擋下的請求也算（Rails `rate_limit`、DRF throttle、ASP.NET rate limiter 都在解析前計數；猜密碼另由 `sign_in_throttles` 依帳號與來源節流）。
 - 超限回 429 `/problems/rate-limited` 加 `Retry-After`（`Kind.RATE_LIMITED` 的 `retry_after`）。
 - 登入另有依「帳號＋來源」的節流（`sign_in_throttles`，來源是 `limit_key` 的位址），不論帳號是否存在都記錄（ADR api-and-auth-baseline D6、ADR account-abuse-and-lifecycle D4），加上只擋陌生來源的帳號層級上限（`auth/service` 的 `UNTRUSTED_FAILURE_LIMIT`）。
 

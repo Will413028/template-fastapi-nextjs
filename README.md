@@ -37,7 +37,7 @@ wait), secret scanning and push protection. The checks in `.github/workflows/` r
 ## Project Structure
 
 ```
-├── backend/                FastAPI app (contract in backend/api/openapi.yaml)
+├── backend/                FastAPI app (contract generated into backend/api/openapi.json)
 ├── frontend/               Next.js 16 (React 19, TypeScript, Tailwind v4)
 ├── deploy/                 PostgreSQL initdb scripts
 ├── docker-compose.yml      VM stack (cloudflared with --profile tunnel)

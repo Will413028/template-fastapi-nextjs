@@ -1,108 +1,30 @@
-"""The contract's shared pieces: the problem bodies every error response carries, the problem responses and headers
-operations declare, and the pagination parameters every list operation takes.
+"""The contract's shared pieces: the problem responses and headers operations declare, and the pagination parameters
+every list operation takes. The problem bodies themselves are app.http.problems' models.
 
-The contract is generated from the routes and these models (app.main.build_openapi, ADR fastapi-backend-stack). A
-model's docstring and its fields' descriptions are the contract's text: write them for the API's clients.
+The contract is generated from the routes and the modules' models (app.main.build_openapi, ADR fastapi-backend-stack).
+A model's docstring and its fields' descriptions are the contract's text: write them for the API's clients.
 """
 
+import re
+import uuid
 from http import HTTPStatus
 from typing import TYPE_CHECKING, Annotated, Any
 
 from fastapi import Query
-from pydantic import MISSING, BaseModel, Field
+from pydantic import BeforeValidator, ConfigDict
+from pydantic_core import PydanticCustomError
 
 from app.core.pagination import MAX_LIMIT
-from app.http.problems import PROBLEM_CONTENT_TYPE, PROBLEM_TYPES
+from app.http.problems import PROBLEM_CONTENT_TYPE, Problem, ValidationProblem
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-# Every problem code the API sends. The lists grow (x-extensible-enum, ADR api-and-auth-baseline D3): adding a value
-# is not a breaking change, renaming or removing one is. While openapi.yaml validates requests, tests/apitest.py
-# fails a test whose response sends a value openapi.yaml does not list.
-PROBLEM_CODES = (
-    "account_taken",
-    "invalid_credentials",
-    "login_throttled",
-    "last_admin",
-    "reauthentication_required",
-    "session_invalid",
-    "insufficient_role",
-    "cross_origin_request",
-)
-
-# Every FieldError code: the failed contract rules (app.http.validation) and the business rules.
-FIELD_ERROR_CODES = (
-    "required",
-    "too_short",
-    "too_long",
-    "pattern",
-    "enum",
-    "format",
-    "out_of_range",
-    "invalid_type",
-    "null_not_allowed",
-    "additional_property",
-    "invalid",
-    "password_too_common",
-)
-
-_GROWS = "The list grows (x-extensible-enum), so clients translate the values they know and fall back for the rest."
-_NOT_PARSED = "Human-readable explanation for developers; clients must not parse it."
-
-
-class Problem(BaseModel):
-    """RFC 9457 problem details."""
-
-    type: Annotated[
-        str,
-        Field(
-            description=f"Fixed per kind of problem. {_GROWS}",
-            examples=["/problems/not-found"],
-            json_schema_extra={"format": "uri-reference", "x-extensible-enum": [p.uri for p in PROBLEM_TYPES]},
-        ),
-    ]
-    title: Annotated[str, Field(description="Fixed per `type`.")]
-    status: Annotated[int, Field(description="The HTTP status code.")]
-    detail: Annotated[str | MISSING, Field(description=_NOT_PARSED)] = MISSING
-    code: Annotated[
-        str | MISSING,
-        Field(
-            description=f"Stable machine-readable code refining `type`. {_GROWS}",
-            json_schema_extra={"x-extensible-enum": list(PROBLEM_CODES)},
-        ),
-    ] = MISSING
-    request_id: Annotated[
-        str | MISSING, Field(description="The request's `X-Request-ID`, for matching a report with the server logs.")
-    ] = MISSING
-
-
-class FieldError(BaseModel):
-    pointer: Annotated[
-        str,
-        Field(
-            description="JSON Pointer (RFC 6901) to the invalid value in the request body, or `/<name>` for a query or "
-            "path parameter. Empty when the whole body is missing.",
-            examples=["/title"],
-        ),
-    ]
-    code: Annotated[
-        str,
-        Field(
-            description="Stable machine-readable code: a failed contract rule, or a business rule such as "
-            f"`password_too_common`. {_GROWS}",
-            examples=["too_short"],
-            json_schema_extra={"x-extensible-enum": list(FIELD_ERROR_CODES)},
-        ),
-    ]
-    detail: Annotated[str, Field(description=_NOT_PARSED)]
-
-
-class ValidationProblem(Problem):
-    """A problem with type `/problems/validation`, listing each invalid input."""
-
-    errors: list[FieldError]
-
+# Every request body model's config: a property the model does not declare is a 422 `additional_property`, and a value
+# of the wrong JSON type a 422 `invalid_type` instead of being converted ("true" for a boolean, "3" for an integer), as
+# the contract's JSON Schema says. Strict mode would refuse a UUID or a date-time sent as a string; give such a field
+# Field(strict=False).
+REQUEST_CONFIG = ConfigDict(extra="forbid", strict=True)
 
 # Each problem status an operation can declare, with its description. app.main moves the schema to
 # application/problem+json (FastAPI writes it under the operation's success media type).
@@ -139,8 +61,8 @@ CLEAR_SESSION_COOKIE = {
 
 
 def problems(*statuses: int) -> dict[int | str, dict[str, Any]]:
-    """The problem responses of an operation, for its route's `responses=`. Every operation with a parameter or a body
-    declares 422; otherwise FastAPI adds its own HTTPValidationError schema."""
+    """The problem responses of an operation: its route's `responses=` lists the ones its own code and the
+    middleware send (404, 409, a cross-origin 403, 500), and app.http.route.ApiRoute adds the ones it checks."""
     responses: dict[int | str, dict[str, Any]] = {}
     for status in statuses:
         description, model = _PROBLEMS[status]
@@ -164,3 +86,18 @@ Limit = Annotated[int, Query(ge=1, le=MAX_LIMIT, description="Page size.")]
 Cursor = Annotated[
     str | None, Query(description="Opaque cursor from a previous page's `next_cursor`; omit for the first page.")
 ]
+
+# A UUID as the contract's `format: uuid` reads it: the hyphenated form. Pydantic alone also takes it without hyphens,
+# in braces or as a urn:uuid: URN; those stay a 422 `format` (uuid_parsing in app.http.errors) as they always were.
+_HYPHENATED_UUID = re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}")
+
+
+def _hyphenated(value: object) -> object:
+    if isinstance(value, str) and not _HYPHENATED_UUID.fullmatch(value):
+        kind, msg = "uuid_parsing", "Input should be a hyphenated UUID"
+        raise PydanticCustomError(kind, msg)
+    return value
+
+
+# a path parameter that names a resource: `id: Id`
+Id = Annotated[uuid.UUID, BeforeValidator(_hyphenated)]

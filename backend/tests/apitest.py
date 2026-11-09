@@ -1,9 +1,10 @@
-"""Helpers for HTTP tests: the contracts, a stub app, and a test client that checks every response it receives.
+"""Helpers for HTTP tests: a stub app, and a test client that checks every response it receives.
 
 Clients translate a problem by its type and codes, and the frontend's type check makes its messages cover the values
 the contract lists in x-extensible-enum (docs/adr/2026-10-18-api-and-auth-baseline.md D3). So every problem the server
-sends must use listed values, and every response to a contract operation must match the contract: production
-validates only requests (docs/adr/2026-11-05-fastapi-backend-stack.md D1), so these tests are where responses are.
+sends must use listed values, and every response to an operation must match the contract the app generates from its
+routes: the route models check success bodies only, not problem bodies, undeclared statuses or
+media types, so these tests are where those are checked.
 """
 
 import asyncio
@@ -11,18 +12,23 @@ import dataclasses
 import functools
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Annotated, Any
 
-from fastapi import FastAPI, Request, Response
+from fastapi import APIRouter, Body, FastAPI, Query, Request, Response
 from fastapi.responses import StreamingResponse
 from fastapi.testclient import TestClient
+from openapi_core import Config, OpenAPI
 from openapi_core.templating.paths.exceptions import PathError
-from starlette.datastructures import Headers, QueryParams
+from openapi_core.testing import MockRequest, MockResponse
+from starlette.routing import Match
 
-from app.http.contract import Contract, ContractRequest
+from app.http.access import PUBLIC
 from app.http.origin import OriginPolicy
-from app.http.problems import PROBLEM_CONTENT_TYPE
-from app.main import Deps, create_app
+from app.http.problems import PROBLEM_CONTENT_TYPE, Problem
+from app.http.route import ApiRoute
+from app.http.schemas import MERGE_PATCH, Id
+from app.main import Deps, build_openapi, create_app
+from widget_schemas import Widget, WidgetPage
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
@@ -32,10 +38,8 @@ if TYPE_CHECKING:
 
     from app.http.ratelimit import IPLimiter
 
-CONTRACT_PATH = Path(__file__).parents[1] / "api" / "openapi.yaml"
 # the contract generated from the routes (make gen)
 GENERATED_CONTRACT_PATH = Path(__file__).parents[1] / "api" / "openapi.json"
-TEST_CONTRACT_PATH = Path(__file__).parent / "testdata" / "test-openapi.yaml"
 
 # MODE=dev without ORIGIN_SECRET: a request without X-Origin-Secret is let through (app.http.origin).
 DEV_ORIGIN = OriginPolicy(secrets=(), required=False)
@@ -48,27 +52,16 @@ APP_ORIGIN = "https://app.test"
 
 
 @functools.cache
-def contract() -> Contract:
-    return Contract.load(CONTRACT_PATH)
-
-
-@functools.cache
-def stub_contract() -> Contract:
-    return Contract.load(TEST_CONTRACT_PATH)
-
-
-@functools.cache
 def contract_values() -> dict[str, frozenset[str]]:
-    """The x-extensible-enum list of each problem property (type, code, field) in the real contract."""
-    schemas = contract().openapi.spec / "components" / "schemas"
+    """The x-extensible-enum list of each problem property (type, code, field) in the generated contract."""
+    schemas = build_openapi()["components"]["schemas"]
     values: dict[str, frozenset[str]] = {}
     for key, schema, prop in (
         ("type", "Problem", "type"),
         ("code", "Problem", "code"),
         ("field", "FieldError", "code"),
     ):
-        listed: list[str] = (schemas / schema / "properties" / prop).read_value()["x-extensible-enum"]
-        values[key] = frozenset(listed)
+        values[key] = frozenset(schemas[schema]["properties"][prop]["x-extensible-enum"])
     return values
 
 
@@ -122,45 +115,70 @@ class BoomError(Exception):
     """An unexpected failure inside an operation."""
 
 
-def deps(contract: Contract) -> Deps:
+def deps() -> Deps:
     """Deps over a FakeDatabase with the test defaults; dataclasses.replace changes a field."""
-    return Deps(database=FakeDatabase(), contract=contract, origin=DEV_ORIGIN, app_origin=APP_ORIGIN)
+    return Deps(database=FakeDatabase(), origin=DEV_ORIGIN, app_origin=APP_ORIGIN)
+
+
+# Any problem, for the operations tests add: what they answer is up to each test.
+_ANY_PROBLEM: dict[int | str, dict[str, Any]] = {
+    "default": {"description": "Any problem.", "model": Problem, "content": {PROBLEM_CONTENT_TYPE: {}}}
+}
 
 
 def bare_app(
     *, origin: OriginPolicy = DEV_ORIGIN, limiter: IPLimiter | None = None, app_origin: str = APP_ORIGIN
 ) -> FastAPI:
-    """The full app around tests/testdata/test-openapi.yaml without operations; a test adds the one it needs."""
-    return create_app(dataclasses.replace(deps(stub_contract()), origin=origin, limiter=limiter, app_origin=app_origin))
+    """The full app without the modules; a test adds the operation it needs with @app.get and the like, which makes
+    it an ApiRoute that may answer any problem."""
+    app = create_app(dataclasses.replace(deps(), origin=origin, limiter=limiter, app_origin=app_origin))
+    app.router.route_class = ApiRoute
+    app.router.responses = dict(_ANY_PROBLEM)
+    return app
 
 
-def stub_app(*, docs: bool = False, origin: OriginPolicy = DEV_ORIGIN) -> FastAPI:
-    """The full app around tests/testdata/test-openapi.yaml with stub operations: POST /api/widgets echoes the body it
-    receives with 201, PATCH /api/widgets/{id} echoes it with 200, GET /api/fail raises, the other operations answer
-    200."""
-    app = create_app(dataclasses.replace(deps(stub_contract()), origin=origin, docs=docs))
+def _widgets() -> APIRouter:
+    """POST /api/widgets echoes the body it receives with 201, PATCH /api/widgets/{widget_id} echoes it with 200, GET
+    /api/fail raises, the others answer 200. Like the Go version's test contract, each may answer any problem: the
+    middleware's (origin guard, CSRF) included."""
+    router = APIRouter(prefix="/api", route_class=ApiRoute, dependencies=[PUBLIC], responses=dict(_ANY_PROBLEM))
 
-    @app.post("/api/widgets")
-    async def create_widget(request: Request) -> Response:
-        return Response(await request.body(), status_code=201)
+    @router.post("/widgets", status_code=201)
+    async def create_widget(body: Widget, request: Request) -> Response:
+        del body
+        return Response(await request.body(), status_code=201, media_type="application/json")
 
-    @app.patch("/api/widgets/{widget_id}")
-    async def update_widget(request: Request) -> Response:
-        return Response(await request.body())
+    @router.patch("/widgets/{widget_id}")
+    async def update_widget(
+        widget_id: Id, body: Annotated[Widget, Body(media_type=MERGE_PATCH)], request: Request
+    ) -> Response:
+        del widget_id, body
+        return Response(await request.body(), media_type="application/json")
 
-    @app.get("/api/widgets")
-    async def list_widgets() -> Response:
-        return Response()
+    @router.get("/widgets")
+    async def list_widgets(
+        limit: Annotated[int, Query(ge=1, le=100)] = 20, cursor: Annotated[str | None, Query(min_length=1)] = None
+    ) -> WidgetPage:
+        del limit, cursor
+        return WidgetPage(widgets=[])
 
-    @app.get("/api/widgets/{widget_id}")
-    async def get_widget() -> Response:
-        return Response()
+    @router.get("/widgets/{widget_id}")
+    async def get_widget(widget_id: Id) -> Widget:
+        del widget_id
+        return Widget(name="abc")
 
-    @app.get("/api/fail")
-    async def fail() -> Response:
+    @router.get("/fail")
+    async def fail() -> Widget:
         msg = "boom"
         raise BoomError(msg)
 
+    return router
+
+
+def stub_app(*, docs: bool = False, origin: OriginPolicy = DEV_ORIGIN) -> FastAPI:
+    """The full app without the modules, with the stub widget operations (_widgets), all public."""
+    app = create_app(dataclasses.replace(deps(), origin=origin, docs=docs))
+    app.include_router(_widgets())
     return app
 
 
@@ -178,11 +196,10 @@ def stream_then_fail(app: FastAPI, path: str) -> None:
         return StreamingResponse(failing_stream(), media_type="application/json")
 
 
-def checked_client(app: FastAPI, against: Contract | None = None, *, peer: tuple[str, int] = PEER) -> TestClient:
+def checked_client(app: FastAPI, *, peer: tuple[str, int] = PEER) -> TestClient:
     """A test client that fails the test when a problem uses values outside the contract's enums, or when a response
-    to an operation of `against` (the test contract by default) does not match it. peer is the address the app sees
-    the connection come from."""
-    spec = against or stub_contract()
+    to one of app's operations does not match the contract app generates. peer is the address the app sees the
+    connection come from."""
     client = TestClient(app, client=peer)
 
     def check(response: httpx2.Response) -> None:
@@ -190,44 +207,45 @@ def checked_client(app: FastAPI, against: Contract | None = None, *, peer: tuple
         if response.headers.get("content-type") == PROBLEM_CONTENT_TYPE:
             bad = values_outside_contract(response.content)
             assert not bad, f"{response.request.method} {response.request.url.path} sent {bad}"
-        request = response.request
-        contract_request = ContractRequest(
-            method=request.method,
-            path=request.url.path,
-            query=QueryParams(request.url.query.decode()),
-            headers=Headers(raw=list(request.headers.raw)),
-            body=request.content,
-        )
+        method, path = response.request.method, response.request.url.path
+        if not _routed(app, method, path):
+            return  # an undefined route: openapi-core would match /api/widgets/ to /api/widgets/{id}
+        request = MockRequest("http://testserver", method, path)
         try:
-            spec.openapi.validate_response(contract_request, ContractResponse(response))
+            _contract(app).validate_response(
+                request,
+                MockResponse(
+                    response.content,
+                    status_code=response.status_code,
+                    headers=dict(response.headers),
+                    content_type=response.headers.get("content-type", ""),
+                ),
+            )
         except PathError:
-            return  # not a contract operation (health, docs, an undefined route)
+            return  # not an operation (health, docs)
 
     client.event_hooks["response"] = [check]
     return client
 
 
-class ContractResponse:
-    """httpx's response as openapi-core's Response protocol."""
+def _routed(app: FastAPI, method: str, path: str) -> bool:
+    """Whether one of app's routes takes method and path, as Starlette's routing decides."""
+    scope: Scope = {"type": "http", "method": method, "path": path, "root_path": ""}
+    return any(route.matches(scope)[0] is Match.FULL for route in app.router.routes)
 
-    def __init__(self, response: httpx2.Response) -> None:
-        self._response = response
 
-    @property
-    def status_code(self) -> int:
-        return self._response.status_code
+def _strict_json(value: bytes, **_parameters: str) -> object:
+    return json.loads(value)
 
-    @property
-    def content_type(self) -> str:
-        return self._response.headers.get("content-type", "")
 
-    @property
-    def headers(self) -> Headers:
-        return Headers(raw=list(self._response.headers.raw))
-
-    @property
-    def data(self) -> bytes:
-        return self._response.content
+def _contract(app: FastAPI) -> OpenAPI:
+    """app's generated contract for openapi-core, built once per app, after the test added its routes."""
+    spec: OpenAPI | None = getattr(app.state, "checked_contract", None)
+    if spec is None:
+        # openapi-core reads +json media types other than application/json as raw bytes otherwise
+        config = Config(extra_media_type_deserializers=dict.fromkeys((PROBLEM_CONTENT_TYPE, MERGE_PATCH), _strict_json))
+        spec = app.state.checked_contract = OpenAPI.from_dict(app.openapi(), config=config)
+    return spec
 
 
 EMPTY_BODY: Message = {"type": "http.request", "body": b"", "more_body": False}

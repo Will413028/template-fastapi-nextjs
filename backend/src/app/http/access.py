@@ -1,9 +1,10 @@
 """Who may call an operation (docs/adr/2026-10-18-api-and-auth-baseline.md D7, ADR fastapi-backend-stack D5).
 
-Every /api route carries exactly one access marker, and app.main checks at startup that it does and that PUBLIC is
-exactly the operations the contract gives `security: []` (check_routes): a new operation's access is a decision,
-not a default. The contract's security already refuses an anonymous call before validation (app.http.contract); the
-marker is the route's own statement of it, and SIGNED_IN gives the route the principal.
+Every /api route carries exactly one access marker, and app.main checks at startup that it does (check_routes): a new
+operation's access is a decision, not a default. The contract's security follows the markers (SIGNED_IN and ADMIN
+declare the session cookie, PUBLIC nothing). app.http.route.ApiRoute runs a route's marker before FastAPI reads the
+body, so an anonymous or unauthorized caller is refused before anything about its request is checked; SIGNED_IN and
+ADMIN then give the route the principal.
 
     @router.get("/items/{id}")
     async def get_item(id: uuid.UUID, principal: SignedIn) -> Item: ...
@@ -53,8 +54,8 @@ async def public() -> None:
 
 
 async def signed_in(_: _Documented = None) -> Principal:
-    """The marker of an operation that needs a session; returns the signed-in user. The contract check refuses an
-    anonymous request before it gets here, so a missing principal means the route and the contract disagree."""
+    """The marker of an operation that needs a session; returns the signed-in user. Without a valid session (the
+    middleware found none, or the cookie is stale or forged) a 401 with code session_invalid."""
     principal = current_principal()
     if principal is None:
         raise session_invalid()

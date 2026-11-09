@@ -24,7 +24,7 @@
 4. backend → PostgreSQL：用 app 角色，只有 DML 權限（`deploy/postgres/initdb/10-roles.sh`、`backend/src/app/cli/migrate.py`）。
 5. backend → Have I Been Pwned range API：只在 `PASSWORD_HIBP_CHECK=true` 時（`backend/src/app/core/hibp.py`；`serve`、`seed-admin`、`recover-admin` 都讀這個設定）。
 
-**入口**（`backend/api/openapi.yaml` 的 operation；每個 route 用 `http/access.py` 的 `PUBLIC` 或 `SIGNED_IN` 標出誰能呼叫，`backend/src/app/main.py` 在啟動時與契約比對）
+**入口**（`backend/api/openapi.json` 的 operation，由 route 產生；每個 route 用 `http/access.py` 的 `PUBLIC`、`SIGNED_IN` 或 `ADMIN` 標出誰能呼叫，`backend/src/app/main.py` 在啟動時檢查每個 route 剛好一個）
 
 | operationId | Route | 誰能呼叫 |
 |---|---|---|
@@ -48,7 +48,7 @@
 | 猜 session token | `secrets.token_urlsafe(32)` 產生的 256-bit token（`auth/service/__init__.py`）。測試：`test_create_user_sets_the_session_cookie` | 已緩解 |
 | Session fixation | 每次登入都發新 token，並刪掉請求帶來的舊 token。測試：`test_sign_in_issues_a_new_token_and_ends_the_one_the_request_carried` | 已緩解 |
 | 登出、停用或過期後重用 token | 每個請求都重讀 session 與使用者；idle 預設 1 天、絕對期限 7 天；停用會刪掉該使用者所有 session；使用者可列出自己的 session、撤銷其中一個或全部登出（`auth/service/__init__.py` `revoke_session`、`sign_out_all`）。測試：`test_session_idle_expiry`、`test_session_absolute_expiry`、`test_sign_out_ends_only_that_session`、`test_me_for_a_disabled_or_deleted_account`、`test_delete_session`、`test_delete_all_sessions`、`test_list_sessions_excludes_expired`（`test_auth_db.py`）、`test_an_admin_disables_a_user_and_ends_their_sessions`（`test_auth_db.py`，`auth/service/__init__.py` `set_disabled`） | 已緩解 |
-| 用 header 代替 cookie 送 token | 只讀 cookie（`auth/dependencies.py` `AuthenticateMiddleware`）；契約 security 的檢查看這個 middleware 驗過的 principal，不看 cookie 存不存在（`http/contract.py`）。測試：`test_only_the_cookie_authenticates`、`test_an_invalid_cookie_with_an_invalid_body_is_unauthenticated_not_invalid`（`test_auth_http.py`） | 已緩解 |
+| 用 header 代替 cookie 送 token | 只讀 cookie（`auth/dependencies.py` `AuthenticateMiddleware`）；存取標記看這個 middleware 驗過的 principal，不看 cookie 存不存在（`http/access.py`）。測試：`test_only_the_cookie_authenticates`、`test_an_invalid_cookie_with_an_invalid_body_is_unauthenticated_not_invalid`（`test_auth_http.py`） | 已緩解 |
 | Client 偽造位址規避每 IP 限流 | 只在請求帶相符的 `X-Origin-Secret` 時採信 `X-Real-IP`，其他一律用連線來源位址；`X-Forwarded-For` 從不採信（`backend/src/app/http/origin.py`）。測試：`test_rate_limit_ignores_x_real_ip_without_the_secret`、`test_rate_limit_per_ip_behind_a_verified_origin` | 來源密鑰沒外洩時已緩解；正式路徑上 `X-Real-IP` 是否真是使用者位址列在部署文件的第一次部署檢查清單 |
 | 被停用的帳號登入 | 回應與密碼錯誤相同的 `invalid_credentials`。測試：`test_a_disabled_account_signs_in_like_a_wrong_password` | 已緩解 |
 
@@ -93,19 +93,19 @@
 | 威脅 | 程式碼裡的緩解 | 狀態 |
 |---|---|---|
 | 大量雜湊耗盡記憶體或 CPU | 雜湊在專用的執行緒池跑，同時最多 `os.process_cpu_count()` 個；等待中的請求被取消時，還沒開始的雜湊一起取消，已開始的跑完才釋放名額（`auth/service/passwords.py`）。測試：`test_concurrent_hashes_are_bounded`、`test_a_cancelled_waiter_does_not_free_a_running_slot` | 已緩解。uvicorn 在 client 斷線時不取消請求，所以排隊中的雜湊照樣會算：接受；出現雜湊排隊造成的延遲時，加排隊上限並回 503 |
-| 過大或過慢的請求 | body 上限 1 MiB，沒宣告長度的也在讀到超過時回 413（`http/validation.py` `MAX_BODY_BYTES`）。測試：`test_body_over_the_limit`（`test_validation.py`）。uvicorn 沒有讀取 header 的逾時；正式環境的請求都先經過 Vercel 與 Cloudflare，慢速傳送 header 的連線到不了 backend（推論，未實測） | 已緩解（body）；header 逾時靠前面兩層 |
+| 過大或過慢的請求 | body 上限 1 MiB，沒宣告長度的也在讀到超過時回 413（`http/body_limit.py` `MAX_BODY_BYTES`，在路由之前）。測試：`test_body_over_the_limit`（`test_validation.py`）。uvicorn 沒有讀取 header 的逾時；正式環境的請求都先經過 Vercel 與 Cloudflare，慢速傳送 header 的連線到不了 backend（推論，未實測） | 已緩解（body）；header 逾時靠前面兩層 |
 | 故意登入失敗把受害者鎖在門外 | 節流以「帳號＋來源」為單位，攻擊者的失敗只讓自己的來源等待；帳號層級的鎖只擋沒有該帳號裝置 cookie 的來源，本人曾登入過的瀏覽器照常登入（OWASP「Slow Down Online Guessing Attacks with Device Cookies」）；admin 可查看與解鎖（`GET`／`DELETE /api/users/{id}/sign-in-lock`，寫入稽核）。全部登出、停用、救援時忘掉該帳號的裝置。測試：`test_untrusted_clients_are_locked_but_a_trusted_device_is_not`、`test_a_device_cookie_is_per_account`、`test_signing_out_everywhere_and_disabling_forget_devices`、`test_an_admin_sees_and_lifts_the_lock`（`test_auth_db.py`）；`recover-admin` 也刪掉該 admin 的信任裝置（`test_recover_admin_gives_an_admin_a_new_password_and_a_clean_slate`，`test_seed_db.py`） | 已緩解。本人在新裝置上仍可能被鎖，要等 admin 解鎖；加了 email 之後改成鎖定期間可用重設密碼解鎖（ADR api-and-auth-baseline D6 的重新評估條件） |
 | 用亂數帳號名塞滿 `sign_in_throttles` | 不存在的帳號名也會建立紀錄（每次嘗試最多兩列：來源一列、帳號合計一列）；每 IP 限流限制速率，閒置 24 小時的紀錄每小時清掉（`app.main` 的 lifespan 背景 task 呼叫 `auth/service/__init__.py` `cleanup`）。測試：`test_cleanup_deletes_expired_sessions_and_stale_throttles`（`test_auth_db.py`）、`test_serve_cleans_up_on_a_schedule_until_shutdown`（`test_auth_http.py`） | 單一副本內已緩解 |
 | Admin 停用最後一個 admin，包括自己 | 停用時先鎖住所有啟用中的 admin，目標是唯一一個就回 409 `last_admin`（`auth/service/__init__.py` `_keep_an_admin`）；兩個 admin 同時互相停用只會成功一個。所有 admin 都登不進來時，`make recover-admin` 在主機上替既有的 admin 設新密碼、啟用並清掉節流。`recover-admin`（`backend/src/app/cli/recover.py`、`auth/service/__init__.py` `recover_admin`）也刪掉它的 sessions 與信任裝置，寫 `admin.recovered`（執行者為空，代表主機上的操作者），只改既有的 admin、不建立也不升級帳號。測試：`test_the_only_enabled_admin_cannot_be_disabled`、`test_two_admins_disabling_each_other_at_once_leave_one`（`test_auth_db.py`）、`test_recover_admin_gives_an_admin_a_new_password_and_a_clean_slate`、`test_recover_admin_changes_only_an_existing_admin`（`test_seed_db.py`）、`test_recovery_changes_only_an_admin`（`test_auth_repository.py`） | 已緩解 |
-| 其他 operation 不限次數 | 每 IP 限流只涵蓋 `CreateUser`、`CreateSession`；其他 operation 都要登入 | 範本接受；衍生專案依需要加進清單（`docs/rules/api-design.md` 限流） |
+| 其他 operation 不限次數 | 每 IP 限流只涵蓋 `CreateUser`、`CreateSession`，被 415、400、422 擋下的請求也扣額度，送無效請求換不到更多次嘗試（`http/route.py`；測試：`test_a_refused_request_uses_a_token`，`test_ratelimit.py`）；其他 operation 都要登入 | 範本接受；衍生專案依需要加進清單（`docs/rules/api-design.md` 限流） |
 
 ## Elevation of privilege（權限提升）
 
 | 威脅 | 程式碼裡的緩解 | 狀態 |
 |---|---|---|
-| 一般使用者呼叫 admin 操作 | 每個 `/api` route 剛好一個存取標記（`http/access.py`）；缺標記、多標記、「公開」與契約的 `security: []` 不一致、route 與契約的 operation 對不上（含路徑參數名稱），server 啟動就失敗（`backend/src/app/main.py`）。契約 security 在驗證 body 之前就拒絕沒登入的請求。測試：`test_routes.py`、`test_every_operation_needs_a_session_unless_the_contract_says_public`（`test_auth_http.py`，逐一呼叫契約裡每個 operation，沒登入要 401）。admin 操作用 `ADMIN` 標記（`http/access.py` `admin`），角色取自這次請求從資料庫讀到的值，非 admin 回 403 `insufficient_role` 並記 `authz.denied`。測試：`test_a_user_who_is_not_an_admin_is_refused_and_it_is_logged`（`test_auth_http.py`）、`test_a_user_cannot_administer_users`（`test_auth_db.py`） | 已緩解 |
+| 一般使用者呼叫 admin 操作 | 每個 `/api` route 是 `http/route.py` 的 `ApiRoute`、剛好一個存取標記（`http/access.py`），否則 server 啟動就失敗（`backend/src/app/main.py`）；契約的 `security` 由標記產生（`test_security_follows_the_access_markers`，`test_openapi.py`）。`ApiRoute` 在讀 body 之前執行標記的檢查，沒登入回 401、角色不符回 403，都先於 415、400、422，所以呼叫者在通過存取檢查前得不到任何關於 body 的資訊。測試：`test_routes.py`、`test_every_operation_needs_a_session_unless_the_contract_says_public`（`test_auth_http.py`，逐一呼叫契約裡每個需要登入的 operation，沒登入要 401）、`test_a_user_who_is_not_an_admin_is_refused_before_the_body_is_checked`。admin 操作用 `ADMIN` 標記（`http/access.py` `admin`），角色取自這次請求從資料庫讀到的值，非 admin 回 403 `insufficient_role` 並記 `authz.denied`。測試：`test_a_user_who_is_not_an_admin_is_refused_and_it_is_logged`（`test_auth_http.py`）、`test_a_user_cannot_administer_users`（`test_auth_db.py`） | 已緩解 |
 | 角色變更後仍用舊角色 | 每個請求都從資料庫讀角色。目前沒有改角色或改密碼的 operation；後端規則 8 要求這類功能撤銷該使用者所有 session（`backend/AGENTS.md`） | 已緩解 |
-| 匿名請求到達受保護的 handler | 契約宣告 security，validator 在參數與 body 之前檢查。認證 middleware 在契約驗證之前設定 principal。測試：`test_an_invalid_cookie_with_an_invalid_body_is_unauthenticated_not_invalid`、`test_every_operation_needs_a_session_unless_the_contract_says_public` | 已緩解 |
+| 匿名請求到達受保護的 handler | route 的存取標記由 `http/route.py` 的 `ApiRoute` 在讀 body 之前執行（缺 `ApiRoute` 時 server 不會啟動）。認證 middleware 在路由之前設定 principal。測試：`test_an_invalid_cookie_with_an_invalid_body_is_unauthenticated_not_invalid`、`test_every_operation_needs_a_session_unless_the_contract_says_public` | 已緩解 |
 | backend 被入侵後改 schema | app 角色只有 DML。測試：`test_the_app_role_reads_and_writes_but_cannot_change_the_schema`（`test_migrate_db.py`） | 已緩解；所有表的資料仍可寫入，見「已接受的風險」 |
 | 偷到或忘了登出的 session 被拿來刪除帳號 | 刪除自己的帳號要求 session 在 10 分鐘內登入過（`auth/service/__init__.py` `REAUTHENTICATE_WITHIN`），前端先用密碼重新登入再刪除；admin 刪除別人（`DELETE /api/users/{id}`）也一樣要求 10 分鐘內登入過；唯一啟用中的 admin 不能刪自己（409 `last_admin`，先鎖住所有啟用中的 admin）；刪除寫入稽核 `user.deleted`。測試：`test_delete_current_user`、`test_a_session_issued_ten_minutes_ago_may_still_delete`、`test_the_only_enabled_admin_cannot_delete_itself`、`test_an_admin_deletes_a_user`（`test_auth_db.py`）、`delete-account.test.tsx` | 已緩解 |
 | 透過 API 建立 admin | 註冊一律寫 `user`；`ensure_admin` 只在 `seed-admin` 呼叫（`backend/src/app/cli/seed.py`），既有帳號原封不動；密碼從 stdin 進容器（`make seed`），錯誤訊息只寫變數名與規則。測試：`test_seed_admin_creates_an_admin_who_can_sign_in`、`test_seed_admin_leaves_an_existing_account_unchanged`（`test_seed_db.py`）、`test_the_input_follows_create_user_request_and_is_never_echoed`（`test_seed.py`） | 已緩解 |
@@ -122,7 +122,7 @@
 
 ## 何時更新這份文件
 
-- `backend/api/openapi.yaml` 新增與認證有關的 operation，或 route 的存取標記（`http/access.py`）、掛 `RATE_LIMITED` 的 route 有增減。
+- 新增與認證有關的 operation，或 route 的存取標記（`http/access.py`）、掛 `RATE_LIMITED` 的 route 有增減。
 - 新增角色，或改變授予角色的方式。
 - Session 期限、cookie 名稱或屬性、token 格式改變。
 - 新增外部身分提供者、MFA、Bearer token 或任何非瀏覽器的 client。

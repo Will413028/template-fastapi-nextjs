@@ -12,9 +12,9 @@ from datetime import timedelta
 import pytest
 from fastapi.testclient import TestClient
 
-from apitest import PEER, assert_problem, checked_client, contract
+from apitest import PEER, assert_problem, checked_client
 from app.http.origin import OriginPolicy
-from app.main import contract_operations
+from app.main import build_openapi
 from app.modules.auth.dependencies import SessionCookie
 from authfake import ADMIN_OPERATIONS, ALICE, SECURE, SESSION_ID, TOKEN, FakeAuthService, fake_app
 
@@ -28,27 +28,55 @@ def cookies(response_headers: list[str], name: str) -> list[str]:
 
 def test_a_valid_session_cookie_signs_the_request_in_and_sets_nothing() -> None:
     service = FakeAuthService()
-    with checked_client(fake_app(service), against=contract()) as client:
+    with checked_client(fake_app(service)) as client:
         response = client.get("/api/users/me", headers={"Cookie": f"__Host-session={TOKEN}"})
     assert response.status_code == 200, response.text
     assert response.json()["id"] == str(ALICE.id)
     assert "set-cookie" not in response.headers
 
 
-def test_an_invalid_cookie_with_an_invalid_body_is_unauthenticated_not_invalid() -> None:
-    # security is checked before the body: an anonymous caller learns nothing about the request it should send, and a
-    # cookie that is present but dead is anonymous (2b only checked that the cookie was there)
+@pytest.mark.parametrize(
+    ("content", "content_type"),
+    [
+        pytest.param('{"title": 5}', "application/json", id="invalid body"),
+        pytest.param('{"title":', "application/json", id="not JSON"),
+        pytest.param('{"title": "a"}', "text/plain", id="wrong media type"),
+    ],
+)
+def test_an_invalid_cookie_with_an_invalid_body_is_unauthenticated_not_invalid(content: str, content_type: str) -> None:
+    # access is checked before the body (app.http.route): an anonymous caller learns nothing about the request it
+    # should send, and a cookie that is present but dead is anonymous (2b only checked that the cookie was there)
     service = FakeAuthService()
-    with checked_client(fake_app(service), against=contract()) as client:
+    with checked_client(fake_app(service)) as client:
         for cookie in ({"Cookie": "__Host-session=dead"}, {}):
-            response = client.post("/api/items", json={"title": 5}, headers=SAME_ORIGIN | cookie)
+            headers = SAME_ORIGIN | cookie | {"Content-Type": content_type}
+            response = client.post("/api/items", content=content, headers=headers)
             assert_problem(response, 401, "/problems/unauthenticated")
+
+
+@pytest.mark.parametrize(
+    ("content", "content_type"),
+    [
+        pytest.param('{"is_disabled": "yes"}', "application/merge-patch+json", id="invalid body"),
+        pytest.param('{"is_disabled":', "application/merge-patch+json", id="not JSON"),
+        pytest.param('{"is_disabled": true}', "application/json", id="wrong media type"),
+    ],
+)
+def test_a_user_who_is_not_an_admin_is_refused_before_the_body_is_checked(content: str, content_type: str) -> None:
+    # the role is part of access (app.http.route): a non-admin learns nothing about an admin operation's body
+    service = FakeAuthService()
+    with checked_client(fake_app(service)) as client:
+        client.cookies.set("__Host-session", TOKEN)
+        response = client.patch(
+            f"/api/users/{uuid.uuid4()}", content=content, headers=SAME_ORIGIN | {"Content-Type": content_type}
+        )
+    assert assert_problem(response, 403, "/problems/forbidden")["code"] == "insufficient_role"
 
 
 def test_an_invalid_cookie_is_cleared() -> None:
     # HttpOnly: only the server can remove it, and the frontend takes a present cookie for a session
     service = FakeAuthService()
-    with checked_client(fake_app(service), against=contract()) as client:
+    with checked_client(fake_app(service)) as client:
         response = client.get("/api/users/me", headers={"Cookie": "__Host-session=dead"})
     assert_problem(response, 401, "/problems/unauthenticated")
     assert cookies(response.headers.get_list("set-cookie"), "__Host-session") == [SECURE.clear()]
@@ -56,7 +84,7 @@ def test_an_invalid_cookie_is_cleared() -> None:
 
 def test_an_operation_that_sets_the_cookie_is_not_given_a_second_one() -> None:
     service = FakeAuthService()
-    with checked_client(fake_app(service), against=contract()) as client:
+    with checked_client(fake_app(service)) as client:
         response = client.delete("/api/sessions/current", headers=SAME_ORIGIN | {"Cookie": "__Host-session=dead"})
     assert response.status_code == 204, response.text
     assert cookies(response.headers.get_list("set-cookie"), "__Host-session") == [SECURE.clear()]
@@ -65,7 +93,7 @@ def test_an_operation_that_sets_the_cookie_is_not_given_a_second_one() -> None:
 
 def test_only_the_cookie_authenticates() -> None:
     service = FakeAuthService()
-    with checked_client(fake_app(service), against=contract()) as client:
+    with checked_client(fake_app(service)) as client:
         response = client.get("/api/users/me", headers={"Authorization": f"Bearer {TOKEN}"})
     assert_problem(response, 401, "/problems/unauthenticated")
 
@@ -77,7 +105,7 @@ def test_only_the_cookie_authenticates() -> None:
 def test_the_cookie_name_follows_cookie_secure(cookie: SessionCookie, other: str) -> None:
     # COOKIE_SECURE=false names the cookie `session` (the __Host- prefix needs Secure); 2b's check knew only the other
     service = FakeAuthService()
-    with checked_client(fake_app(service, cookie=cookie), against=contract()) as client:
+    with checked_client(fake_app(service, cookie=cookie)) as client:
         assert client.get("/api/users/me", headers={"Cookie": f"{cookie.name}={TOKEN}"}).status_code == 200
         response = client.get("/api/users/me", headers={"Cookie": f"{other}={TOKEN}"})
         assert_problem(response, 401, "/problems/unauthenticated")
@@ -107,13 +135,18 @@ def test_a_request_refused_at_the_edge_never_looks_up_its_session() -> None:
 
 
 def test_every_operation_needs_a_session_unless_the_contract_says_public() -> None:
-    # every operation is called the way an attacker would, routed or not: the contract's security refuses it first
+    # every operation is called the way an attacker would: its access marker refuses it first
+    operations = sorted(
+        (method.upper(), path)
+        for path, item in build_openapi()["paths"].items()
+        for method, operation in item.items()
+        if "security" in operation
+    )
+    assert len(operations) > 3
     service = FakeAuthService()
-    with checked_client(fake_app(service), against=contract()) as client:
-        for (method, path), public in sorted(contract_operations(contract()).items()):
-            if public:
-                continue
-            url = "/api" + re.sub(r"\{[^}]+\}", str(uuid.uuid4()), path)
+    with checked_client(fake_app(service)) as client:
+        for method, path in operations:
+            url = re.sub(r"\{[^}]+\}", str(uuid.uuid4()), path)
             body: dict[str, object] | None = {} if method in {"POST", "PATCH"} else None
             content_type = "application/merge-patch+json" if method == "PATCH" else "application/json"
             response = client.request(
@@ -133,7 +166,7 @@ def test_a_user_who_is_not_an_admin_is_refused_and_it_is_logged(
     url = "/api" + path.replace("{id}", str(uuid.uuid4()))
     patch = method == "PATCH"
     headers = SAME_ORIGIN | ({"Content-Type": "application/merge-patch+json"} if patch else {})
-    with checked_client(fake_app(service), against=contract()) as client:
+    with checked_client(fake_app(service)) as client:
         client.cookies.set("__Host-session", TOKEN)
         with caplog.at_level(logging.WARNING, logger="app.http.access"):
             response = client.request(method, url, json={} if patch else None, headers=headers)
@@ -166,7 +199,7 @@ def test_device_cookie_attributes() -> None:
 def test_the_current_session_is_not_taken_for_a_session_id() -> None:
     # /sessions/current is declared before /sessions/{id}: the other order would route it there and answer 422
     service = FakeAuthService()
-    with checked_client(fake_app(service), against=contract()) as client:
+    with checked_client(fake_app(service)) as client:
         response = client.get("/api/sessions/current", headers={"Cookie": f"__Host-session={TOKEN}"})
         assert response.status_code == 200, response.text
         assert (response.json()["id"], response.json()["current"]) == (str(SESSION_ID), True)
@@ -175,7 +208,7 @@ def test_the_current_session_is_not_taken_for_a_session_id() -> None:
 
 def test_sign_out_from_another_site_is_refused() -> None:
     service = FakeAuthService()
-    with checked_client(fake_app(service), against=contract()) as client:
+    with checked_client(fake_app(service)) as client:
         headers = {"Cookie": f"__Host-session={TOKEN}", "Sec-Fetch-Site": "cross-site"}
         response = client.delete("/api/sessions/current", headers=headers)
     assert assert_problem(response, 403, "/problems/forbidden")["code"] == "cross_origin_request"

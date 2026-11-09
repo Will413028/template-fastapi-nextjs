@@ -4,7 +4,7 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
-from apitest import LOOPBACK, PEER, FakeDatabase, assert_problem, contract, deps
+from apitest import LOOPBACK, PEER, FakeDatabase, assert_problem, deps
 from app.http.origin import OriginPolicy
 from app.main import create_app
 
@@ -12,8 +12,8 @@ PROD = OriginPolicy(secrets=("s" * 43,), required=True)
 
 
 def health_client(database: FakeDatabase, *, peer: tuple[str, int] = LOOPBACK) -> TestClient:
-    """The real contract's app; health checks come from the container itself (app healthcheck), so from loopback."""
-    return TestClient(create_app(dataclasses.replace(deps(contract()), database=database)), client=peer)
+    """The app without the modules; health checks come from the container itself (app healthcheck), so from loopback."""
+    return TestClient(create_app(dataclasses.replace(deps(), database=database)), client=peer)
 
 
 def test_health_reports_ok_even_when_the_database_is_down() -> None:
@@ -75,7 +75,7 @@ def test_health_is_not_found_from_anywhere_but_loopback(path: str, peer: tuple[s
 
 @pytest.mark.parametrize("peer", [LOOPBACK, ("::1", 50000), ("::ffff:127.0.0.1", 50000)])
 def test_health_needs_no_origin_secret_from_loopback(peer: tuple[str, int]) -> None:
-    app = create_app(dataclasses.replace(deps(contract()), origin=PROD))
+    app = create_app(dataclasses.replace(deps(), origin=PROD))
     with TestClient(app, client=peer) as client:
         response = client.get("/health")
     assert response.status_code == 200

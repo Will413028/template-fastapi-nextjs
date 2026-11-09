@@ -4,8 +4,9 @@ A model's docstring and its fields' descriptions are the contract's text."""
 import uuid
 from typing import Annotated, Literal
 
-from pydantic import MISSING, AwareDatetime, BaseModel, ConfigDict, Field
+from pydantic import MISSING, AwareDatetime, BaseModel, Field
 
+from app.http.schemas import REQUEST_CONFIG
 from app.modules.auth.service.passwords import PASSWORD_MIN_LENGTH
 
 _PASSWORD_MAX_LENGTH = 128
@@ -47,7 +48,7 @@ class SessionPage(BaseModel):
 
 
 class CreateUserRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = REQUEST_CONFIG
 
     account: Annotated[
         str, Field(min_length=3, max_length=50, pattern="^[A-Za-z0-9_.-]+$", description="Stored lowercase.")
@@ -67,7 +68,7 @@ class CreateUserRequest(BaseModel):
 
 
 class CreateSessionRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = REQUEST_CONFIG
 
     account: Annotated[str, Field(min_length=1, max_length=50, description="Case-insensitive.")]
     password: Annotated[str, Field(min_length=1, max_length=_PASSWORD_MAX_LENGTH)]
@@ -87,6 +88,6 @@ class SignInLock(BaseModel):
 
 
 class UserPatch(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = REQUEST_CONFIG
 
     is_disabled: bool | MISSING = MISSING

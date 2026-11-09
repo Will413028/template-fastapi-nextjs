@@ -7,7 +7,6 @@ Sign-up and sign-in are limited per client address (RATE_LIMITED, ADR api-and-au
 throttled per account and client in the service.
 """
 
-import uuid
 from typing import TYPE_CHECKING, Annotated
 
 from fastapi import APIRouter, Body, Response, status
@@ -20,12 +19,14 @@ from app.http.access import PUBLIC, Admin, SignedIn
 from app.http.origin import current_client
 from app.http.ratelimit import RATE_LIMITED, limit_key
 from app.http.request_id import current_request_id
+from app.http.route import ApiRoute
 from app.http.schemas import (
     CLEAR_SESSION_COOKIE,
     LOCATION,
     MERGE_PATCH,
     SET_SESSION_COOKIE,
     Cursor,
+    Id,
     Limit,
     headers,
     problems,
@@ -34,11 +35,13 @@ from app.modules.auth import schemas as api
 from app.modules.auth.dependencies import Current, CurrentAdmin, CurrentSession, Service
 
 if TYPE_CHECKING:
+    import uuid
+
     from app.modules.auth.service import SessionInfo, User
 
 # Routes match in the order they are declared: a literal path (/users/me, /sessions/current) comes before the
 # template that would also match it (/users/{id}, /sessions/{id}), or that template's handler gets it.
-router = APIRouter(prefix="/api", tags=["auth"])
+router = APIRouter(prefix="/api", tags=["auth"], route_class=ApiRoute)
 
 
 def _user(user: User) -> api.User:
@@ -86,7 +89,7 @@ def _address_key() -> str:
     operation_id="createUser",
     summary="Create an account and sign in to it.",
     response_description="The account was created and signed in.",
-    responses=problems(400, 403, 409, 413, 415, 422, 429, 500) | headers(201, LOCATION, SET_SESSION_COOKIE),
+    responses=problems(403, 409, 500) | headers(201, LOCATION, SET_SESSION_COOKIE),
 )
 async def create_user(
     body: api.CreateUserRequest, service: Service, session: CurrentSession, response: Response
@@ -104,7 +107,7 @@ async def create_user(
     operation_id="createSession",
     summary="Sign in.",
     response_description="Signed in; `Location` is the new session.",
-    responses=problems(400, 401, 403, 413, 415, 422, 429, 500) | headers(201, LOCATION, SET_SESSION_COOKIE),
+    responses=problems(401, 403, 500) | headers(201, LOCATION, SET_SESSION_COOKIE),
 )
 async def create_session(
     body: api.CreateSessionRequest, service: Service, session: CurrentSession, response: Response
@@ -150,14 +153,14 @@ async def delete_current_session(service: Service, session: CurrentSession) -> R
     operation_id="listSessions",
     summary="The signed-in user's sessions, newest first.",
     response_description="One page of sessions.",
-    responses=problems(401, 422, 500),
+    responses=problems(500),
 )
 async def list_sessions(
     service: Service, current: Current, limit: Limit = DEFAULT_LIMIT, cursor: Cursor = None
 ) -> api.SessionPage:
     """Only sessions that are still valid (within both the absolute and the idle limit). Keyset pagination; pass
     `next_cursor` back as `cursor` until it is null."""
-    # the contract has already checked limit's range (app.http.contract)
+    # Limit has already checked the range (a 422 before the route runs)
     page = await service.sessions(current.principal, limit=limit, cursor=cursor)
     return api.SessionPage(
         sessions=[_session(s, current.user, current.session_id) for s in page.sessions], next_cursor=page.next_cursor
@@ -170,7 +173,7 @@ async def list_sessions(
     operation_id="deleteAllSessions",
     summary="Sign out everywhere.",
     response_description="Signed out everywhere.",
-    responses=problems(401, 403, 500) | headers(204, CLEAR_SESSION_COOKIE),
+    responses=problems(403, 500) | headers(204, CLEAR_SESSION_COOKIE),
 )
 async def delete_all_sessions(service: Service, current: Current, session: CurrentSession) -> Response:
     """Ends every session of the signed-in user, this one included, and clears the cookie."""
@@ -184,7 +187,7 @@ async def delete_all_sessions(service: Service, current: Current, session: Curre
     operation_id="deleteCurrentUser",
     summary="Delete the signed-in user's account.",
     response_description="Deleted.",
-    responses=problems(401, 403, 409, 500) | headers(204, CLEAR_SESSION_COOKIE),
+    responses=problems(403, 409, 500) | headers(204, CLEAR_SESSION_COOKIE),
 )
 async def delete_current_user(service: Service, current: Current, session: CurrentSession) -> Response:
     """Deletes the account and everything it owns, ends all its sessions and clears the cookie. The session must
@@ -199,7 +202,7 @@ async def delete_current_user(service: Service, current: Current, session: Curre
     operation_id="getCurrentUser",
     summary="The signed-in user.",
     response_description="The signed-in user.",
-    responses=problems(401, 500),
+    responses=problems(500),
 )
 async def get_current_user(current: Current) -> api.User:
     return _user(current.user)
@@ -210,7 +213,7 @@ async def get_current_user(current: Current) -> api.User:
     operation_id="getCurrentSession",
     summary="The session the request carries.",
     response_description="The current session.",
-    responses=problems(401, 500),
+    responses=problems(500),
 )
 async def get_current_session(service: Service, current: Current) -> api.Session:
     # getSession for the session the request carries, as /users/me is for the user
@@ -229,13 +232,13 @@ async def get_current_session(service: Service, current: Current) -> api.Session
     operation_id="listUsers",
     summary="All users, newest first (admin only).",
     response_description="One page of users.",
-    responses=problems(401, 403, 422, 500),
+    responses=problems(500),
 )
 async def list_users(
     service: Service, _admin: Admin, limit: Limit = DEFAULT_LIMIT, cursor: Cursor = None
 ) -> api.UserPage:
     """Disabled users included. Keyset pagination; pass `next_cursor` back as `cursor` until it is null."""
-    # the contract has already checked limit's range (app.http.contract)
+    # Limit has already checked the range (a 422 before the route runs)
     page = await service.list_users(limit=limit, cursor=cursor)
     return api.UserPage(users=[_user(u) for u in page.users], next_cursor=page.next_cursor)
 
@@ -245,9 +248,9 @@ async def list_users(
     operation_id="getSignInLock",
     summary="Whether the user's account refuses sign-ins from unknown clients (admin only).",
     response_description="The lock state.",
-    responses=problems(401, 403, 404, 422, 500),
+    responses=problems(404, 500),
 )
-async def get_sign_in_lock(id: uuid.UUID, service: Service, _admin: Admin) -> api.SignInLock:
+async def get_sign_in_lock(id: Id, service: Service, _admin: Admin) -> api.SignInLock:
     lock = await service.sign_in_lock(id)
     return api.SignInLock(locked=lock.locked, failures=lock.failures)
 
@@ -258,9 +261,9 @@ async def get_sign_in_lock(id: uuid.UUID, service: Service, _admin: Admin) -> ap
     operation_id="deleteSignInLock",
     summary="Unlock the user's sign-in (admin only).",
     response_description="Unlocked.",
-    responses=problems(401, 403, 404, 422, 500),
+    responses=problems(404, 500),
 )
-async def delete_sign_in_lock(id: uuid.UUID, service: Service, principal: Admin) -> Response:
+async def delete_sign_in_lock(id: Id, service: Service, principal: Admin) -> Response:
     """Forgets every failed sign-in counted for the account, from all clients."""
     await service.unlock_sign_in(principal, id, request_id=current_request_id())
     return _no_content()
@@ -271,9 +274,9 @@ async def delete_sign_in_lock(id: uuid.UUID, service: Service, principal: Admin)
     operation_id="getUser",
     summary="A user.",
     response_description="The user.",
-    responses=problems(401, 404, 422, 500),
+    responses=problems(404, 500),
 )
-async def get_user(id: uuid.UUID, service: Service, principal: SignedIn) -> api.User:
+async def get_user(id: Id, service: Service, principal: SignedIn) -> api.User:
     """Users read their own account and admins read any. Anyone else's account is a 404, the same as an account that
     does not exist."""
     return _user(await service.user(principal, id))
@@ -284,9 +287,9 @@ async def get_user(id: uuid.UUID, service: Service, principal: SignedIn) -> api.
     operation_id="getSession",
     summary="One of the signed-in user's sessions.",
     response_description="The session.",
-    responses=problems(401, 404, 422, 500),
+    responses=problems(404, 500),
 )
-async def get_session(id: uuid.UUID, service: Service, current: Current) -> api.Session:
+async def get_session(id: Id, service: Service, current: Current) -> api.Session:
     """Another user's session is a 404, the same as a session that does not exist or has expired."""
     return _session(await service.session(current.principal, id), current.user, current.session_id)
 
@@ -297,9 +300,9 @@ async def get_session(id: uuid.UUID, service: Service, current: Current) -> api.
     operation_id="deleteSession",
     summary="Revoke one of the signed-in user's sessions.",
     response_description="The session was revoked.",
-    responses=problems(401, 403, 404, 422, 500) | headers(204, CLEAR_SESSION_COOKIE),
+    responses=problems(403, 404, 500) | headers(204, CLEAR_SESSION_COOKIE),
 )
-async def delete_session(id: uuid.UUID, service: Service, current: Current, session: CurrentSession) -> Response:
+async def delete_session(id: Id, service: Service, current: Current, session: CurrentSession) -> Response:
     """Another user's session is a 404, as in getSession. Revoking the session the request carries also clears the
     cookie."""
     await service.revoke_session(current.principal, id)
@@ -311,10 +314,10 @@ async def delete_session(id: uuid.UUID, service: Service, current: Current, sess
     operation_id="patchUser",
     summary="Change a user (admin only).",
     response_description="The user after the change.",
-    responses=problems(400, 401, 403, 404, 409, 413, 415, 422, 500),
+    responses=problems(404, 409, 500),
 )
 async def patch_user(
-    id: uuid.UUID,
+    id: Id,
     body: Annotated[api.UserPatch, Body(media_type=MERGE_PATCH)],
     service: Service,
     principal: Admin,
@@ -334,9 +337,9 @@ async def patch_user(
     operation_id="deleteUser",
     summary="Delete a user (admin only).",
     response_description="Deleted.",
-    responses=problems(401, 403, 404, 409, 422, 500),
+    responses=problems(404, 409, 500),
 )
-async def delete_user(id: uuid.UUID, service: Service, current: CurrentAdmin) -> Response:
+async def delete_user(id: Id, service: Service, current: CurrentAdmin) -> Response:
     """Deletes the account and everything it owns and ends all its sessions. Like deleting one's own account, the
     admin's session must have signed in within the last 10 minutes (403 `reauthentication_required`). The only
     enabled admin cannot be deleted (409 `last_admin`)."""

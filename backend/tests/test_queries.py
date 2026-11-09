@@ -1,19 +1,16 @@
 """The N+1 check in test_queries_db.py covers every paginated list the contract has."""
 
-import yaml
-
-from apitest import CONTRACT_PATH
+from app.main import build_openapi
 from test_queries_db import LISTS
 
 
 def paginated_lists() -> set[str]:
-    """operationIds of the GET operations that take the Limit parameter."""
-    document = yaml.safe_load(CONTRACT_PATH.read_text(encoding="utf-8"))
-    limit = {"$ref": "#/components/parameters/Limit"}
+    """operationIds of the GET operations that take the limit parameter."""
+    gets = [item["get"] for item in build_openapi()["paths"].values() if "get" in item]
     return {
         operation["operationId"]
-        for path in document["paths"].values()
-        if limit in (operation := path.get("get", {})).get("parameters", [])
+        for operation in gets
+        if any(parameter["name"] == "limit" for parameter in operation.get("parameters", []))
     }
 
 

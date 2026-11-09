@@ -7,10 +7,9 @@ from typing import TYPE_CHECKING
 import pytest
 
 from app import cli
-from app.main import RouteContractError
+from app.main import RouteCheckError
 
 if TYPE_CHECKING:
-    import pathlib
     from collections.abc import Iterator
 
 
@@ -102,37 +101,19 @@ SERVE_ENV = {
 }
 
 
-def test_serve_with_routes_that_disagree_with_the_contract_does_not_start(
+def test_serve_with_routes_that_fail_the_route_check_does_not_start(
     capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def disagree(*_: object, **__: object) -> None:
-        msg = "GET /api/users/me has no route"
-        raise RouteContractError(msg)
+    def fail(*_: object, **__: object) -> None:
+        msg = "GET /api/users/me has 0 access markers"
+        raise RouteCheckError(msg)
 
-    monkeypatch.setattr("app.main.check_routes", disagree)
+    monkeypatch.setattr("app.main.check_routes", fail)
     assert cli.main(["serve"], environ=SERVE_ENV) == 1
-    assert "serve: routes and contract disagree: GET /api/users/me has no route" in capsys.readouterr().err
+    assert "serve: route check failed: GET /api/users/me has 0 access markers" in capsys.readouterr().err
 
 
 def test_serve_in_prod_without_the_origin_secret_does_not_start(capsys: pytest.CaptureFixture[str]) -> None:
     env = {k: v for k, v in SERVE_ENV.items() if k != "ORIGIN_SECRET"}
     assert cli.main(["serve"], environ=env) == 1
     assert "ORIGIN_SECRET is required when MODE=prod" in capsys.readouterr().err
-
-
-def test_serve_without_the_contract_fails_cleanly(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    monkeypatch.chdir(tmp_path)  # no api/openapi.yaml here
-    assert cli.main(["serve"], environ=SERVE_ENV) == 1
-    assert "serve: load the contract" in capsys.readouterr().err
-
-
-def test_serve_with_an_invalid_contract_fails_cleanly(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
-) -> None:
-    (tmp_path / "api").mkdir()
-    (tmp_path / "api" / "openapi.yaml").write_text("openapi: 3.0.3\npaths: nope\n")
-    monkeypatch.chdir(tmp_path)
-    assert cli.main(["serve"], environ=SERVE_ENV) == 1
-    assert "serve: load the contract" in capsys.readouterr().err

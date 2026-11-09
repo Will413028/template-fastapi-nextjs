@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 _CURSOR = re.compile(r"[A-Za-z0-9_-]{22}")
 
 
-# The contract's Limit default (components.parameters.Limit), for every list operation; test_pagination checks it.
+# The default of every list operation's limit (Limit in app.http.schemas); test_pagination checks the contract's.
 DEFAULT_LIMIT = 20
 # The largest page a list operation returns (app.http.schemas.Limit).
 MAX_LIMIT = 100

@@ -48,13 +48,13 @@ typecheck: ## pyright in strict mode (pyrightconfig.json)
 
 # Called by name, so they look unused: FastAPI route decorators, pytest fixtures, hooks and pytestmark, http.server's
 # do_<METHOD> handlers, each CLI command module's run(), which app.cli imports when its command runs, and what
-# Alembic reads from a revision file; tests/vulture_whitelist.py names the attributes openapi-core reads through its
-# protocols. models.py is left out: a column is part of the schema (tests/test_schema_db.py compares it with the
+# Alembic reads from a revision file. models.py is left out: a column is part of the schema (tests/test_schema_db.py compares it with the
 # migrations) whether or not code reads it. A module's schemas.py is left out for the same reason: a field is part of
-# the contract (make gen-check), and Pydantic reads it when it serializes a response, which vulture cannot see.
+# the contract (make gen-check), and Pydantic reads it when it serializes a response, which vulture cannot see; so is
+# tests/widget_schemas.py, the stub operations' bodies.
 .PHONY: deadcode
 deadcode:
-	$(UV) vulture src tests tests/vulture_whitelist.py --min-confidence 60 --exclude '*/models.py,*/modules/*/schemas.py' \
+	$(UV) vulture src tests --min-confidence 60 --exclude '*/models.py,*/modules/*/schemas.py,*/tests/widget_schemas.py' \
 		--ignore-decorators '@*.get,@*.post,@*.put,@*.patch,@*.delete,@pytest.fixture' \
 		--ignore-names 'do_GET,run,pytest_*,pytestmark,revision,down_revision,upgrade'
 

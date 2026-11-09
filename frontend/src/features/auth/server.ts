@@ -18,7 +18,7 @@ export async function getServerUser(): Promise<User | null> {
   const cookieHeader = (await cookies()).toString();
   if (!cookieHeader) return null;
 
-  const result = await api.GET("/users/me", {
+  const result = await api.GET("/api/users/me", {
     headers: { cookie: cookieHeader },
     cache: "no-store",
   });

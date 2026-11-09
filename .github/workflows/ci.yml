@@ -249,8 +249,8 @@ jobs:
       - name: Check git hooks were installed
         run: test -x "$(git rev-parse --git-path hooks)/commit-msg"
       - run: pnpm audit --prod --audit-level high
-      # src/lib/api/schema.d.ts must match backend/api/openapi.yaml (until the frontend moves to
-      # backend/api/openapi.json)
+      # src/lib/api/schema.d.ts must match backend/api/openapi.json, and every x-extensible-enum list in it must
+      # become a union
       - run: pnpm gen:api:check
       - run: pnpm lint
       - run: pnpm check:deps

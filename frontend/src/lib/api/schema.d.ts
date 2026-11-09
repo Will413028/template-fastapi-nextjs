@@ -4,7 +4,7 @@
  */
 
 export interface paths {
-    "/users": {
+    "/api/users": {
         parameters: {
             query?: never;
             header?: never;
@@ -28,87 +28,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/users/me": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** The signed-in user. */
-        get: operations["getCurrentUser"];
-        put?: never;
-        post?: never;
-        /**
-         * Delete the signed-in user's account.
-         * @description Deletes the account and everything it owns, ends all its sessions and clears the cookie. The session must
-         *     have signed in within the last 10 minutes: sign in again (POST /sessions) first, or the answer is 403
-         *     `reauthentication_required`. The only enabled admin cannot delete itself (409 `last_admin`).
-         */
-        delete: operations["deleteCurrentUser"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/users/{id}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        /**
-         * A user.
-         * @description Users read their own account and admins read any. Anyone else's account is a 404, the same as an account that
-         *     does not exist.
-         */
-        get: operations["getUser"];
-        put?: never;
-        post?: never;
-        /**
-         * Delete a user (admin only).
-         * @description Deletes the account and everything it owns and ends all its sessions. Like deleting one's own account, the
-         *     admin's session must have signed in within the last 10 minutes (403 `reauthentication_required`). The only
-         *     enabled admin cannot be deleted (409 `last_admin`).
-         */
-        delete: operations["deleteUser"];
-        options?: never;
-        head?: never;
-        /**
-         * Change a user (admin only).
-         * @description JSON Merge Patch (RFC 7396): omitted fields are left unchanged. Disabling a user signs them out everywhere.
-         *     Disabling the only enabled admin is refused with 409 `last_admin`.
-         */
-        patch: operations["patchUser"];
-        trace?: never;
-    };
-    "/users/{id}/sign-in-lock": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        /** Whether the user's account refuses sign-ins from unknown clients (admin only). */
-        get: operations["getSignInLock"];
-        put?: never;
-        post?: never;
-        /**
-         * Unlock the user's sign-in (admin only).
-         * @description Forgets every failed sign-in counted for the account, from all clients.
-         */
-        delete: operations["deleteSignInLock"];
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/sessions": {
+    "/api/sessions": {
         parameters: {
             query?: never;
             header?: never;
@@ -142,7 +62,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/sessions/current": {
+    "/api/sessions/current": {
         parameters: {
             query?: never;
             header?: never;
@@ -163,13 +83,87 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/sessions/{id}": {
+    "/api/users/me": {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
+            path?: never;
+            cookie?: never;
+        };
+        /** The signed-in user. */
+        get: operations["getCurrentUser"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete the signed-in user's account.
+         * @description Deletes the account and everything it owns, ends all its sessions and clears the cookie. The session must
+         *     have signed in within the last 10 minutes: sign in again (POST /sessions) first, or the answer is 403
+         *     `reauthentication_required`. The only enabled admin cannot delete itself (409 `last_admin`).
+         */
+        delete: operations["deleteCurrentUser"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/users/{id}/sign-in-lock": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether the user's account refuses sign-ins from unknown clients (admin only). */
+        get: operations["getSignInLock"];
+        put?: never;
+        post?: never;
+        /**
+         * Unlock the user's sign-in (admin only).
+         * @description Forgets every failed sign-in counted for the account, from all clients.
+         */
+        delete: operations["deleteSignInLock"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/users/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A user.
+         * @description Users read their own account and admins read any. Anyone else's account is a 404, the same as an account that
+         *     does not exist.
+         */
+        get: operations["getUser"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a user (admin only).
+         * @description Deletes the account and everything it owns and ends all its sessions. Like deleting one's own account, the
+         *     admin's session must have signed in within the last 10 minutes (403 `reauthentication_required`). The only
+         *     enabled admin cannot be deleted (409 `last_admin`).
+         */
+        delete: operations["deleteUser"];
+        options?: never;
+        head?: never;
+        /**
+         * Change a user (admin only).
+         * @description JSON Merge Patch (RFC 7396): omitted fields are left unchanged. Disabling a user signs them out everywhere.
+         *     Disabling the only enabled admin is refused with 409 `last_admin`.
+         */
+        patch: operations["patchUser"];
+        trace?: never;
+    };
+    "/api/sessions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         /**
@@ -190,7 +184,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/items": {
+    "/api/items": {
         parameters: {
             query?: never;
             header?: never;
@@ -211,13 +205,11 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/items/{id}": {
+    "/api/items/{id}": {
         parameters: {
             query?: never;
             header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
+            path?: never;
             cookie?: never;
         };
         /**
@@ -243,253 +235,286 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
-        User: {
-            /** Format: uuid */
-            id: string;
-            /** @description Lowercase; accounts are unique regardless of case. */
-            account: string;
-            /** @enum {string} */
-            role: "admin" | "user";
-            is_disabled: boolean;
-            /** Format: date-time */
-            created_at: string;
-        };
-        UserPage: {
-            users: components["schemas"]["User"][];
-            /** @description Cursor for the next page; null on the last page. */
-            next_cursor: string | null;
-        };
-        /** @description A signed-in session. The token is only in the cookie and never part of the resource. */
-        Session: {
-            /** Format: uuid */
-            id: string;
-            user: components["schemas"]["User"];
-            /** Format: date-time */
-            created_at: string;
+        /** CreateItemRequest */
+        CreateItemRequest: {
             /**
-             * Format: date-time
-             * @description Updated at most once a minute. A session unused for the idle limit ends before `expires_at`.
+             * Title
+             * @description 1 to 200 characters (code points).
              */
-            last_used_at: string;
-            /**
-             * Format: date-time
-             * @description The absolute end of the session, however much it is used.
-             */
-            expires_at: string;
-            /** @description Whether this is the session the request carries. */
-            current: boolean;
-        };
-        SessionPage: {
-            sessions: components["schemas"]["Session"][];
-            /** @description Cursor for the next page; null on the last page. */
-            next_cursor: string | null;
-        };
-        CreateUserRequest: {
-            /** @description Stored lowercase. */
-            account: string;
-            /**
-             * @description 15 to 128 characters (code points), no composition rules (NIST SP 800-63B-4). The minimum also applies after
-             *     NFKC normalization, which can shorten a password (`e` plus a combining acute becomes `é`): a password under 15
-             *     characters after it is rejected with code `too_short`. A password on the common or breached password list
-             *     is rejected with code `password_too_common`.
-             */
-            password: string;
-        };
-        CreateSessionRequest: {
-            /** @description Case-insensitive. */
-            account: string;
-            password: string;
-        };
-        SignInLock: {
-            /** @description Sign-ins from clients without a device cookie for the account are refused. */
-            locked: boolean;
-            /**
-             * Format: int64
-             * @description Failed sign-ins from such clients since the last successful one; the lock starts at 100.
-             */
-            failures: number;
-        };
-        UserPatch: {
-            is_disabled?: boolean;
-        };
-        Item: {
-            /** Format: uuid */
-            id: string;
             title: string;
+            /** Description */
+            description?: string | null;
+        };
+        /** CreateSessionRequest */
+        CreateSessionRequest: {
+            /**
+             * Account
+             * @description Case-insensitive.
+             */
+            account: string;
+            /** Password */
+            password: string;
+        };
+        /** CreateUserRequest */
+        CreateUserRequest: {
+            /**
+             * Account
+             * @description Stored lowercase.
+             */
+            account: string;
+            /**
+             * Password
+             * @description 15 to 128 characters (code points), no composition rules (NIST SP 800-63B-4). The minimum also applies after NFKC normalization, which can shorten a password (`e` plus a combining acute becomes `é`): a password under 15 characters after it is rejected with code `too_short`. A password on the common or breached password list is rejected with code `password_too_common`.
+             */
+            password: string;
+        };
+        /** FieldError */
+        FieldError: {
+            /**
+             * Pointer
+             * @description JSON Pointer (RFC 6901) to the invalid value in the request body, or `/<name>` for a query or path parameter. Empty when the whole body is missing.
+             * @example /title
+             */
+            pointer: string;
+            /**
+             * Code
+             * @description Stable machine-readable code: a failed contract rule, or a business rule such as `password_too_common`. The list grows (x-extensible-enum), so clients translate the values they know and fall back for the rest.
+             * @example too_short
+             */
+            code: "required" | "too_short" | "too_long" | "pattern" | "enum" | "format" | "out_of_range" | "invalid_type" | "null_not_allowed" | "additional_property" | "invalid" | "password_too_common";
+            /**
+             * Detail
+             * @description Human-readable explanation for developers; clients must not parse it.
+             */
+            detail: string;
+        };
+        /** Item */
+        Item: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Title */
+            title: string;
+            /** Description */
             description: string | null;
-            /** Format: uuid */
+            /**
+             * Owner Id
+             * Format: uuid
+             */
             owner_id: string;
-            /** Format: date-time */
+            /**
+             * Created At
+             * Format: date-time
+             */
             created_at: string;
-            /** Format: date-time */
+            /**
+             * Updated At
+             * Format: date-time
+             */
             updated_at: string;
         };
+        /** ItemPage */
         ItemPage: {
+            /** Items */
             items: components["schemas"]["Item"][];
-            /** @description Cursor for the next page; null on the last page. */
+            /**
+             * Next Cursor
+             * @description Cursor for the next page; null on the last page.
+             */
             next_cursor: string | null;
         };
-        CreateItemRequest: {
-            title: components["schemas"]["ItemTitle"];
-            description?: string | null;
-        };
+        /** ItemPatch */
         ItemPatch: {
-            title?: components["schemas"]["ItemTitle"];
+            /**
+             * Title
+             * @description 1 to 200 characters (code points).
+             */
+            title?: string;
+            /** Description */
             description?: string | null;
         };
-        /** @description 1 to 200 characters (code points). */
-        ItemTitle: string;
-        /** @description RFC 9457 problem details. */
+        /**
+         * Problem
+         * @description RFC 9457 problem details.
+         */
         Problem: {
             /**
+             * Type
              * Format: uri-reference
              * @description Fixed per kind of problem. The list grows (x-extensible-enum), so clients translate the values they know and fall back for the rest.
              * @example /problems/not-found
              */
             type: "/problems/bad-request" | "/problems/unauthenticated" | "/problems/forbidden" | "/problems/not-found" | "/problems/method-not-allowed" | "/problems/conflict" | "/problems/payload-too-large" | "/problems/unsupported-media-type" | "/problems/validation" | "/problems/rate-limited" | "/problems/internal" | "/problems/unavailable";
-            /** @description Fixed per `type`. */
+            /**
+             * Title
+             * @description Fixed per `type`.
+             */
             title: string;
-            /** @description The HTTP status code. */
+            /**
+             * Status
+             * @description The HTTP status code.
+             */
             status: number;
-            /** @description Human-readable explanation for developers; clients must not parse it. */
+            /**
+             * Detail
+             * @description Human-readable explanation for developers; clients must not parse it.
+             */
             detail?: string;
-            /** @description Stable machine-readable code refining `type`. The list grows (x-extensible-enum), so clients translate the values they know and fall back for the rest. */
+            /**
+             * Code
+             * @description Stable machine-readable code refining `type`. The list grows (x-extensible-enum), so clients translate the values they know and fall back for the rest.
+             */
             code?: "account_taken" | "invalid_credentials" | "login_throttled" | "last_admin" | "reauthentication_required" | "session_invalid" | "insufficient_role" | "cross_origin_request";
-            /** @description The request's `X-Request-ID`, for matching a report with the server logs. */
+            /**
+             * Request Id
+             * @description The request's `X-Request-ID`, for matching a report with the server logs.
+             */
             request_id?: string;
         };
-        /** @description A problem with type `/problems/validation`, listing each invalid input. */
-        ValidationProblem: components["schemas"]["Problem"] & {
+        /**
+         * Session
+         * @description A signed-in session. The token is only in the cookie and never part of the resource.
+         */
+        Session: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            user: components["schemas"]["User"];
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Last Used At
+             * Format: date-time
+             * @description Updated at most once a minute. A session unused for the idle limit ends before `expires_at`.
+             */
+            last_used_at: string;
+            /**
+             * Expires At
+             * Format: date-time
+             * @description The absolute end of the session, however much it is used.
+             */
+            expires_at: string;
+            /**
+             * Current
+             * @description Whether this is the session the request carries.
+             */
+            current: boolean;
+        };
+        /** SessionPage */
+        SessionPage: {
+            /** Sessions */
+            sessions: components["schemas"]["Session"][];
+            /**
+             * Next Cursor
+             * @description Cursor for the next page; null on the last page.
+             */
+            next_cursor: string | null;
+        };
+        /** SignInLock */
+        SignInLock: {
+            /**
+             * Locked
+             * @description Sign-ins from clients without a device cookie for the account are refused.
+             */
+            locked: boolean;
+            /**
+             * Failures
+             * @description Failed sign-ins from such clients since the last successful one; the lock starts at 100.
+             */
+            failures: number;
+        };
+        /** User */
+        User: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Account
+             * @description Lowercase; accounts are unique regardless of case.
+             */
+            account: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "admin" | "user";
+            /** Is Disabled */
+            is_disabled: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** UserPage */
+        UserPage: {
+            /** Users */
+            users: components["schemas"]["User"][];
+            /**
+             * Next Cursor
+             * @description Cursor for the next page; null on the last page.
+             */
+            next_cursor: string | null;
+        };
+        /** UserPatch */
+        UserPatch: {
+            /** Is Disabled */
+            is_disabled?: boolean;
+        };
+        /**
+         * ValidationProblem
+         * @description A problem with type `/problems/validation`, listing each invalid input.
+         */
+        ValidationProblem: {
+            /**
+             * Type
+             * Format: uri-reference
+             * @description Fixed per kind of problem. The list grows (x-extensible-enum), so clients translate the values they know and fall back for the rest.
+             * @example /problems/not-found
+             */
+            type: "/problems/bad-request" | "/problems/unauthenticated" | "/problems/forbidden" | "/problems/not-found" | "/problems/method-not-allowed" | "/problems/conflict" | "/problems/payload-too-large" | "/problems/unsupported-media-type" | "/problems/validation" | "/problems/rate-limited" | "/problems/internal" | "/problems/unavailable";
+            /**
+             * Title
+             * @description Fixed per `type`.
+             */
+            title: string;
+            /**
+             * Status
+             * @description The HTTP status code.
+             */
+            status: number;
+            /**
+             * Detail
+             * @description Human-readable explanation for developers; clients must not parse it.
+             */
+            detail?: string;
+            /**
+             * Code
+             * @description Stable machine-readable code refining `type`. The list grows (x-extensible-enum), so clients translate the values they know and fall back for the rest.
+             */
+            code?: "account_taken" | "invalid_credentials" | "login_throttled" | "last_admin" | "reauthentication_required" | "session_invalid" | "insufficient_role" | "cross_origin_request";
+            /**
+             * Request Id
+             * @description The request's `X-Request-ID`, for matching a report with the server logs.
+             */
+            request_id?: string;
+            /** Errors */
             errors: components["schemas"]["FieldError"][];
         };
-        FieldError: {
-            /**
-             * @description JSON Pointer (RFC 6901) to the invalid value in the request body, or `/<name>` for a query or path
-             *     parameter. Empty when the whole body is missing.
-             * @example /title
-             */
-            pointer: string;
-            /**
-             * @description Stable machine-readable code: a failed contract rule, or a business rule such as `password_too_common`.
-             *     The list grows (x-extensible-enum), so clients translate the values they know and fall back for the rest.
-             * @example too_short
-             */
-            code: "required" | "too_short" | "too_long" | "pattern" | "enum" | "format" | "out_of_range" | "invalid_type" | "null_not_allowed" | "additional_property" | "invalid" | "password_too_common";
-            /** @description Human-readable explanation for developers; clients must not parse it. */
-            detail: string;
-        };
     };
-    responses: {
-        /** @description The request is malformed, for example a body that is not valid JSON. */
-        BadRequest: {
-            headers: {
-                [name: string]: unknown;
-            };
-            content: {
-                "application/problem+json": components["schemas"]["Problem"];
-            };
-        };
-        /** @description No valid session. */
-        Unauthenticated: {
-            headers: {
-                [name: string]: unknown;
-            };
-            content: {
-                "application/problem+json": components["schemas"]["Problem"];
-            };
-        };
-        /** @description Authenticated but not allowed, or a cross-origin state-changing request. */
-        Forbidden: {
-            headers: {
-                [name: string]: unknown;
-            };
-            content: {
-                "application/problem+json": components["schemas"]["Problem"];
-            };
-        };
-        /** @description The resource does not exist or is not visible to the caller. */
-        NotFound: {
-            headers: {
-                [name: string]: unknown;
-            };
-            content: {
-                "application/problem+json": components["schemas"]["Problem"];
-            };
-        };
-        /** @description The request conflicts with the current state, for example a taken account. */
-        Conflict: {
-            headers: {
-                [name: string]: unknown;
-            };
-            content: {
-                "application/problem+json": components["schemas"]["Problem"];
-            };
-        };
-        /** @description The request body is over the size limit. */
-        PayloadTooLarge: {
-            headers: {
-                [name: string]: unknown;
-            };
-            content: {
-                "application/problem+json": components["schemas"]["Problem"];
-            };
-        };
-        /** @description The request body's Content-Type is not one the operation accepts. */
-        UnsupportedMediaType: {
-            headers: {
-                [name: string]: unknown;
-            };
-            content: {
-                "application/problem+json": components["schemas"]["Problem"];
-            };
-        };
-        /** @description The request does not match the contract or a business rule. */
-        ValidationFailed: {
-            headers: {
-                [name: string]: unknown;
-            };
-            content: {
-                "application/problem+json": components["schemas"]["ValidationProblem"];
-            };
-        };
-        /** @description Too many requests. */
-        RateLimited: {
-            headers: {
-                "Retry-After": components["headers"]["RetryAfter"];
-                [name: string]: unknown;
-            };
-            content: {
-                "application/problem+json": components["schemas"]["Problem"];
-            };
-        };
-        /** @description An unexpected error; details are only in the server log. */
-        InternalError: {
-            headers: {
-                [name: string]: unknown;
-            };
-            content: {
-                "application/problem+json": components["schemas"]["Problem"];
-            };
-        };
-    };
-    parameters: {
-        Id: string;
-        /** @description Page size. */
-        Limit: number;
-        /** @description Opaque cursor from a previous page's `next_cursor`; omit for the first page. */
-        Cursor: string;
-    };
+    responses: never;
+    parameters: never;
     requestBodies: never;
-    headers: {
-        /** @description The URL of the created resource. */
-        Location: string;
-        /** @description The new session cookie. */
-        SetSessionCookie: string;
-        /** @description Expires the session cookie. On deleteSession, sent only when the revoked session is the current one. */
-        ClearSessionCookie: string;
-        /** @description Seconds to wait before retrying. */
-        RetryAfter: number;
-    };
+    headers: never;
     pathItems: never;
 }
 export type $defs = Record<string, never>;
@@ -498,9 +523,9 @@ export interface operations {
         parameters: {
             query?: {
                 /** @description Page size. */
-                limit?: components["parameters"]["Limit"];
+                limit?: number;
                 /** @description Opaque cursor from a previous page's `next_cursor`; omit for the first page. */
-                cursor?: components["parameters"]["Cursor"];
+                cursor?: string | null;
             };
             header?: never;
             path?: never;
@@ -517,10 +542,42 @@ export interface operations {
                     "application/json": components["schemas"]["UserPage"];
                 };
             };
-            401: components["responses"]["Unauthenticated"];
-            403: components["responses"]["Forbidden"];
-            422: components["responses"]["ValidationFailed"];
-            500: components["responses"]["InternalError"];
+            /** @description No valid session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Authenticated but not allowed, or a cross-origin state-changing request. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request does not match the contract or a business rule. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description An unexpected error; details are only in the server log. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
     createUser: {
@@ -539,215 +596,99 @@ export interface operations {
             /** @description The account was created and signed in. */
             201: {
                 headers: {
-                    Location: components["headers"]["Location"];
-                    "Set-Cookie": components["headers"]["SetSessionCookie"];
+                    /** @description The URL of the created resource. */
+                    Location?: string;
+                    /** @description The new session cookie. */
+                    "Set-Cookie"?: string;
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["User"];
                 };
             };
-            400: components["responses"]["BadRequest"];
-            403: components["responses"]["Forbidden"];
-            409: components["responses"]["Conflict"];
-            413: components["responses"]["PayloadTooLarge"];
-            415: components["responses"]["UnsupportedMediaType"];
-            422: components["responses"]["ValidationFailed"];
-            429: components["responses"]["RateLimited"];
-            500: components["responses"]["InternalError"];
-        };
-    };
-    getCurrentUser: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The signed-in user. */
-            200: {
+            /** @description The request is malformed, for example a body that is not valid JSON. */
+            400: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["User"];
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            401: components["responses"]["Unauthenticated"];
-            500: components["responses"]["InternalError"];
-        };
-    };
-    deleteCurrentUser: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Deleted. */
-            204: {
-                headers: {
-                    "Set-Cookie": components["headers"]["ClearSessionCookie"];
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            401: components["responses"]["Unauthenticated"];
-            403: components["responses"]["Forbidden"];
-            409: components["responses"]["Conflict"];
-            500: components["responses"]["InternalError"];
-        };
-    };
-    getUser: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The user. */
-            200: {
+            /** @description Authenticated but not allowed, or a cross-origin state-changing request. */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["User"];
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            401: components["responses"]["Unauthenticated"];
-            404: components["responses"]["NotFound"];
-            422: components["responses"]["ValidationFailed"];
-            500: components["responses"]["InternalError"];
-        };
-    };
-    deleteUser: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Deleted. */
-            204: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content?: never;
-            };
-            401: components["responses"]["Unauthenticated"];
-            403: components["responses"]["Forbidden"];
-            404: components["responses"]["NotFound"];
-            409: components["responses"]["Conflict"];
-            422: components["responses"]["ValidationFailed"];
-            500: components["responses"]["InternalError"];
-        };
-    };
-    patchUser: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/merge-patch+json": components["schemas"]["UserPatch"];
-            };
-        };
-        responses: {
-            /** @description The user after the change. */
-            200: {
+            /** @description The request conflicts with the current state, for example a taken account. */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["User"];
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            400: components["responses"]["BadRequest"];
-            401: components["responses"]["Unauthenticated"];
-            403: components["responses"]["Forbidden"];
-            404: components["responses"]["NotFound"];
-            409: components["responses"]["Conflict"];
-            413: components["responses"]["PayloadTooLarge"];
-            415: components["responses"]["UnsupportedMediaType"];
-            422: components["responses"]["ValidationFailed"];
-            500: components["responses"]["InternalError"];
-        };
-    };
-    getSignInLock: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description The lock state. */
-            200: {
+            /** @description The request body is over the size limit. */
+            413: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SignInLock"];
+                    "application/problem+json": components["schemas"]["Problem"];
                 };
             };
-            401: components["responses"]["Unauthenticated"];
-            403: components["responses"]["Forbidden"];
-            404: components["responses"]["NotFound"];
-            422: components["responses"]["ValidationFailed"];
-            500: components["responses"]["InternalError"];
-        };
-    };
-    deleteSignInLock: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: components["parameters"]["Id"];
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Unlocked. */
-            204: {
+            /** @description The request body's Content-Type is not one the operation accepts. */
+            415: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
             };
-            401: components["responses"]["Unauthenticated"];
-            403: components["responses"]["Forbidden"];
-            404: components["responses"]["NotFound"];
-            422: components["responses"]["ValidationFailed"];
-            500: components["responses"]["InternalError"];
+            /** @description The request does not match the contract or a business rule. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Too many requests. */
+            429: {
+                headers: {
+                    /** @description Seconds to wait before retrying. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description An unexpected error; details are only in the server log. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
     listSessions: {
         parameters: {
             query?: {
                 /** @description Page size. */
-                limit?: components["parameters"]["Limit"];
+                limit?: number;
                 /** @description Opaque cursor from a previous page's `next_cursor`; omit for the first page. */
-                cursor?: components["parameters"]["Cursor"];
+                cursor?: string | null;
             };
             header?: never;
             path?: never;
@@ -764,9 +705,33 @@ export interface operations {
                     "application/json": components["schemas"]["SessionPage"];
                 };
             };
-            401: components["responses"]["Unauthenticated"];
-            422: components["responses"]["ValidationFailed"];
-            500: components["responses"]["InternalError"];
+            /** @description No valid session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request does not match the contract or a business rule. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description An unexpected error; details are only in the server log. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
     createSession: {
@@ -785,22 +750,90 @@ export interface operations {
             /** @description Signed in; `Location` is the new session. */
             201: {
                 headers: {
-                    Location: components["headers"]["Location"];
-                    "Set-Cookie": components["headers"]["SetSessionCookie"];
+                    /** @description The URL of the created resource. */
+                    Location?: string;
+                    /** @description The new session cookie. */
+                    "Set-Cookie"?: string;
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["Session"];
                 };
             };
-            400: components["responses"]["BadRequest"];
-            401: components["responses"]["Unauthenticated"];
-            403: components["responses"]["Forbidden"];
-            413: components["responses"]["PayloadTooLarge"];
-            415: components["responses"]["UnsupportedMediaType"];
-            422: components["responses"]["ValidationFailed"];
-            429: components["responses"]["RateLimited"];
-            500: components["responses"]["InternalError"];
+            /** @description The request is malformed, for example a body that is not valid JSON. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description No valid session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Authenticated but not allowed, or a cross-origin state-changing request. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request body is over the size limit. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request body's Content-Type is not one the operation accepts. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request does not match the contract or a business rule. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description Too many requests. */
+            429: {
+                headers: {
+                    /** @description Seconds to wait before retrying. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description An unexpected error; details are only in the server log. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
     deleteAllSessions: {
@@ -815,14 +848,39 @@ export interface operations {
             /** @description Signed out everywhere. */
             204: {
                 headers: {
-                    "Set-Cookie": components["headers"]["ClearSessionCookie"];
+                    /** @description Expires the session cookie. On deleteSession, sent only when the revoked session is the current one. */
+                    "Set-Cookie"?: string;
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            401: components["responses"]["Unauthenticated"];
-            403: components["responses"]["Forbidden"];
-            500: components["responses"]["InternalError"];
+            /** @description No valid session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Authenticated but not allowed, or a cross-origin state-changing request. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description An unexpected error; details are only in the server log. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
     getCurrentSession: {
@@ -843,8 +901,24 @@ export interface operations {
                     "application/json": components["schemas"]["Session"];
                 };
             };
-            401: components["responses"]["Unauthenticated"];
-            500: components["responses"]["InternalError"];
+            /** @description No valid session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description An unexpected error; details are only in the server log. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
     deleteCurrentSession: {
@@ -859,13 +933,495 @@ export interface operations {
             /** @description Signed out. */
             204: {
                 headers: {
-                    "Set-Cookie": components["headers"]["ClearSessionCookie"];
+                    /** @description Expires the session cookie. On deleteSession, sent only when the revoked session is the current one. */
+                    "Set-Cookie"?: string;
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            403: components["responses"]["Forbidden"];
-            500: components["responses"]["InternalError"];
+            /** @description Authenticated but not allowed, or a cross-origin state-changing request. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description An unexpected error; details are only in the server log. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getCurrentUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The signed-in user. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+            /** @description No valid session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description An unexpected error; details are only in the server log. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    deleteCurrentUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    /** @description Expires the session cookie. On deleteSession, sent only when the revoked session is the current one. */
+                    "Set-Cookie"?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No valid session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Authenticated but not allowed, or a cross-origin state-changing request. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request conflicts with the current state, for example a taken account. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description An unexpected error; details are only in the server log. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getSignInLock: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The lock state. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignInLock"];
+                };
+            };
+            /** @description No valid session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Authenticated but not allowed, or a cross-origin state-changing request. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The resource does not exist or is not visible to the caller. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request does not match the contract or a business rule. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description An unexpected error; details are only in the server log. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    deleteSignInLock: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Unlocked. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No valid session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Authenticated but not allowed, or a cross-origin state-changing request. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The resource does not exist or is not visible to the caller. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request does not match the contract or a business rule. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description An unexpected error; details are only in the server log. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    getUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The user. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+            /** @description No valid session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The resource does not exist or is not visible to the caller. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request does not match the contract or a business rule. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description An unexpected error; details are only in the server log. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    deleteUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Deleted. */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No valid session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Authenticated but not allowed, or a cross-origin state-changing request. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The resource does not exist or is not visible to the caller. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request conflicts with the current state, for example a taken account. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request does not match the contract or a business rule. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description An unexpected error; details are only in the server log. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+        };
+    };
+    patchUser: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/merge-patch+json": components["schemas"]["UserPatch"];
+            };
+        };
+        responses: {
+            /** @description The user after the change. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["User"];
+                };
+            };
+            /** @description The request is malformed, for example a body that is not valid JSON. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description No valid session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Authenticated but not allowed, or a cross-origin state-changing request. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The resource does not exist or is not visible to the caller. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request conflicts with the current state, for example a taken account. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request body is over the size limit. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request body's Content-Type is not one the operation accepts. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request does not match the contract or a business rule. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description An unexpected error; details are only in the server log. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
     getSession: {
@@ -873,7 +1429,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                id: components["parameters"]["Id"];
+                id: string;
             };
             cookie?: never;
         };
@@ -888,10 +1444,42 @@ export interface operations {
                     "application/json": components["schemas"]["Session"];
                 };
             };
-            401: components["responses"]["Unauthenticated"];
-            404: components["responses"]["NotFound"];
-            422: components["responses"]["ValidationFailed"];
-            500: components["responses"]["InternalError"];
+            /** @description No valid session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The resource does not exist or is not visible to the caller. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request does not match the contract or a business rule. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description An unexpected error; details are only in the server log. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
     deleteSession: {
@@ -899,7 +1487,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                id: components["parameters"]["Id"];
+                id: string;
             };
             cookie?: never;
         };
@@ -908,25 +1496,66 @@ export interface operations {
             /** @description The session was revoked. */
             204: {
                 headers: {
-                    "Set-Cookie": components["headers"]["ClearSessionCookie"];
+                    /** @description Expires the session cookie. On deleteSession, sent only when the revoked session is the current one. */
+                    "Set-Cookie"?: string;
                     [name: string]: unknown;
                 };
                 content?: never;
             };
-            401: components["responses"]["Unauthenticated"];
-            403: components["responses"]["Forbidden"];
-            404: components["responses"]["NotFound"];
-            422: components["responses"]["ValidationFailed"];
-            500: components["responses"]["InternalError"];
+            /** @description No valid session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Authenticated but not allowed, or a cross-origin state-changing request. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The resource does not exist or is not visible to the caller. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request does not match the contract or a business rule. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description An unexpected error; details are only in the server log. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
     listItems: {
         parameters: {
             query?: {
                 /** @description Page size. */
-                limit?: components["parameters"]["Limit"];
+                limit?: number;
                 /** @description Opaque cursor from a previous page's `next_cursor`; omit for the first page. */
-                cursor?: components["parameters"]["Cursor"];
+                cursor?: string | null;
             };
             header?: never;
             path?: never;
@@ -943,9 +1572,33 @@ export interface operations {
                     "application/json": components["schemas"]["ItemPage"];
                 };
             };
-            401: components["responses"]["Unauthenticated"];
-            422: components["responses"]["ValidationFailed"];
-            500: components["responses"]["InternalError"];
+            /** @description No valid session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request does not match the contract or a business rule. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description An unexpected error; details are only in the server log. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
     createItem: {
@@ -964,20 +1617,77 @@ export interface operations {
             /** @description The item was created. */
             201: {
                 headers: {
-                    Location: components["headers"]["Location"];
+                    /** @description The URL of the created resource. */
+                    Location?: string;
                     [name: string]: unknown;
                 };
                 content: {
                     "application/json": components["schemas"]["Item"];
                 };
             };
-            400: components["responses"]["BadRequest"];
-            401: components["responses"]["Unauthenticated"];
-            403: components["responses"]["Forbidden"];
-            413: components["responses"]["PayloadTooLarge"];
-            415: components["responses"]["UnsupportedMediaType"];
-            422: components["responses"]["ValidationFailed"];
-            500: components["responses"]["InternalError"];
+            /** @description The request is malformed, for example a body that is not valid JSON. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description No valid session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Authenticated but not allowed, or a cross-origin state-changing request. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request body is over the size limit. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request body's Content-Type is not one the operation accepts. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request does not match the contract or a business rule. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description An unexpected error; details are only in the server log. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
     getItem: {
@@ -985,7 +1695,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                id: components["parameters"]["Id"];
+                id: string;
             };
             cookie?: never;
         };
@@ -1000,10 +1710,42 @@ export interface operations {
                     "application/json": components["schemas"]["Item"];
                 };
             };
-            401: components["responses"]["Unauthenticated"];
-            404: components["responses"]["NotFound"];
-            422: components["responses"]["ValidationFailed"];
-            500: components["responses"]["InternalError"];
+            /** @description No valid session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The resource does not exist or is not visible to the caller. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request does not match the contract or a business rule. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description An unexpected error; details are only in the server log. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
     deleteItem: {
@@ -1011,7 +1753,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                id: components["parameters"]["Id"];
+                id: string;
             };
             cookie?: never;
         };
@@ -1024,11 +1766,51 @@ export interface operations {
                 };
                 content?: never;
             };
-            401: components["responses"]["Unauthenticated"];
-            403: components["responses"]["Forbidden"];
-            404: components["responses"]["NotFound"];
-            422: components["responses"]["ValidationFailed"];
-            500: components["responses"]["InternalError"];
+            /** @description No valid session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Authenticated but not allowed, or a cross-origin state-changing request. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The resource does not exist or is not visible to the caller. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request does not match the contract or a business rule. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description An unexpected error; details are only in the server log. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
     updateItem: {
@@ -1036,7 +1818,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                id: components["parameters"]["Id"];
+                id: string;
             };
             cookie?: never;
         };
@@ -1055,14 +1837,78 @@ export interface operations {
                     "application/json": components["schemas"]["Item"];
                 };
             };
-            400: components["responses"]["BadRequest"];
-            401: components["responses"]["Unauthenticated"];
-            403: components["responses"]["Forbidden"];
-            404: components["responses"]["NotFound"];
-            413: components["responses"]["PayloadTooLarge"];
-            415: components["responses"]["UnsupportedMediaType"];
-            422: components["responses"]["ValidationFailed"];
-            500: components["responses"]["InternalError"];
+            /** @description The request is malformed, for example a body that is not valid JSON. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description No valid session. */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description Authenticated but not allowed, or a cross-origin state-changing request. */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The resource does not exist or is not visible to the caller. */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request body is over the size limit. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request body's Content-Type is not one the operation accepts. */
+            415: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
+            /** @description The request does not match the contract or a business rule. */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["ValidationProblem"];
+                };
+            };
+            /** @description An unexpected error; details are only in the server log. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/problem+json": components["schemas"]["Problem"];
+                };
+            };
         };
     };
 }

@@ -9,7 +9,7 @@ pnpm build          # production build (standalone output)
 pnpm lint           # tsc --noEmit + Biome
 pnpm format         # Biome format --write
 pnpm test           # Vitest
-pnpm gen:api        # regenerate src/lib/api/schema.d.ts from backend/api/openapi.yaml
+pnpm gen:api        # regenerate src/lib/api/schema.d.ts from backend/api/openapi.json
 ```
 
 The browser calls the API on its own origin under `/api`. `pnpm dev` on the host

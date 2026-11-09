@@ -4,7 +4,7 @@ import zhTW from "../../../../messages/zh-TW.json";
 import type { FieldErrorCode, ProblemCode, ProblemTypeSlug } from "../errors";
 
 // Compile-time half (pnpm lint): every problem type, code and field error code
-// the contract declares has a message. A value added to openapi.yaml without a
+// the contract declares has a message. A value added to the contract without a
 // translation fails tsc here instead of showing a vaguer message.
 type Covers<Key extends string> = Record<Key, string>;
 type Problems = {

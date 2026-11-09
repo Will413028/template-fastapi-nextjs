@@ -35,7 +35,7 @@ describe("api client", () => {
   it("calls the API on the page's own origin under /api", async () => {
     mockFetch.mockResolvedValueOnce(Response.json({ id: "u1" }));
 
-    await api.GET("/users/me");
+    await api.GET("/api/users/me");
 
     const [request] =
       mockFetch.mock.calls[0] ?? expect.unreachable("fetch was not called");
@@ -47,7 +47,7 @@ describe("api client", () => {
       Response.json({ user: {} }, { status: 201 }),
     );
 
-    await api.POST("/sessions", { body: { account: "a", password: "p" } });
+    await api.POST("/api/sessions", { body: { account: "a", password: "p" } });
 
     const [request] =
       mockFetch.mock.calls[0] ?? expect.unreachable("fetch was not called");
@@ -64,7 +64,9 @@ describe("api client", () => {
       }),
     );
 
-    await expect(unwrap(api.GET("/users/me"))).rejects.toBeInstanceOf(ApiError);
+    await expect(unwrap(api.GET("/api/users/me"))).rejects.toBeInstanceOf(
+      ApiError,
+    );
 
     expect(window.location.href).toBe("/login");
     expect(mockFetch).toHaveBeenCalledTimes(1);
@@ -80,7 +82,9 @@ describe("api client", () => {
     );
 
     await expect(
-      unwrap(api.POST("/sessions", { body: { account: "a", password: "p" } })),
+      unwrap(
+        api.POST("/api/sessions", { body: { account: "a", password: "p" } }),
+      ),
     ).rejects.toMatchObject({ problem: { code: "invalid_credentials" } });
 
     expect(window.location.href).toBe("");
@@ -90,11 +94,13 @@ describe("api client", () => {
 describe("unwrap", () => {
   it("returns the data, and undefined for 204", async () => {
     mockFetch.mockResolvedValueOnce(Response.json({ id: "u1" }));
-    await expect(unwrap(api.GET("/users/me"))).resolves.toEqual({ id: "u1" });
+    await expect(unwrap(api.GET("/api/users/me"))).resolves.toEqual({
+      id: "u1",
+    });
 
     mockFetch.mockResolvedValueOnce(new Response(null, { status: 204 }));
     await expect(
-      unwrap(api.DELETE("/sessions/current")),
+      unwrap(api.DELETE("/api/sessions/current")),
     ).resolves.toBeUndefined();
   });
 
@@ -106,7 +112,7 @@ describe("unwrap", () => {
       }),
     );
 
-    await expect(unwrap(api.GET("/users/me"))).rejects.toMatchObject({
+    await expect(unwrap(api.GET("/api/users/me"))).rejects.toMatchObject({
       status: 502,
       problem: { type: "about:blank", status: 502 },
     });

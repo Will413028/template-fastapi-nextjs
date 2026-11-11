@@ -121,7 +121,7 @@ Alembic（[ADR FastAPI 版後端](../adr/2026-11-05-fastapi-backend-stack.md) D3
 
 ### 不可修改
 
-- 已推上 `dev` 或合併進 `main` 的 revision 只能新增，**NEVER** 修改、刪除或改名；要改就新增一支。`make -C backend migrations-immutable`（`make check` 的一部分）以 `BASE`（本機預設 `origin/main`）的 merge-base 為基準逐檔比對（`scripts/check_migrations_immutable.py`）；CI 對 push 用該分支上一次的 tip、對 PR 用 base 分支，所以推上 `dev` 的 revision 也不能再改。
+- 已推上 `dev` 或合併進 `main` 的 revision 只能新增，**NEVER** 修改、刪除或改名；要改就新增一支。`make -C backend migrations-immutable`（`make check` 的一部分）以 `BASE`（本機預設 `origin/dev`，沒有 dev 的 clone 用 `origin/main`）的 merge-base 為基準逐檔比對（`scripts/check_migrations_immutable.py`）；CI 對 push 用該分支上一次的 tip、對 PR 用 base 分支，所以推上 `dev` 的 revision 也不能再改。
 - 還沒推上去的 revision 可以刪掉重新產生。
 
 ### 與上一版相容（expand／contract）

@@ -50,7 +50,7 @@ every difference is mapped
 | F26 | `SignInLock.failures` 的 `format: int64` 拿掉 | 附件 F26（刻意放棄） |
 | F30 | `example` → `examples` 陣列（Problem.type、FieldError.pointer、FieldError.code） | 附件 F30 |
 | F32 | `ValidationProblem` 從 `allOf [Problem, {errors}]` 變成一個平的 object（7 個 property，required `type`、`title`、`status`、`errors`）；16 個宣告 422 的 operation 各報一次 | 附件 F32 |
-| T1 | Pydantic 在每個 schema 與 property 加 `title`（例如 `"title": "Next Cursor"`） | 附件 §2 T1：只是文件，不影響驗證或型別；不另寫後處理去掉（FastAPI 應用的常態）；待 Will 確認 |
+| T1 | Pydantic 在每個 schema 與 property 加 `title`（例如 `"title": "Next Cursor"`） | 附件 §2 T1：只是文件，不影響驗證或型別；不另寫後處理去掉（FastAPI 應用的常態）；2026-11-11 Will 確認保留 |
 | T2 | `components/parameters`、`components/headers`、`components/responses` 不再存在，內容逐 operation 內嵌；oasdiff 解開 `$ref` 後內容相同，所以 operation 層沒有對應差異 | 附件 §2 T2 |
 
 ## oasdiff 會不會漏報（對照組）

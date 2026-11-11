@@ -99,12 +99,12 @@
   - 消費端：`rg -n 'openapi\.yaml|x-extensible-enum|schemaPath|"/(sessions|users|items|admin)' /Users/will/second-brain/.projects/personal/template-fastapi-nextjs/frontend --glob '!**/schema.d.ts'`（附件 §4 E1–E9）。
   - 不能動：使用者看得到的行為與訊息文字。
   - 驗收：`pnpm test`、`pnpm lint`、`pnpm gen:api:check`、`pnpm build` 綠燈；開 PR 進 `dev`，CI 的 backend（含 db 測試）、frontend、stack job 綠燈；mutation（複本）：後端新增一個錯誤代碼並重新產生 `schema.d.ts`、不補翻譯，`pnpm lint` 的 tsc（`messages.test.ts` 的編譯期檢查）要失敗（原寫 `pnpm test`：vitest 不做型別檢查，實測存活，2026-11-09 更正）；把 `auth-api.ts` 的一個 path 改回不含 `/api`，型別檢查要失敗。
-- [ ] **6. `api-breaking` 接上 CI**（被擋於：3、5）
+- [x] **6. `api-breaking` 接上 CI**（被擋於：3、5；完成 2026-11-11，commit `0d2978f`、`5823fe8`，PR #29）
   - 範圍：`make -C backend api-breaking` 用 CI 既有的 `BASE`，比對 `git show $(BASE):backend/api/openapi.json` 與工作區版本，`oasdiff breaking --fail-on ERR --err-ignore backend/api/breaking-ignore.txt`；base 沒有 `backend/api/` 目錄時印出說明並以 0 結束（目錄在、檔案不在 = 改名或路徑錯，失敗）；加進 `check`（lefthook pre-push 與 CI 都跑）；`api-design.md:165` 的 BASE 說明改成與 migrations-immutable 相同；刻意的破壞性變更以在 `breaking-ignore.txt` 加一行（附理由）放行，該檔變更走 PR review。
   - 消費端：`api-design.md:165`、`.github/workflows/ci.yml`、`backend/Makefile`、`lefthook.yml`。
-  - 驗收：CI 的 log 有 `oasdiff_<版本>_linux_amd64.tar.gz: OK`（步驟 3 在 macOS 驗的下載在 Linux 補驗）；開一個 PR 進 `dev`，刪一個必填回應欄位，CI 的 `api-breaking` 失敗；在 `breaking-ignore.txt` 加上該項後綠燈；本機 `make -C backend api-breaking BASE=<含 openapi.json 的 commit>` 重現同樣結果。
+  - 驗收：CI 的 log 有 `oasdiff_<版本>_linux_amd64.tar.gz: OK`（步驟 3 在 macOS 驗的下載在 Linux 補驗）；開一個 PR 進 `dev`，刪一個必填回應欄位，CI 的 `api-breaking` 失敗（2026-11-11 Will：不繞過 pre-push 推上破壞性 commit，失敗這半由本機 pre-push 的同一個 make target 證明，CI 驗放行那半）；在 `breaking-ignore.txt` 加上該項後綠燈；本機 `make -C backend api-breaking BASE=<含 openapi.json 的 commit>` 重現同樣結果。
 - [ ] **7. ADR 與規則文件**（被擋於：2–6）
-  - 範圍：修訂 ADR `2026-11-05-fastapi-backend-stack` 的 D1、D2、D5 與 Invariants，以及 ADR `2026-10-18-api-and-auth-baseline` 的 D2 與相關 Invariants（decision-log skill）；把 D2、D5、D6 寫進 ADR（decision-log skill，可與上述修訂合併），附件 `brief-d2-d5-d6.md` 的決定併入後不留在計畫目錄；改寫 `docs/rules/api-design.md`（契約段；認證段寫明錯誤順序表 404/405 > 413 > 401/403 > 429 > 415 > 400 > 422；限流段 `:153` 改成每個請求都扣）、`add-module.md`（`schemas.py`、新套件名）、AGENTS.md、`frontend/AGENTS.md`、`frontend/README.md`、`template/derived/README.md`、根目錄 `README.md`、`.env-example`。
+  - 範圍：修訂 ADR `2026-11-05-fastapi-backend-stack` 的 D1、D2、D5 與 Invariants，以及 ADR `2026-10-18-api-and-auth-baseline` 的 D2 與相關 Invariants（decision-log skill）；把 D2、D5、D6 寫進 ADR（decision-log skill，可與上述修訂合併），附件 `brief-d2-d5-d6.md` 的決定併入後不留在計畫目錄；改寫 `docs/rules/api-design.md`（契約段；認證段寫明錯誤順序表 413 > 404/405 > 401/403 > 429 > 415 > 400 > 422；限流段 `:153` 改成每個請求都扣）、`add-module.md`（`schemas.py`、新套件名）、AGENTS.md、`frontend/AGENTS.md`、`frontend/README.md`、`template/derived/README.md`、根目錄 `README.md`、`.env-example`。
   - 驗收：`scripts/check_doc_refs.py` 綠燈；`rg -n --hidden -g '!.git' -g '!docs/plans/**' -g '!**/node_modules/**' -g '!**/*.lock' -g '!**/pnpm-lock.yaml' 'openapi\.yaml|contract_models|openapi-core|hand-written|3\.0\.3|app\.(web|platform)\b' /Users/will/second-brain/.projects/personal/template-fastapi-nextjs` 只剩 ADR 的歷史段落（另允許 `pyproject.toml`、`uv.lock` 的 openapi-core，D5）。
 - [ ] **8. 收尾**：完成定義逐項核對（Goal 每一句對到一個驗收）；design-review skill 對整個 diff 跑一次；長期檢查（`gen-check`、`api-breaking`）已在 CI，一次性腳本留附件；延後項附觸發條件搬回主清單，主清單 x-extensible-enum 那項依步驟 5 結果勾掉或保留；附件中的決定併入 ADR。驗收：CI 全綠的 run 連結、design-review 的 finding 清單與處置。
 
@@ -115,7 +115,7 @@
 - **D1 套件命名**（已決 2026-11-08，Will：「這個命名併進上一則的重構計畫一起開工」，`web` 改 `http` 為該則建議）
   - 結論：`core`、`http`、`main.py`＋`cli/`＋`migrations/`；檔案對應見步驟 2。
 - **D2 錯誤優先順序與請求格式**（已決 2026-11-08，Will：照簡報建議；擋住：4b；簡報：附件 `brief-d2-d5-d6.md` §3，事實：`spike.md` (a)(b)）
-  - 結論：`app.web`（改名後 `app.http`）的 custom `APIRoute` 在 FastAPI 讀 body 之前依序檢查 access marker（401／403，含 admin）→ 限流（429，見 D6）→ 宣告的 media type（415；PATCH 只收 `application/merge-patch+json`，415 回應帶 `Accept-Patch`）→ 嚴格 JSON（400：語法錯、尾巴多字、NaN／Infinity、非 UTF-8，以 custom `Request.json()` 實作）；之後 Pydantic 驗證失敗回 422 `{pointer, code, detail}`。整體順序 404/405 > 413 > 401/403 > 429 > 415 > 400 > 422；413 由獨立的 body 上限 middleware 負責。route class 依 route 的 marker 與 body 自動把它負責的 status 寫進 OpenAPI。
+  - 結論：`app.web`（改名後 `app.http`）的 custom `APIRoute` 在 FastAPI 讀 body 之前依序檢查 access marker（401／403，含 admin）→ 限流（429，見 D6）→ 宣告的 media type（415；PATCH 只收 `application/merge-patch+json`，415 回應帶 `Accept-Patch`）→ 嚴格 JSON（400：語法錯、尾巴多字、NaN／Infinity、非 UTF-8，以 custom `Request.json()` 實作）；之後 Pydantic 驗證失敗回 422 `{pointer, code, detail}`。整體順序 413 > 404/405 > 401/403 > 429 > 415 > 400 > 422（2026-11-11 Will 更正：照附件 B5 維持 413 先，原寫 404/405 > 413）；413 由獨立的 body 上限 middleware 負責。route class 依 route 的 marker 與 body 自動把它負責的 status 寫進 OpenAPI。
   - 理由：Spring Security、ASP.NET Core、DRF、Kubernetes 都先驗身分與權限再解析 body；RFC 9110（415）、5789（`Accept-Patch`）、7396、8259。改變現況的兩點：403 提前到內容檢查之前（現在非 admin 送錯 body 先拿 422），415 補 `Accept-Patch`。被推翻的選項：只用 exception handler（匿名壞 JSON 先於 401、接受 NaN、415 只能猜）。
 - **D3 匿名 401 的 body**（已決 2026-11-08，Will：選 A；擋住：4a）
   - A：統一用 access marker 現有的 `code: session_invalid`——只剩一條路徑；前端只看 status（`client.ts:23-28`），`session_invalid` 已在 enum 與訊息裡（建議）
@@ -133,7 +133,9 @@
 
 拍板順序：全部已決（D2、D5、D6 於 2026-11-08 依附件 `brief-d2-d5-d6.md` 的業界基準簡報拍板）。
 
-待 Will 確認（4b 審查 2026-11-09 提出）：D2 的整體順序句寫 404/405 > 413，附件 B5 寫「413 先於 404/405」並建議維持（body 上限 middleware 在路由之前讀完 body，也是 B6 的前提）。實作維持現狀（413 先），`route.py`、`api-design.md` 照實寫 413 > 404/405 > 401/403 > 429 > 415 > 400 > 422；若要改成 D2 的寫法，body 上限要改成路由之後才判斷。
+已決（2026-11-11，Will：照建議）：4b 審查提出 D2 的整體順序句（404/405 > 413）與附件 B5（413 先於 404/405）矛盾。維持 B5：body 上限 middleware 在路由之前讀完 body，也是 B6 的前提；D2 與步驟 7 的順序句已改寫，`route.py`、`api-design.md` 本來就照這個寫。
+
+已決（2026-11-11，Will：照建議）：T1，產生的規格保留 Pydantic 的 `title`。步驟 5 量到它只進 `schema.d.ts` 的 JSDoc 註解，型別不變。
 
 ### 步驟 4b 的累積審查清單（第 1 輪：`/code-review high`＝CR、diff 視角審查者＝DR）
 
@@ -141,7 +143,7 @@
 |---|---|---|---|
 | 1 | 多餘欄位送 `null` 回 `null_not_allowed`（CR1、DR1） | blocking | fixed：null 規則排除 `extra_forbidden`；`test_validation_codes` 新參數，回退 mutant killed |
 | 2 | 空 body 沒 Content-Type 回 415（CR2） | should | fixed：沒有 body 不看 media type；`test_a_missing_body_is_required_whatever_its_content_type`，mutant killed |
-| 3 | 錯誤順序文件寫 404/405 > 413（CR3、DR4） | should | fixed（文件照實寫）＋raised（D2 與 B5 矛盾，見上） |
+| 3 | 錯誤順序文件寫 404/405 > 413（CR3、DR4） | should | fixed（文件照實寫）＋raised（D2 與 B5 矛盾，2026-11-11 Will 決定維持 B5，見上） |
 | 4 | 拿掉 ECMA pattern 的保護後沒有替代（CR4） | should | fixed：`test_patterns_mean_the_same_to_the_server_and_its_clients` 掃產生的規格 |
 | 5 | 巢狀 request model 沒檢查 `REQUEST_CONFIG`（CR5） | should | fixed：啟動檢查遞迴；`test_a_request_body_is_a_strict_model`，mutant killed |
 | 6 | 非 JSON media type 也做嚴格 JSON 解析（CR6） | should | fixed：只解析 `application/json`、`+json`；`test_a_body_in_another_media_type_is_not_parsed_as_json`，mutant killed |
@@ -157,6 +159,32 @@
 
 findings 15（blocking 1）：fixed 12、recorded 2、raised 1（#3 兼 fixed）、rejected 1。
 
+### 步驟 6 的累積審查清單（`/code-review medium` 兩輪：R1、R2）
+
+| # | finding | 嚴重度 | 處置 |
+|---|---|---|---|
+| R1-1 | ignore 檔的註解範例會被 oasdiff 當成 ignore 行 | should | fixed：先濾掉註解行再交給 oasdiff；mutant killed |
+| R1-2 | 本機預設 `BASE=origin/main` 還沒有契約，本機與 pre-push 等於沒比 | should | fixed：本機預設 `origin/dev`，沒有 dev 的 clone 用 `origin/main` |
+| R1-3 | 「進了 base 就刪」不符合 dev→main 流程 | should | fixed：寫成進了 `main` 才刪 |
+| R1-4 | `--fail-on ERR` 放過刪除 request 欄位（oasdiff 只給 WARN） | blocking | fixed：`--fail-on WARN`、`--warn-ignore`；mutant killed |
+| R1-5 | ignore 檔沒列為 gate 檔 | should | fixed：加進 `GATE_FILES` |
+| R1-6 | base 沒有 `api/` 就通過，改名時會靜默關掉檢查 | should | rejected：目錄名是字面 `api`，`CONTRACT` 改名時 base 仍有 `api/`、讀不到檔而失敗（實測 `BASE=5bebe4c` exit 2）；沒有 `api/` 的 base 目前就是 `origin/main` |
+| R1-7 | 「一個變更一行」誤導：共用 schema 每個 operation 各一行 | should | fixed |
+| R1-8 | base 解析寫在沒有測試的 shell，與 `check_migrations_immutable.py` 重複 | should | recorded：邊界由 mutation 與手動的三種 base 驗過。觸發：recipe 再出一個 bug 或多一種邊界時，改寫成 `scripts/` 下有單元測試的腳本 |
+| R1-9 | `BASE` 解析不到時只有 git 的原始錯誤 | should | fixed：分開印「不是 commit」與「沒有共同歷史」 |
+| R1-10 | 新 checkout 第一次 `check` 要從 GitHub 下載 oasdiff，離線無法 push | should | recorded：步驟 3 的設計（固定版本加 checksum，`bin/` 每個 checkout 一份）。觸發：需要離線推送 |
+| R2-1 | `make new` 剛產生、還沒有 remote 的專案，第一次 push 時 `origin/*` 不存在，`check` 失敗 | should | recorded：`migrations-immutable` 在步驟 6 之前就有同樣行為（原預設 `origin/main`）。觸發：衍生專案第一次推送被擋 |
+| R2-2 | 錯誤訊息分不出 ref 不存在與歷史無關 | nit | fixed |
+| R2-3 | 文件把 oasdiff 的比對寫反（實際是行包含 method、path 與訊息） | should | fixed |
+| R2-4 | 有縮排的註解沒被濾掉 | should | fixed：`^[[:space:]]*#`；mutant killed |
+| R2-5 | 刪 ignore 行也要 trailer，文件沒寫 | should | fixed |
+| R2-6 | `check_migrations_immutable.py` 的用法說明仍寫預設 `origin/main` | should | fixed：說明 make 會傳 `origin/dev` |
+| R2-7 | help 文字沒寫 `origin/main` 退路 | nit | fixed |
+| R2-8 | `BASE ?= $(shell …)` 每次展開都重跑 git | nit | fixed：只在未定義時解析一次 |
+| R2-9 | `GATE_FILES` 新項目沒有測試 | should | fixed：`test_api_breaking_exceptions_need_trailer`；mutant killed |
+
+findings 19（blocking 1）：fixed 15、recorded 3、raised 0、rejected 1。
+
 ## 進度
 
 狀態值：未開始／進行中／程式完成待驗收／完成。
@@ -166,10 +194,9 @@ findings 15（blocking 1）：fixed 12、recorded 2、raised 1（#3 兼 fixed）
 | 1 spike | 完成 | (a)–(g) 全部，指令與原始輸出在 `spike.md` | 無 | `docs(plans): record the step 1 spike of the code-first plan` |
 | 2 套件改名 | 完成 | `make -C backend check` exit 0：354 passed、95 deselected，`lint-imports` 7 kept 0 broken，squawk 0 issues；`scripts/` 59 tests、`template/` 33 tests OK，`check_doc_refs.py`、`check_vercel_config.py` exit 0；mutation（複本）4 個全 killed：`app.cli.healthcheck` 加 `import fastapi`、分派器 `app.cli` 加 `import uvicorn`（light-healthcheck BROKEN），`app.main` import `app.migrations`、`app.core` import `app.http`（top-layers BROKEN）；`git diff -M100% --summary 4dbe59f HEAD -- backend/src/app` 中 `r20261103_baseline.py`、`versions/__init__.py`、`script.py.mako` 為 100% rename；以搬移後 commit 為 base，複本改 revision，`check_migrations_immutable.py` exit 1（killed）；消費端指令只剩 ADR `fastapi-backend-stack` D1、D2、D5 的段落（步驟 7 修訂）與新名稱 `app.main.check_routes` ；CI run 42501080365（`d08b183`）全綠：backend（含 db 測試）、frontend、generate、commit policy、compose stack（image + migrate + health）；`/code-review` findings 7（blocking 0）：fixed 2（`app.cli` 的死 `__main__` 區塊、AGENTS.md 分層表對 `logs.py` 的描述）、rejected 5（revision 檢查空窗 ×2：前提段 Will 2026-11-08 決定、以 100% rename 補足；ADR 舊名：步驟 7；`http` 與標準庫同名：沒有任何設定把 `src/app` 放進 `sys.path`；routes 併入 `main.py`：步驟 2 範圍、4b 刪除） | 無 | `0b4bff4`、`d08b183` |
 | 3 固定 oasdiff | 完成 | 乾淨 clone＋diff：`make -C backend tools` → `oasdiff_1.35.0_darwin_all.tar.gz: OK`、`oasdiff version 1.35.0`，重跑 Nothing to be done；改錯 darwin_all checksum → `FAILED`、exit 2、沒留下 binary；改 `OASDIFF_VERSION` 後會重新下載（不沿用舊 binary）；`tool_versions.py bump oasdiff --version 1.35.0` 重寫後 Makefile 無差異（三個 checksum 與 release `checksums.txt` 相符）；`check` 回報 `oasdiff: 1.35.0 (current)`；`make -n tools OASDIFF_OS=linux` 在 arm64 選 `linux_arm64` 與對應 checksum；mutation（複本）：刪掉 `OASDIFF_SHA256_linux_amd64`，`verify` exit 1（killed）；`scripts/` 63 tests OK、`check_doc_refs.py`、`actionlint`、`make lint-docker` exit 0；`make -C backend check` exit 0（354 passed）；`/code-review` findings 7（blocking 0）：fixed 3（版本變更不重新下載，hadolint 一併改成含版本的檔名；release 少了 archive 時 `bump` 給明確訊息；測試 fixture 改名）、recorded 1（Linux 實際下載：步驟 6 CI 跑 `api-breaking` 時驗）、rejected 3（兩份下載規則合併：binary 與 tar 檔形狀不同；改成資料表、`uname` 延遲求值：nit） | Linux 上實際下載與解壓：本機是 macOS，步驟 6 的 CI run 補驗 | 見 git log |
-| 4a 契約改由 FastAPI 產生 | 完成 | `contract_delta.py`（附件，一次性）exit 0：oasdiff diff 與 changelog 的每一項都對到附件 §2（F1–F3、F13–F15、F20–F22、F26、F30、F32，另補 T1 Pydantic title、T2 component 內嵌）；腳本本身的 mutation 10 個全部 exit 1，兩邊同時加 nullable 欄位的對照組 exit 0；oasdiff 對 x-extensible-enum、header、media type 的差異會報（對照組），所以三份 enum 清單、§2b 的 status 與 header 都與 yaml 相同；`make -C backend check` exit 0：361 passed、95 deselected，`lint-imports` 7 kept，pyright 0 errors，squawk 0 issues；`check_locks.py`、`check_doc_refs.py`、`actionlint` exit 0；mutation（複本）7 個全 killed：拿掉 `Item.title` 的 `max_length` → gen-check 的比對失敗（以 Makefile 的同一段指令直接跑，避開 `uv run` 改寫 editable 安裝）、prod 開 `openapi_url` → `test_docs_only_in_dev` 失敗（第一版測試用 stub app 時這個 mutation 存活，因為舊的 `ContractValidation` 先回 404；改用真實 routes 後由 `check_routes` 擋下）、拿掉 problem media type 後處理、後處理只認 `application/json`、health 路徑提前跳過、`signed_in` 拿掉 security、`getItem` 少宣告 422；審查：`/code-review high` 10＋2 項、diff 視角審查者第 1 輪 7 項（合併成 16 列的累積清單）、第 2 輪 2 項新 finding＋推翻 1 項駁回；findings 18（blocking 0）：fixed 16、recorded 2（過渡期 yaml 與 schemas 沒有自動閘門：4a–5 同一分支一個 PR、4b 刪 yaml，過渡期規則寫進 AGENTS.md 與 api-design.md；代碼清單由登錄表產生：附件 B61，4b）、raised 0、rejected 0；CI run 42511618636（PR #24）全綠：backend（含 db 測試）、frontend、generate、commit policy、compose stack；推送前 pre-push 抓到衍生專案會帶到 `docs/plans` 路徑（generator 測試），另一個 commit 修正 | T1（保留 Pydantic title）待 Will 確認 | `1ebeb82`、`c02318e`、`0f10347`；PR #24（draft，4a–5 完成後才合併） |
+| 4a 契約改由 FastAPI 產生 | 完成 | `contract_delta.py`（附件，一次性）exit 0：oasdiff diff 與 changelog 的每一項都對到附件 §2（F1–F3、F13–F15、F20–F22、F26、F30、F32，另補 T1 Pydantic title、T2 component 內嵌）；腳本本身的 mutation 10 個全部 exit 1，兩邊同時加 nullable 欄位的對照組 exit 0；oasdiff 對 x-extensible-enum、header、media type 的差異會報（對照組），所以三份 enum 清單、§2b 的 status 與 header 都與 yaml 相同；`make -C backend check` exit 0：361 passed、95 deselected，`lint-imports` 7 kept，pyright 0 errors，squawk 0 issues；`check_locks.py`、`check_doc_refs.py`、`actionlint` exit 0；mutation（複本）7 個全 killed：拿掉 `Item.title` 的 `max_length` → gen-check 的比對失敗（以 Makefile 的同一段指令直接跑，避開 `uv run` 改寫 editable 安裝）、prod 開 `openapi_url` → `test_docs_only_in_dev` 失敗（第一版測試用 stub app 時這個 mutation 存活，因為舊的 `ContractValidation` 先回 404；改用真實 routes 後由 `check_routes` 擋下）、拿掉 problem media type 後處理、後處理只認 `application/json`、health 路徑提前跳過、`signed_in` 拿掉 security、`getItem` 少宣告 422；審查：`/code-review high` 10＋2 項、diff 視角審查者第 1 輪 7 項（合併成 16 列的累積清單）、第 2 輪 2 項新 finding＋推翻 1 項駁回；findings 18（blocking 0）：fixed 16、recorded 2（過渡期 yaml 與 schemas 沒有自動閘門：4a–5 同一分支一個 PR、4b 刪 yaml，過渡期規則寫進 AGENTS.md 與 api-design.md；代碼清單由登錄表產生：附件 B61，4b）、raised 0、rejected 0；CI run 42511618636（PR #24）全綠：backend（含 db 測試）、frontend、generate、commit policy、compose stack；推送前 pre-push 抓到衍生專案會帶到 `docs/plans` 路徑（generator 測試），另一個 commit 修正 | 無（T1 保留 Pydantic title：2026-11-11 Will 照建議） | `1ebeb82`、`c02318e`、`0f10347`；PR #24（draft，4a–5 完成後才合併） |
 | 4b 搬移驗證行為、移除 spec-first | 完成 | `make -C backend check` exit 0：370 passed、95 deselected（`quality-locks.json` backend 361→370），`lint-imports` 7 kept，pyright 0 errors，squawk 0 issues；產生的 `openapi.json` 與 4a 逐位元相同（route class 自動宣告的 status 剛好補回 router 拿掉的）；`check_b_coverage.py` exit 0（68 列）且腳本的 3 個 mutation exit 1；`check_locks.py`、`check_doc_refs.py`、`actionlint`、`make lint-docker`、`scripts/` 63 tests、`template/` 33 tests OK；mutation（複本）15 個全 killed，含驗收列的 6 個：拿掉 401 前置檢查、403 移回依賴、PATCH 收 `application/json`、拿掉 `Accept-Patch`、限流移到內容檢查之後、拿掉自動宣告的 401（`checked_client` 抓到），另有 lax request model、`redirect_slashes`、null 規則、空 query 規則、body 上限、NaN、route class 與 strict body 的啟動檢查、415；審查：`/code-review high` 10 項＋diff 視角審查者 8 項，合併 15 列（見下方累積清單），修正後 7 個回退 mutant 全 killed、第一輪 15 個重跑仍全 killed | 無（CI run 42550941936（`a64831f`）全綠：backend（含 db 測試）、frontend、generate、commit policy、compose stack） | `2b44c5e`、`2422457`；PR #24（draft） |
 | 5 前端跟上 | 完成 | `pnpm lint` exit 0、`pnpm test` 42 passed、`pnpm gen:api:check`、`pnpm build` exit 0；`gen-api.mjs` 讀 `openapi.json`，並檢查每份 x-extensible-enum 清單在輸出裡都成了 union（主清單那項）；mutation（複本）：新增錯誤代碼不補翻譯 → tsc 失敗（`pnpm test` 存活，驗收寫法已更正）、`auth-api.ts` 的 path 改回不含 `/api` → tsc 失敗、拿掉 union transform → `gen-api.mjs` exit 1；T1 量到：Pydantic 的 title 只進 JSDoc 註解，型別不變（`next_cursor: string \| null`） | 無（同一個 CI run 42550941936） | `1e0412c` |
-| 5 前端跟上 | 未開始 | | | |
-| 6 api-breaking 接上 CI | 未開始 | | | |
+| 6 api-breaking 接上 CI | 完成 | `make -C backend check` exit 0（370 passed），本機 `BASE` 預設 `origin/dev` 時 `api-breaking` 輸出 `No changes detected`；三種 base：`origin/dev` exit 0、`5bebe4c`（有 `api/` 沒 `openapi.json`）exit 2、`d9491d9~1`（沒 `api/`）印說明 exit 0，`BASE=orgin/dev` 印說明 exit 2；破壞性變更（`Item.title` 改選填）：探測分支推送時 pre-push 的 `backend-check` 報 4 個 `response-property-became-optional` 擋下，加上 4 行 ignore 後 pre-push 與 CI 通過（PR #30 backend run 43029687176，已關閉）；CI log 有 `oasdiff_1.35.0_linux_amd64.tar.gz: OK`（run 43028299405、43029687176，步驟 3 的 Linux 下載補驗）；mutation（複本）6 個全 killed：`Item.title` 不再必填、`--fail-on ERR`（刪 request 欄位只是 WARN，request model 拒收多餘欄位）、ignore 檔不濾註解、只濾行首 `#`、commit policy 拿掉 `breaking-ignore.txt`（新測試）；`scripts/` 64 tests、`template/` 33 tests、`check_doc_refs.py`、`actionlint` OK；PR #29 CI 全綠（含 db 測試、compose stack） | 無 | `0d2978f`、`5823fe8`；PR #29 |
 | 7 ADR 與規則文件 | 未開始 | | | |
 | 8 收尾 | 未開始 | | | |

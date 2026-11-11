@@ -12,7 +12,7 @@ uv run --no-project --python 3.14 python docs/plans/2026-11-08-fastapi-code-firs
 | B2 | test_validation.py::test_body_over_the_limit | 保留：`app.http.body_limit` |
 | B3 | test_validation.py::test_body_over_the_limit_without_content_length | 保留 |
 | B4 | test_validation.py::test_body_over_the_limit | 保留；測試現在斷言 detail |
-| B5 | test_validation.py::test_body_over_the_limit | 保留：未定義路由也先 413（新斷言）。計畫 D2 的順序句寫 404/405 > 413，與這列矛盾，待 Will 確認（實作維持現狀） |
+| B5 | test_validation.py::test_body_over_the_limit | 保留：未定義路由也先 413（新斷言）。計畫 D2 原寫 404/405 > 413，與這列矛盾；2026-11-11 Will 決定維持這列，D2 已改寫 |
 | B6 | test_validation.py::test_body_read_failure_is_not_a_validation_error | 保留 |
 | B7 | test_validation.py::test_valid_request_reaches_the_operation | 保留 |
 | B8 | test_validation.py::test_undefined_route | 保留；`redirect_slashes=False`，結尾斜線是 404 不是轉址（新斷言） |
@@ -29,7 +29,7 @@ uv run --no-project --python 3.14 python docs/plans/2026-11-08-fastapi-code-firs
 | B19 | test_validation.py::test_malformed_json_is_a_bad_request | 保留：`StrictJSONRequest` |
 | B20 | test_validation.py::test_malformed_json_is_a_bad_request | 保留；加頂層 `NaN` |
 | B21 | test_validation.py::test_malformed_json_is_a_bad_request | 保留 |
-| B22 | test_validation.py::test_a_media_type_error_comes_before_a_json_error, test_auth_http.py::test_a_user_who_is_not_an_admin_is_refused_before_the_body_is_checked, test_ratelimit.py::test_a_refused_request_uses_a_token | 改變（D2）：404/405 > 413 > 401/403 > 429 > 415 > 400 > 422 |
+| B22 | test_validation.py::test_a_media_type_error_comes_before_a_json_error, test_auth_http.py::test_a_user_who_is_not_an_admin_is_refused_before_the_body_is_checked, test_ratelimit.py::test_a_refused_request_uses_a_token | 改變（D2）：413 > 404/405 > 401/403 > 429 > 415 > 400 > 422 |
 | B23 | test_validation.py::test_validation_lists_every_error | 保留：`app.http.errors` |
 | B24 | test_validation.py::test_parameter_and_body_errors_are_listed_together | 保留 |
 | B25 | test_validation.py::test_validation_codes, test_validation.py::test_a_missing_body_is_required_whatever_its_content_type | 保留：沒有 body 時不看 Content-Type |

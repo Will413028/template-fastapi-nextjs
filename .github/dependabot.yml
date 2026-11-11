@@ -1,0 +1,92 @@
+version: 2
+
+# Wait a week before proposing a new release, so a compromised version has time
+# to be caught and yanked before it lands here.
+updates:
+  - package-ecosystem: github-actions
+    target-branch: dev
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns: ["*"]
+
+  # backend/pyproject.toml and backend/uv.lock: runtime dependencies and the dev tools (ruff, pyright, import-linter,
+  # vulture, pytest). Versions are pinned exactly, so every release is a pull request.
+  - package-ecosystem: uv
+    target-branch: dev
+    directory: /backend
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    # uv_build is uv's build backend and moves with required-version (upgraded by hand with uv itself)
+    ignore:
+      - dependency-name: uv-build
+        update-types: [version-update:semver-major, version-update:semver-minor]
+    groups:
+      backend-minor-patch:
+        update-types: [minor, patch]
+
+  # squawk-cli in backend/tools/package.json, the CLI make squawk runs
+  - package-ecosystem: npm
+    target-branch: dev
+    directory: /backend/tools
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+
+  # the uv and Python base images, pinned by digest in backend/Dockerfile. A new Python minor needs
+  # requires-python in backend/pyproject.toml changed with it, and a new uv minor needs required-version there, so
+  # those are upgraded by hand; patches and digests come through here.
+  - package-ecosystem: docker
+    target-branch: dev
+    directory: /backend
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    ignore:
+      - dependency-name: python
+        update-types: [version-update:semver-major, version-update:semver-minor]
+      - dependency-name: astral-sh/uv
+        update-types: [version-update:semver-major, version-update:semver-minor]
+
+  # node in frontend/Dockerfile, pinned by digest
+  - package-ecosystem: docker
+    target-branch: dev
+    directory: /frontend
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+
+  # postgres and cloudflared in docker-compose.yml, pinned by digest
+  - package-ecosystem: docker-compose
+    target-branch: dev
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+
+
+  - package-ecosystem: npm
+    target-branch: dev
+    directory: /frontend
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    # @types/node follows the Node.js major the frontend runs on (frontend/Dockerfile, CI); its major moves with the
+    # Node.js upgrade, not on its own.
+    ignore:
+      - dependency-name: "@types/node"
+        update-types: ["version-update:semver-major"]
+    groups:
+      frontend-minor-patch:
+        update-types: [minor, patch]

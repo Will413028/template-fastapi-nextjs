@@ -1,0 +1,100 @@
+#!/usr/bin/env python3
+"""Compare suppression comments and executed tests with the values locked in scripts/quality-locks.json.
+
+Usage: uv run --no-project --python 3.14 python scripts/check_locks.py [--vitest-report <file>] [--pytest-report <file>] [--pytest-db-report <file>]
+Run from the repository root. Suppressions are counted in tracked files on every run; a test count is checked when its
+report is given: vitest's json reporter for the frontend, pytest's JUnit XML for the backend (backend/test-report.xml
+from `make test`) and for its database tests (backend/test-db-report.xml from `make test-db`, which only CI runs).
+
+Every count must equal its lock. Suppressions may only go down and executed tests only up: when a count moves the
+good way, lower or raise the lock in the same commit; when it moves the bad way, a
+Quality-Gate trailer in the commit message says why (scripts/check_commit_policy.py).
+"""
+
+import argparse
+import json
+import pathlib
+import re
+import subprocess
+import sys
+import xml.etree.ElementTree as ET
+
+LOCKS = pathlib.Path("scripts/quality-locks.json")
+# Every way to switch a check off, per language. A new spelling belongs here, or it would slip past the lock.
+SUPPRESSIONS = {
+    # ruff's line and file noqa (and `ruff: ignore`, Ruff 0.16+), the type checkers' ignores, and squawk's, which a
+    # revision can only carry inside an op.execute() string
+    "python": (
+        re.compile(r"#\s*(?:noqa\b|ruff:\s*(?:noqa|ignore)\b|type:\s*ignore\b|pyright:\s*ignore\b)|squawk-ignore"),
+        (".py", ".pyi"),
+    ),
+    "typescript": (
+        re.compile(r"biome-ignore|@ts-expect-error|@ts-ignore|@ts-nocheck|eslint-disable"),
+        (".ts", ".tsx", ".js", ".mjs", ".cjs"),
+    ),
+}
+
+
+def count_suppressions(language: str) -> int:
+    pattern, suffixes = SUPPRESSIONS[language]
+    files = subprocess.run(["git", "ls-files", "-z"], check=True, capture_output=True, text=True).stdout.split("\0")
+    total = 0
+    for name in files:
+        if not name.endswith(suffixes) or name == "scripts/check_locks.py":
+            continue
+        path = pathlib.Path(name)
+        if path.is_file():
+            total += len(pattern.findall(path.read_text(encoding="utf-8", errors="replace")))
+    return total
+
+
+def count_vitest(report: pathlib.Path) -> int:
+    data = json.loads(report.read_text(encoding="utf-8"))
+    return data["numPassedTests"] + data["numFailedTests"]
+
+
+def count_pytest(report: pathlib.Path) -> int:
+    # Test cases that ran to a result; skipped ones do not count. The report is pytest's own output, not input from
+    # outside the repository.
+    root = ET.parse(report).getroot()
+    return sum(1 for case in root.iter("testcase") if case.find("skipped") is None)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--vitest-report", type=pathlib.Path)
+    parser.add_argument("--pytest-report", type=pathlib.Path)
+    parser.add_argument("--pytest-db-report", type=pathlib.Path)
+    args = parser.parse_args()
+
+    locks = json.loads(LOCKS.read_text(encoding="utf-8"))
+    counts = {f"suppressions.{lang}": count_suppressions(lang) for lang in SUPPRESSIONS}
+    if args.vitest_report:
+        counts["tests.frontend"] = count_vitest(args.vitest_report)
+    if args.pytest_report:
+        counts["tests.backend"] = count_pytest(args.pytest_report)
+    if args.pytest_db_report:
+        counts["tests.backend_db"] = count_pytest(args.pytest_db_report)
+
+    failed = False
+    for key, got in counts.items():
+        group, name = key.split(".")
+        want = locks[group][name]
+        if got == want:
+            print(f"{key}: {got}")
+            continue
+        failed = True
+        better = got < want if group == "suppressions" else got > want
+        if better:
+            print(f"{key}: {got}, locked at {want}: set the lock in {LOCKS} to {got}", file=sys.stderr)
+        else:
+            print(
+                f"{key}: {got}, locked at {want}: remove the change, or set the lock to {got} "
+                "with a Quality-Gate: <why> trailer in the commit",
+                file=sys.stderr,
+            )
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

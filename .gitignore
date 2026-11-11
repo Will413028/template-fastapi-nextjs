@@ -3,10 +3,15 @@
 .DS_Store
 frontend/test-report.json
 backend/coverage.xml
+backend/.coverage
 /bin/
+/backend/bin/
 __pycache__/
 .venv/
 backend/test-report.xml
+backend/test-db-report.xml
+backend/tools/node_modules/
+backend/.revision-sql/
 .pytest_cache/
 .ruff_cache/
 AGENTS.local.md

@@ -1,0 +1,15 @@
+# Lock and safety checks for the Alembic revisions (make squawk). Editing this file needs a Quality-Gate trailer
+# (scripts/check_commit_policy.py). tests/revision_sql.py renders each revision to its own file with the BEGIN and
+# COMMIT app migrate runs it in, so squawk sees the real transaction boundaries (an autocommit_block for
+# CREATE INDEX CONCURRENTLY shows up as COMMIT and BEGIN around it).
+assume_in_transaction = false
+pg_version = "18.0"
+excluded_rules = [
+  # app migrate sets lock_timeout on the connection (app.core.config.MigrateSettings), not with SET in each file.
+  "require-lock-timeout",
+  # No statement timeout for migrations: long index builds use CONCURRENTLY.
+  "require-statement-timeout",
+  # Each revision runs in a transaction and is recorded in alembic.alembic_version, so it is never partly applied and
+  # rerun.
+  "prefer-robust-stmts",
+]

@@ -1,0 +1,126 @@
+# Each service gets only its own variables (values come from .env) and its own secrets (files under .secrets/,
+# created by `make init-env`), mounted at /run/secrets/<name> and read through <KEY>_FILE.
+# Database roles (deploy/postgres/initdb/10-roles.sh): the superuser only initializes the volume; migrate connects
+# as the owner role; backend connects as the app role, which has DML only.
+# No service publishes a port: ports Docker publishes bypass ufw. The frontend runs on Vercel, which rewrites /api to
+# the backend through a Cloudflare Tunnel; only `make up-prod` starts that tunnel (the `tunnel` profile).
+
+x-db-names: &db-names
+  POSTGRES_DB: ${POSTGRES_DB:-template_fastapi_nextjs}
+  DB_OWNER_USER: ${DB_OWNER_USER:-template_fastapi_nextjs_owner}
+  DB_APP_USER: ${DB_APP_USER:-template_fastapi_nextjs_app}
+
+# Every container's log is rotated: at most 5 files of 10 MB each, then the oldest is dropped. Without this Docker's
+# default json-file driver keeps logs until the container is removed (docs/privacy/data-inventory.md, 日誌).
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: 10m
+    max-file: "5"
+
+services:
+  postgres:
+    logging: *logging
+    image: postgres:18.6@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336
+    restart: unless-stopped
+    environment:
+      <<: *db-names
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets: [postgres_password, db_owner_password, db_app_password]
+    volumes:
+      # 18+ keeps data in a versioned subdirectory; mount the parent (docker-library/postgres#37)
+      - postgres-data:/var/lib/postgresql
+      # runs only when the volume is empty; on an existing volume the roles must already exist
+      - ./deploy/postgres/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # applies the Alembic revisions as the owner role and grants the app role (app migrate); backend starts after it
+  # exits. Same image as backend, built once by the backend service.
+  migrate:
+    logging: *logging
+    image: template-fastapi-nextjs-backend
+    pull_policy: never
+    command: ["migrate"]
+    environment:
+      MIGRATE_DATABASE_URL: postgres://${DB_OWNER_USER:-template_fastapi_nextjs_owner}@postgres:5432/${POSTGRES_DB:-template_fastapi_nextjs}?sslmode=disable
+      # plaintext only because postgres is on this host's compose network (backend config, DATABASE_PLAINTEXT)
+      DATABASE_PLAINTEXT: same-host
+      MIGRATE_DATABASE_PASSWORD_FILE: /run/secrets/db_owner_password
+      DB_APP_USER: ${DB_APP_USER:-template_fastapi_nextjs_app}
+    secrets: [db_owner_password]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  backend:
+    logging: *logging
+    build: ./backend
+    image: template-fastapi-nextjs-backend
+    restart: unless-stopped
+    # longer than the 30s graceful shutdown, so in-flight requests finish before SIGKILL
+    stop_grace_period: 35s
+    environment:
+      MODE: ${MODE:-prod}
+      DATABASE_URL: postgres://${DB_APP_USER:-template_fastapi_nextjs_app}@postgres:5432/${POSTGRES_DB:-template_fastapi_nextjs}?sslmode=disable
+      # plaintext only because postgres is on this host's compose network (backend config, DATABASE_PLAINTEXT)
+      DATABASE_PLAINTEXT: same-host
+      DATABASE_PASSWORD_FILE: /run/secrets/db_app_password
+      # the X-Origin-Secret Vercel's rewrite adds (backend app.http.origin); to rotate, put "new,old" in the file
+      ORIGIN_SECRET_FILE: /run/secrets/origin_secret
+      # the site's origin as browsers see it (https://example.com), for the CSRF check of the auth step
+      APP_ORIGIN: ${APP_ORIGIN:-}
+      SESSION_ABSOLUTE: ${SESSION_ABSOLUTE:-}
+      SESSION_IDLE: ${SESSION_IDLE:-}
+      COOKIE_SECURE: ${COOKIE_SECURE:-}
+      DB_MAX_CONNS: ${DB_MAX_CONNS:-}
+      DB_STATEMENT_TIMEOUT: ${DB_STATEMENT_TIMEOUT:-}
+      AUTH_RATE_LIMIT_PER_MIN: ${AUTH_RATE_LIMIT_PER_MIN:-}
+      PASSWORD_HIBP_CHECK: ${PASSWORD_HIBP_CHECK:-}
+    secrets: [db_app_password, origin_secret]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    # Each check starts a Python interpreter: measured 1.7 s for `python -c pass` alone on a heavily loaded Docker
+    # host (load average 70+), so the timeout leaves room that a compiled healthcheck would not need.
+    healthcheck:
+      test: ["CMD", "app", "healthcheck"]
+      interval: 5s
+      timeout: 10s
+      start_period: 30s
+      start_interval: 2s
+      retries: 5
+
+  # The public entry point in production: a Cloudflare Tunnel managed in the Cloudflare dashboard, which routes only
+  # /api/* to backend:8000. It dials out, so nothing is published. Started only with `--profile tunnel`.
+  cloudflared:
+    logging: *logging
+    image: cloudflare/cloudflared:2026.10.5@sha256:1b1d34d0a9c0bfca9de72db8460d328db3f19edd2b96169114e3e893a97bbe53
+    profiles: [tunnel]
+    restart: unless-stopped
+    command: ["tunnel", "--no-autoupdate", "run", "--token-file", "/run/secrets/tunnel_token"]
+    secrets: [tunnel_token]
+    depends_on:
+      backend:
+        condition: service_healthy
+
+secrets:
+  postgres_password:
+    file: .secrets/postgres_password
+  db_owner_password:
+    file: .secrets/db_owner_password
+  db_app_password:
+    file: .secrets/db_app_password
+  origin_secret:
+    file: .secrets/origin_secret
+  # the token from the Cloudflare dashboard, saved by hand; only the tunnel profile needs it
+  tunnel_token:
+    file: .secrets/tunnel_token
+
+volumes:
+  postgres-data:

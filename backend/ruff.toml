@@ -1,0 +1,55 @@
+# Lint and format for the backend. Editing this file needs a Quality-Gate trailer (scripts/check_commit_policy.py).
+target-version = "py314"
+line-length = 120
+src = ["src", "tests"]
+
+[lint]
+# Every rule set is on; the few left out below conflict with the formatter or with each other.
+select = ["ALL"]
+ignore = [
+    "COM812", # trailing commas: the formatter decides
+    "D",      # docstrings are written where they say something, not on every function
+    "D203",   # (conflicts with D211)
+    "D213",   # (conflicts with D212)
+    "CPY",    # no per-file copyright header; LICENSE covers the repository
+]
+
+[lint.per-file-ignores]
+# pytest's assertions are plain asserts; test function names describe behaviour instead of docstrings
+"tests/**" = ["S101", "PLR2004"]
+# the one module allowed to read the environment
+"src/app/core/config.py" = ["TID251"]
+# The contract names its path parameters id (/users/{id}). Path(alias="id") would avoid the builtin's name, but ruff's
+# FAST003 does not see an alias and reports the path parameter as missing, so routes take the contract's name.
+"src/app/modules/*/router.py" = ["A002"]
+
+[lint.flake8-tidy-imports]
+ban-relative-imports = "all"
+
+[lint.flake8-tidy-imports.banned-api]
+"os.environ".msg = "Read settings through app.core.config.Settings; it is the only module that reads the environment."
+"os.getenv".msg = "Read settings through app.core.config.Settings; it is the only module that reads the environment."
+"os.putenv".msg = "Configuration comes from the environment at startup; do not change it at runtime."
+
+[lint.mccabe]
+max-complexity = 10
+
+[lint.pylint]
+max-args = 5
+max-branches = 12
+max-returns = 6
+max-statements = 50
+
+[lint.flake8-type-checking]
+# SQLAlchemy reads Mapped[...] annotations and Pydantic reads field annotations at runtime, so the types a model names
+# must be imported for real.
+runtime-evaluated-base-classes = ["app.core.db.Base", "pydantic.BaseModel"]
+# FastAPI reads a route's parameter annotations (Annotated[..., Depends(...)]) when the route is declared.
+runtime-evaluated-decorators = [
+    "fastapi.APIRouter.get",
+    "fastapi.APIRouter.post",
+    "fastapi.APIRouter.put",
+    "fastapi.APIRouter.patch",
+    "fastapi.APIRouter.delete",
+]
+

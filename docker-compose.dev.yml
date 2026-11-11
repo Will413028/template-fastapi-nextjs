@@ -1,0 +1,36 @@
+services:
+  # `make dev` runs `docker compose up --watch`: a change under backend/ rebuilds the image and restarts it
+  backend:
+    develop:
+      watch:
+        - action: rebuild
+          path: ./backend
+          ignore:
+            - .venv/
+            - tests/
+
+  # Production serves the frontend from Vercel; locally `next dev` serves it, and its development rewrite
+  # (frontend/next.config.ts) forwards /api to the backend, so the browser still sees one origin:
+  # http://localhost:3000. Loopback only: ports Docker publishes bypass ufw.
+  frontend:
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+    build:
+      context: ./frontend
+      target: dev
+    restart: unless-stopped
+    environment:
+      # server-side fetches and the development rewrite reach the backend by service name
+      API_URL: http://backend:8000
+    ports:
+      - "127.0.0.1:3000:3000"
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/messages:/app/messages
+      - ./frontend/public:/app/public
+    depends_on:
+      backend:
+        condition: service_healthy

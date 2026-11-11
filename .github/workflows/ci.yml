@@ -1,0 +1,299 @@
+name: CI
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  # pushes to dev and main are never cancelled, so every pushed commit gets a full result
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  backend:
+    name: Backend (lint + types + architecture + test + database)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # migrations-immutable and api-breaking compare with the merge-base of HEAD and the event's base
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version-file: backend/pyproject.toml
+          enable-cache: false
+      # squawk installs from backend/tools/package-lock.json with npm
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+      # uv.lock in sync, api/openapi.json regenerated from the routes (gen-check), format, ruff, import-linter contracts,
+      # pyright strict, vulture, pytest without the db tests,
+      # squawk on every revision's SQL, no revision that already reached the base changed, and no breaking change to
+      # api/openapi.json (api-breaking, oasdiff): the base is a pull request's base branch, or for a push the branch's
+      # previous tip, so a revision pushed to dev is frozen too (the Go version's rule)
+      - name: make check
+        env:
+          EVENT_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }}
+        run: |
+          base="$EVENT_BASE"
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then base=HEAD~1; fi
+          make sync check BASE="$base"
+      # The db tests start PostgreSQL with testcontainers; they run only here, never on a developer's machine by default
+      # (models equal the revisions, grants, append-only, readiness, the API over a real database)
+      - run: make test-db
+      # Reported, not gated: total coverage of both runs, plus changed-line coverage against the PR base on pull requests
+      - name: Coverage report
+        env:
+          COVER_BASE: ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || '' }}
+        run: make -s coverage COVER_BASE="$COVER_BASE" >> "$GITHUB_STEP_SUMMARY"
+      # suppression comments may only go down and executed tests only up (scripts/quality-locks.json)
+      - run: uv run --no-project --python 3.14 python scripts/check_locks.py --pytest-report backend/test-report.xml --pytest-db-report backend/test-db-report.xml
+        working-directory: .
+      # make migration generates a revision; with the models and revisions in agreement it holds no operation
+      - name: make migration generates an empty revision when nothing changed
+        run: |
+          make migration MSG=ci_probe
+          new="$(git status --porcelain --untracked-files=all -- src/app/migrations/versions)"
+          echo "$new"
+          test "$(wc -l <<< "$new")" -eq 1
+          file="$(sed 's/^?? backend\///' <<< "$new")"
+          cat "$file"
+          grep -q '^def upgrade() -> None:$' "$file"
+          # autogenerate wraps the body in "# ### commands auto generated ..." comments; without them only pass is left
+          test "$(sed -n '/^def upgrade/,$p' "$file" | sed 1d | grep -v '^ *#' | tr -d ' \n')" = pass
+
+  # Every commit that edits a checker's configuration or moves a lock the bad way names why in a Quality-Gate trailer
+  # (scripts/check_commit_policy.py; lefthook checks it at commit time too).
+  policy:
+    name: Commit policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # scripts/ run on Python 3.14, the backend's version, through uv (the uv pinned in backend/pyproject.toml)
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version-file: backend/pyproject.toml
+          enable-cache: false
+      - run: uv run --no-project --python 3.14 python -m unittest discover -s scripts -p 'test_*.py'
+      # every release binary pinned in a Makefile has a version and a checksum per platform
+      - run: uv run --no-project --python 3.14 python scripts/tool_versions.py verify
+      # Vercel's /api rewrite adds the origin secret from its environment, and the file holds no secret
+      - run: uv run --no-project --python 3.14 python scripts/check_vercel_config.py
+      # every decision or step label names a document the project holds, and that document defines it
+      - run: uv run --no-project --python 3.14 python scripts/check_doc_refs.py
+      - name: Check the commits being added
+        env:
+          BASE: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}
+        run: |
+          if [ -n "$BASE" ] && [ "$BASE" != "0000000000000000000000000000000000000000" ]; then range="$BASE..$HEAD_SHA"
+          elif git rev-parse -q --verify "$HEAD_SHA~1" > /dev/null; then range="$HEAD_SHA~1..$HEAD_SHA"
+          else range="$HEAD_SHA"; fi  # a new branch whose first commit is the root commit
+          uv run --no-project --python 3.14 python scripts/check_commit_policy.py --range "$range"
+
+  # >>> template-only
+  # A project starts with `make new`: generate one and run CI's checks that need no database on it (the package,
+  # database and role names change). This job and its comments are left out of the generated project.
+  generate:
+    name: Generate a project (make new)
+    runs-on: ubuntu-latest
+    env:
+      GIT_AUTHOR_NAME: ci
+      GIT_AUTHOR_EMAIL: ci@example.invalid
+      GIT_COMMITTER_NAME: ci
+      GIT_COMMITTER_EMAIL: ci@example.invalid
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: python3 -m unittest discover -s template -p 'test_*.py'
+      # A repository other than the default (Will413028/<NAME>) that names the project: it must be written as given.
+      - run: make new NAME=ci-probe DEST="$RUNNER_TEMP/ci-probe" REPO=ci-owner/ci-probe-fork
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version-file: ${{ runner.temp }}/ci-probe/backend/pyproject.toml
+          enable-cache: false
+      - name: One commit, no remote, the commit policy passes
+        working-directory: ${{ runner.temp }}/ci-probe
+        run: |
+          test "$(git rev-list --count HEAD)" = 1
+          test "$(git branch --format='%(refname:short)')" = main
+          test -z "$(git remote)"
+          test -z "$(git status --porcelain)"
+          uv run --no-project --python 3.14 python scripts/check_commit_policy.py --range HEAD
+      - name: Nothing names the template; the repository links point to the given repository
+        working-directory: ${{ runner.temp }}/ci-probe
+        run: |
+          if git grep -n -i -E 'template[-_]fastapi[-_]nextjs|Will413028/ci-probe|make rename|docs/plans' ; then
+            echo "files above name the template, its plans or the default repository"; exit 1
+          fi
+          grep -F 'github.com/ci-owner/ci-probe-fork/security/advisories/new' SECURITY.md ||
+            { echo "SECURITY.md does not link to ci-owner/ci-probe-fork"; exit 1; }
+      # squawk installs from backend/tools/package-lock.json with npm
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 26
+      # one commit: the revisions it holds are compared with itself
+      - name: make check (the backend job without the db tests)
+        working-directory: ${{ runner.temp }}/ci-probe/backend
+        run: make sync check BASE=HEAD
+      - run: uv run --no-project --python 3.14 python -m unittest discover -s scripts -p 'test_*.py'
+        working-directory: ${{ runner.temp }}/ci-probe
+      # pnpm/setup refuses a path outside the workspace: it sets up pnpm from the template's frontend (same lockfile),
+      # and the generated project installs from the warm store
+      - uses: pnpm/setup@fa36a5ef7dcdefc3a7cb25655c122e00cf6e636e # v3.1.2
+        with:
+          working-directory: frontend
+          runtime: node@26
+          cache: true
+          require-lockfile: true
+      - run: pnpm install --frozen-lockfile && pnpm gen:api:check && pnpm lint && pnpm test
+        working-directory: ${{ runner.temp }}/ci-probe/frontend
+  # <<< template-only
+
+  # Builds the production backend image and starts the stack the VM runs (no tunnel: CI has no token).
+  stack:
+    name: Compose stack (image + migrate + health)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - run: make lint-docker
+      # make init-env runs scripts/init_env.py on Python 3.14 through uv
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version-file: backend/pyproject.toml
+          enable-cache: false
+      # .env and the password files under .secrets/, as a developer gets them
+      - run: make init-env
+      # the tunnel profile included, so cloudflared is checked too; its token file is only read when it starts
+      - name: Each service gets only its own secrets
+        run: |
+          touch .secrets/tunnel_token
+          docker compose --profile tunnel config --format json > /tmp/compose.json
+          test "$(jq -c '.services.backend.secrets | map(.source)' /tmp/compose.json)" = '["db_app_password","origin_secret"]'
+          test "$(jq -c '.services.migrate.secrets | map(.source)' /tmp/compose.json)" = '["db_owner_password"]'
+          test "$(jq -c '.services.cloudflared.secrets | map(.source)' /tmp/compose.json)" = '["tunnel_token"]'
+          docker compose -f docker-compose.yml -f docker-compose.dev.yml config --format json > /tmp/compose-dev.json
+          test "$(jq -c '.services.frontend.secrets // []' /tmp/compose-dev.json)" = '[]'
+          jq -e '.services.frontend.environment' /tmp/compose-dev.json > /dev/null
+          if jq -r '.services.frontend.environment | keys[]' /tmp/compose-dev.json | grep -E '^(DATABASE|MIGRATE|POSTGRES|DB_)'; then
+            echo "frontend receives database settings"; exit 1
+          fi
+      # Logs hold client addresses and paths: every service rotates them (docs/privacy/data-inventory.md)
+      - name: Every service rotates its logs
+        run: test "$(jq -c '[.services | to_entries[] | select(.value.logging.options["max-size"] == null) | .key]' /tmp/compose.json)" = '[]'
+      # Published ports bypass ufw: no service may have any; the way in is the Cloudflare Tunnel, which dials out
+      - name: No service publishes ports
+        run: test "$(jq -c '[.services | to_entries[] | select(.value.ports) | .key]' /tmp/compose.json)" = '[]'
+      - run: docker compose up -d --build --wait
+      - name: Migrate exited cleanly and backend is ready
+        run: |
+          test "$(docker compose ps -a migrate --format '{{.ExitCode}}')" = 0
+          docker compose logs migrate | grep -q 'at revision baseline'
+          docker compose exec -T backend app healthcheck
+      # From another container on the compose network, as cloudflared reaches the backend, with the origin secret read
+      # from the backend's own compose secret: the auth flow end to end, and a client's X-Request-ID replaced
+      - name: Sign up, sign in, read the user, sign out and read again
+        run: >-
+          docker compose run --rm --no-deps -T -v "$PWD/scripts/stack_auth_smoke.py:/smoke.py:ro" --entrypoint python
+          backend /smoke.py
+      # the root Makefile's seed target as an operator runs it, with the password piped on stdin: the second run
+      # leaves the account alone
+      - name: Seed an admin with make seed, then again
+        run: |
+          printf '%s' 'a long enough ci admin passphrase' | make seed ADMIN_ACCOUNT=ci-admin | tee seed.out
+          grep -q "admin account 'ci-admin' created" seed.out
+          printf '%s' 'another long enough passphrase' | make seed ADMIN_ACCOUNT=CI-Admin | tee seed.out
+          grep -q "account 'ci-admin' already exists; nothing changed" seed.out
+          role="$(docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U template_fastapi_nextjs_app -d template_fastapi_nextjs -tAc "SELECT role FROM users WHERE account = 'ci-admin'")"
+          test "$role" = admin
+      - name: The app role cannot change the schema
+        run: |
+          out="$(docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U template_fastapi_nextjs_app -d template_fastapi_nextjs -c 'CREATE TABLE public.intruder (id int)' 2>&1)" && exit 1
+          echo "$out"
+          grep -q 'permission denied for schema public' <<< "$out"
+      - if: failure()
+        run: docker compose logs
+
+  frontend:
+    name: Frontend (lint + test + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Node.js 26 and the pnpm version in package.json's packageManager, then pnpm install --frozen-lockfile with the
+      # store cached. pnpm/setup succeeds pnpm/action-setup for pnpm 11 and newer.
+      - uses: pnpm/setup@fa36a5ef7dcdefc3a7cb25655c122e00cf6e636e # v3.1.2
+        with:
+          working-directory: frontend
+          runtime: node@26
+          cache: true
+          require-lockfile: true
+      - name: Check git hooks were installed
+        run: test -x "$(git rev-parse --git-path hooks)/commit-msg"
+      - run: pnpm audit --prod --audit-level high
+      # src/lib/api/schema.d.ts must match backend/api/openapi.json, and every x-extensible-enum list in it must
+      # become a union
+      - run: pnpm gen:api:check
+      - run: pnpm lint
+      - run: pnpm check:deps
+      - run: pnpm check:arch
+      - run: pnpm test:report
+      # scripts/ run on Python 3.14, the backend's version, through uv (the uv pinned in backend/pyproject.toml)
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version-file: backend/pyproject.toml
+          enable-cache: false
+      # suppression comments may only go down and executed tests only up (scripts/quality-locks.json)
+      - run: uv run --no-project --python 3.14 python scripts/check_locks.py --vitest-report frontend/test-report.json
+        working-directory: .
+      # ORIGIN_SECRET is server-only (src/lib/env.ts): a sentinel set at build time, also under the NEXT_PUBLIC_ name
+      # that would inline it, must not reach the JavaScript sent to browsers
+      - run: pnpm build
+        env:
+          ORIGIN_SECRET: origin-secret-bundle-sentinel
+          NEXT_PUBLIC_ORIGIN_SECRET: origin-secret-bundle-sentinel
+      - name: The origin secret stays out of the browser bundle
+        run: if grep -rl origin-secret-bundle-sentinel .next/static; then exit 1; fi
+
+  gate:
+    # The only required check on main: it passes when every other job in this workflow succeeded or was skipped.
+    name: gate (ci)
+    if: always()
+    needs:
+      - backend
+      - policy
+      # >>> template-only
+      - generate
+      # <<< template-only
+      - stack
+      - frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Every job succeeded or was skipped
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          for r in $RESULTS; do
+            case "$r" in success|skipped) ;; *) echo "a needed job ended with: $r"; exit 1 ;; esac
+          done

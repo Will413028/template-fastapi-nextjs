@@ -1,0 +1,87 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.15/schema.json",
+  "vcs": {
+    "enabled": false,
+    "clientKind": "git",
+    "useIgnoreFile": false
+  },
+  "files": {
+    "ignoreUnknown": false,
+    "includes": [
+      "**/src/**/*.ts",
+      "**/src/**/*.tsx",
+      "*.ts",
+      "*.mts",
+      "*.mjs",
+      "*.cjs",
+      "scripts/**/*.mjs",
+      "!**/dist",
+      "!**/.next",
+      "!**/node_modules",
+      "!**/build",
+      "!**/src/generated",
+      "!**/src/lib/api/schema.d.ts"
+    ]
+  },
+  "formatter": {
+    "enabled": true,
+    "indentStyle": "space"
+  },
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  },
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "correctness": {
+        "noUnusedVariables": "error"
+      },
+      "suspicious": {
+        "noArrayIndexKey": "warn",
+        "noDocumentCookie": "off",
+        "noImportCycles": "error",
+        "noSkippedTests": "error"
+      },
+      "nursery": {
+        "noFloatingPromises": "error",
+        "useExhaustiveSwitchCases": "error"
+      },
+      "a11y": {
+        "noSvgWithoutTitle": "warn",
+        "useKeyWithClickEvents": "warn",
+        "useKeyWithMouseEvents": "warn"
+      },
+      "performance": {
+        "noImgElement": "warn"
+      },
+      "style": {
+        "noProcessEnv": "error"
+      },
+      "complexity": {
+        "noExcessiveCognitiveComplexity": "error"
+      }
+    }
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "double"
+    }
+  },
+  "overrides": [
+    {
+      "includes": ["**/src/lib/env.ts"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noProcessEnv": "off"
+          }
+        }
+      }
+    }
+  ]
+}

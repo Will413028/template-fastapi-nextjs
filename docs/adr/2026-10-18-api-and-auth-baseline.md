@@ -20,7 +20,7 @@ tags: [fullstack-template, decision, rest, auth, security]
 **約束**：
 
 - `external`：只有一台 VPS，前面是 Caddy／Nginx，跑 Docker Compose。（2026-11-05 修訂：本 repo 由 [部署拓樸](2026-11-05-vercel-rewrite-and-cloudflare-tunnel.md) 取代：前端在 Vercel，backend 在 VM 經 Cloudflare Tunnel 對外）
-- `external`：oapi-codegen v2.8.0 對 OpenAPI 3.1 的支援仍標示為「initial」，所以契約維持 3.0.3。
+- `external`：oapi-codegen v2.8.0 對 OpenAPI 3.1 的支援仍標示為「initial」，所以契約維持 3.0.3。（2026-11-11 修訂：本 repo 的契約由 FastAPI 產生，是 OpenAPI 3.1；這條約束只屬於 Go 版）
 - `inherited`：前端已經依舊契約寫好。現在仍成立的理由：沒有外部理由。前端是我們自己的程式，會隨這次改寫一起改，所以不限制任何選項。
 
 ## Options Considered
@@ -52,7 +52,7 @@ tags: [fullstack-template, decision, rest, auth, security]
   - 分頁用 keyset 的 `limit`/`cursor`，不提供總數。
   - PATCH 收 `application/merge-patch+json`。
   - URL 不帶版本。
-  - 契約是 spec-first 的 `openapi.yaml`，是唯一來源：後端用 validator 執行，前端用生成的型別（openapi-typescript 加 openapi-fetch）。
+  - 契約是 spec-first 的 `openapi.yaml`，是唯一來源：後端用 validator 執行，前端用生成的型別（openapi-typescript 加 openapi-fetch）。（2026-11-11 修訂：本 repo 由 [code-first 契約](2026-11-11-code-first-contract-and-request-checks.md) D1 取代：契約由 route 與 `schemas.py` 產生，匯出在 `backend/api/openapi.json`；前端仍用生成的型別）
 - **D3 錯誤**：RFC 9457 problem。每種錯誤有固定的 `type` URI（`/problems/<slug>`）；驗證錯誤附 `errors: [{pointer, code, detail}]`。前端依 `type` 和 `code` 翻譯，不解析 `detail`。
 - **D4 Session**：
   - opaque token，DB 只存 SHA-256。
@@ -66,7 +66,7 @@ tags: [fullstack-template, decision, rest, auth, security]
   - 雜湊用 argon2id（m=19 MiB、t=2、p=1），並限制同時進行的雜湊數量。
   - 依帳號節流：不論帳號是否存在都記錄失敗；連續失敗第 5 次之後，退避時間依指數成長，上限 1 小時。另有 per-IP 限流，IP 依 `TRUSTED_PROXIES` 解析。（2026-11-05 修訂：本 repo 由 [部署拓樸](2026-11-05-vercel-rewrite-and-cloudflare-tunnel.md) 取代IP 來源：只信任帶正確來源密鑰的請求所附的 `X-Real-IP`）
   - 登入名稱是 username：契約接受大小寫，存入前轉小寫，所以唯一性不分大小寫。密碼在雜湊前做 NFKC 正規化（NIST 寫的是 SHOULD）。
-  - 長度與格式只寫在契約裡：HTTP 由 validator 執行，`seed-admin` 用同一份內嵌的 spec 驗證；前端不重複實作。
+  - 長度與格式只寫在契約裡：HTTP 由 validator 執行，`seed-admin` 用同一份內嵌的 spec 驗證；前端不重複實作。（2026-11-11 修訂：本 repo 的長度與格式寫在 `schemas.py` 的 model，HTTP 與 `seed-admin` 用同一個 model；前端不重複實作不變，見 [code-first 契約](2026-11-11-code-first-contract-and-request-checks.md) D1）
 - **D7 授權**：role 只有 `admin` 和 `user`，註冊預設 `user`，admin 只能用 seed 建立。查詢一律帶 owner 條件，非 owner 回 404。admin 可列出、讀取、停用使用者（2026-10-18 由「只有停用」擴大，見 D9）；一般使用者只能讀自己。
 - **D9 資源都要有讀取端**（2026-10-18 追加）：新增 `GET /api/users/{id}`（本人或 admin）、`GET /api/users`（admin）；sessions 有公開 id，新增 `GET /api/sessions`、`GET` 與 `DELETE /api/sessions/{id}`（只限自己）、`GET /api/sessions/current`；`POST /api/sessions` 回 `Session`，`Location: /api/sessions/{id}`。測試以兩道機制守住：收到 201 就 GET `Location`、契約測試檢查可寫的 path 都有 GET。
 - **D8 shutdown 與 proxy**（2026-10-18 追加）：SIGTERM 後直接 `http.Server.Shutdown`，上限 30s；compose `stop_grace_period` 35s；不做 readiness drain。Caddy 的 `reverse_proxy` 設 `lb_try_duration`，不設 `health_uri`。（2026-11-05 修訂：本 repo 由 [部署拓樸](2026-11-05-vercel-rewrite-and-cloudflare-tunnel.md) 取代proxy 部分：沒有 Caddy，`lb_try_duration` 沒有替代；shutdown 部分不變）
@@ -87,11 +87,11 @@ tags: [fullstack-template, decision, rest, auth, security]
 
 - 跨來源的 POST 回 403；同源的請求正常通過。
 - 走 Caddy 同源部署時，重新整理頁面後 SSR 仍是登入狀態。（2026-11-05 修訂：本 repo 由 [部署拓樸](2026-11-05-vercel-rewrite-and-cloudflare-tunnel.md) 取代：走 Vercel 同源 rewrite，列入第一次部署檢查清單）
-- 在 `openapi.yaml` 改了欄位卻沒有重新生成程式碼時，CI 會失敗。
+- 在 `openapi.yaml` 改了欄位卻沒有重新生成程式碼時，CI 會失敗。（2026-11-11 修訂：本 repo 是改了 `schemas.py` 或 route 卻沒有重新產生 `backend/api/openapi.json` 與前端型別時）
 
 ## Invariants
 
-- `openapi.yaml` 是 API 形狀與限制的唯一來源。
+- API 形狀與限制只有一份來源（2026-11-11 修訂：原為 `openapi.yaml`，本 repo 改為 route 與 `schemas.py`，見 [code-first 契約](2026-11-11-code-first-contract-and-request-checks.md) 的 Invariants）。
 - 認證憑證只放在 `HttpOnly` cookie；所有狀態變更都經過 `CrossOriginProtection`。
 - 使用者擁有的資源，查詢一律帶 owner 條件。
 
@@ -101,7 +101,7 @@ tags: [fullstack-template, decision, rest, auth, security]
 - 需要 MFA、SSO 或第三方登入 → 重新評估 D4（考慮代管認證）。
 - 出現原生 app 或第三方 API 消費者 → 重新評估 Bearer 與 API 版本策略。
 - backend 超過一個 replica、某個下游要求部署不能停機，或改用 Kamal 或 Swarm → per-IP 限流改用 DB 或 proxy 層；零停機部署改用 docker-rollout 模式（Caddy 動態 upstream 加 `health_uri`、backend 不設 `ports`、shutdown 前加回 readiness drain）（D8）。（2026-11-05 修訂：本 repo 由 [部署拓樸](2026-11-05-vercel-rewrite-and-cloudflare-tunnel.md) 取代：改為在 VM 上加 blue-green 或放回一層 proxy）
-- oapi-codegen 宣布 3.1 支援穩定 → 升級到 OpenAPI 3.1。
+- oapi-codegen 宣布 3.1 支援穩定 → 升級到 OpenAPI 3.1。（2026-11-11 修訂：本 repo 已是 3.1，這條不再適用）
 
 ## Review Notes
 
@@ -109,4 +109,5 @@ tags: [fullstack-template, decision, rest, auth, security]
 
 - 來源：2026-10-18 一個沒參與規劃的 subagent 從零查證業界基準（來源見上方各連結），repo 擁有者回覆「照建議」拍板。本 ADR 即原始紀錄。
 - 同批決定：後端改寫成 Go（Go 版範本的後端 ADR，template-go-nextjs@560106d；本 repo 改由 [FastAPI 版後端](2026-11-05-fastapi-backend-stack.md) 取代）。
+- 部分取代：本 repo 的 [code-first 契約](2026-11-11-code-first-contract-and-request-checks.md)（D2 的契約來源一條）。
 - 部分取代：本 repo 的 [部署拓樸](2026-11-05-vercel-rewrite-and-cloudflare-tunnel.md)（D1、D6 的 IP 來源、D8 的 proxy 部分）。

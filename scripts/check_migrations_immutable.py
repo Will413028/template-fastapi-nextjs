@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Revisions that exist on the base must not be modified, deleted or renamed (docs/rules/database-design.md).
 
-Usage: uv run --no-project --python 3.14 python scripts/check_migrations_immutable.py [<base-ref>]   (default origin/main)
+Usage: uv run --no-project --python 3.14 python scripts/check_migrations_immutable.py [<base-ref>]   (default origin/main;
+`make -C backend migrations-immutable` passes origin/dev when the clone has it)
 
 Compares every revision file in the merge-base of HEAD and the base with the working tree, so uncommitted changes are
 covered too. A revision that is only on this branch may still change: it has not reached a database that matters.

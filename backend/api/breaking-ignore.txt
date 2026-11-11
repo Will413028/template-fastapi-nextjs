@@ -1,6 +1,7 @@
 # Breaking changes to api/openapi.json that are intended (make api-breaking, docs/rules/api-design.md). oasdiff reports
 # one error or warning per operation, so a change to a shared schema takes one line for each operation that uses it.
 # Copy each line as `oasdiff breaking --format singleline` prints it, from the method to the end of the message, without
-# the rule name in brackets. Lines starting with # are dropped before oasdiff reads the file: put the reason on one of them
-# above its lines. A line stays until the change is on main (a dev to main pull request compares with main), then goes:
-# oasdiff matches each line as a substring, so a line left behind would let the same change through again.
+# the rule name in brackets. Comment lines (# first) are dropped before oasdiff reads the file: put the reason on one of them
+# above its lines. oasdiff ignores a change when a line contains its method, path and message, so a line left behind
+# would let the same change through again: delete it once the change is on main (a dev to main pull request compares
+# with main). Every edit to this file, deletions too, carries a Quality-Gate trailer (scripts/check_commit_policy.py).

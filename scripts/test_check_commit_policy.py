@@ -74,6 +74,11 @@ class CommitPolicyTest(unittest.TestCase):
         self.commit("chore: ignore a vuln")
         self.assertIn("edits backend/tools/osv-scanner.toml", self.check_range().stderr)
 
+    def test_api_breaking_exceptions_need_trailer(self):
+        self.write("backend/api/breaking-ignore.txt", "GET /api/items removed the path\n")
+        self.commit("chore: allow a breaking change")
+        self.assertIn("edits backend/api/breaking-ignore.txt", self.check_range().stderr)
+
     def test_lock_moved_bad_way_needs_trailer(self):
         locks = json.loads(json.dumps(LOCKS))
         locks["suppressions"]["go"] = 3

@@ -97,7 +97,7 @@ make test             # pytest without the db tests
 make test-db          # The db tests (needs Docker; CI runs them)
 make check            # CI's backend job, minus the db tests
 make gen              # Regenerate api/openapi.json from the routes (app openapi; gen-check fails when stale)
-make api-breaking     # Fail on a breaking change to api/openapi.json since BASE (default origin/dev; api/breaking-ignore.txt)
+make api-breaking     # Fail on a breaking change to api/openapi.json since BASE (default origin/dev, else origin/main; api/breaking-ignore.txt)
 make migration MSG=x  # Generate an Alembic revision from the models (needs Docker)
 make squawk           # Lock and compatibility checks on every revision's SQL (needs Node)
 make tools            # Download the pinned release binaries (oasdiff) into bin/

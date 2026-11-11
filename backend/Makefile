@@ -100,7 +100,7 @@ squawk: $(SQUAWK) ## Lock and compatibility checks on every revision's SQL (.squ
 	$(SQUAWK) --config .squawk.toml $(REVISION_SQL)/*.sql
 
 .PHONY: migrations-immutable
-migrations-immutable: ## Revisions already on BASE (default origin/dev) must not change
+migrations-immutable: ## Revisions already on BASE (default origin/dev, else origin/main) must not change
 	uv run --no-project --python 3.14 python ../scripts/check_migrations_immutable.py $(BASE)
 
 .PHONY: lock-check
@@ -110,7 +110,9 @@ lock-check: ## uv.lock matches pyproject.toml
 # The base for migrations-immutable and api-breaking. CI passes the event's base. Locally it is origin/dev, which holds
 # all of main plus what has been merged since (CI compares a push to dev with dev's previous tip), or origin/main in a
 # clone without dev, such as a project fresh from make new.
-BASE ?= $(shell env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE git rev-parse -q --verify origin/dev >/dev/null 2>&1 && echo origin/dev || echo origin/main)
+ifeq ($(origin BASE),undefined)
+BASE := $(shell env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE git rev-parse -q --verify origin/dev >/dev/null 2>&1 && echo origin/dev || echo origin/main)
+endif
 
 # oasdiff compares two OpenAPI documents. It is installed from its release archive; the checksums are the release's
 # checksums.txt (`scripts/tool_versions.py bump oasdiff` rewrites them). macOS has one universal archive. The version is
@@ -141,7 +143,8 @@ $(OASDIFF):
 # oasdiff, but request models forbid extra fields (REQUEST_CONFIG), so clients that still send it get 422. A base
 # without api/ predates the generated contract: there is nothing to compare. A base with api/ but without the file
 # means it moved or was renamed, which fails. An intended breaking change passes with a line in api/breaking-ignore.txt;
-# oasdiff matches every line of that file as a substring, comment lines too, so they are dropped before it reads it. A
+# oasdiff ignores a change when any line of that file contains its method, path and message, comment lines too, so
+# they are dropped before it reads the file. A
 # git hook may export GIT_DIR, which git would read relative to backend/.
 BREAKING_IGNORE := api/breaking-ignore.txt
 
@@ -149,13 +152,15 @@ BREAKING_IGNORE := api/breaking-ignore.txt
 api-breaking: $(OASDIFF) ## Fail on a breaking change to api/openapi.json since the merge-base with BASE
 	@git() { env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE git "$$@"; }; \
 	prefix="$$(git rev-parse --show-prefix)" || exit 1; \
-	base="$$(git merge-base HEAD "$(BASE)")" || { echo "api-breaking: no merge-base of HEAD and $(BASE)"; exit 1; }; \
+	git rev-parse -q --verify "$(BASE)^{commit}" >/dev/null || { \
+		echo "api-breaking: $(BASE) is not a commit here (git fetch, or pass BASE=<ref>)"; exit 1; }; \
+	base="$$(git merge-base HEAD "$(BASE)")" || { echo "api-breaking: HEAD and $(BASE) share no history"; exit 1; }; \
 	if ! git cat-file -e "$$base:$${prefix}api" 2>/dev/null; then \
 		echo "api-breaking: $(BASE) has no $${prefix}api/, nothing to compare"; exit 0; fi; \
 	tmp="$$(mktemp -d)"; trap 'rm -rf "$$tmp"' EXIT; \
 	git show "$$base:$${prefix}$(CONTRACT)" > "$$tmp/base.json" 2>/dev/null || { \
 		echo "api-breaking: $(BASE) has $${prefix}api/ but no $${prefix}$(CONTRACT)"; exit 1; }; \
-	grep -v -e '^#' -e '^[[:space:]]*$$' $(BREAKING_IGNORE) > "$$tmp/ignore.txt"; \
+	grep -v -e '^[[:space:]]*#' -e '^[[:space:]]*$$' $(BREAKING_IGNORE) > "$$tmp/ignore.txt"; \
 	$(OASDIFF) breaking "$$tmp/base.json" $(CONTRACT) --fail-on WARN \
 		--err-ignore "$$tmp/ignore.txt" --warn-ignore "$$tmp/ignore.txt"
 

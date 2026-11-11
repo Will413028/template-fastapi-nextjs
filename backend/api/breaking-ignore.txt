@@ -5,3 +5,8 @@
 # above its lines. oasdiff ignores a change when a line contains its method, path and message, so a line left behind
 # would let the same change through again: delete it once the change is on main (a dev to main pull request compares
 # with main). Every edit to this file, deletions too, carries a Quality-Gate trailer (scripts/check_commit_policy.py).
+# probe for the api-breaking acceptance: Item.title became optional (not for merge)
+GET /api/items the response property `items/items/title` became optional for the status `200`
+POST /api/items the response property `title` became optional for the status `201`
+GET /api/items/{id} the response property `title` became optional for the status `200`
+PATCH /api/items/{id} the response property `title` became optional for the status `200`

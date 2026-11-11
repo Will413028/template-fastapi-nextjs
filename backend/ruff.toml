@@ -22,9 +22,6 @@ ignore = [
 # The contract names its path parameters id (/users/{id}). Path(alias="id") would avoid the builtin's name, but ruff's
 # FAST003 does not see an alias and reports the path parameter as missing, so routes take the contract's name.
 "src/app/modules/*/router.py" = ["A002"]
-# written by make gen: its docstrings are the contract's descriptions, which stay as the Go version wraps them (E501),
-# and the generator writes a nullable optional field as `T | None | MISSING` (RUF036 only orders the union)
-"src/app/http/contract_models.py" = ["E501", "RUF036"]
 
 [lint.flake8-tidy-imports]
 ban-relative-imports = "all"

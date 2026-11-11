@@ -1,4 +1,4 @@
-"""Swagger UI for the contract, served in MODE=dev only (app.main).
+"""Swagger UI for the generated contract (/api/openapi.json), served in MODE=dev only (app.main).
 
 swagger-ui-dist is loaded from jsDelivr pinned to one version with Subresource Integrity, so a changed file on the CDN
 is refused by the browser. The hashes are the sha384 of the files at that URL:
@@ -18,7 +18,7 @@ DOCS_HTML = """<!doctype html>
 <div id="swagger-ui"></div>
 <script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.33.0/swagger-ui-bundle.js"
   integrity="sha384-YDALVcy8kj8yltLBVi1vBiBAUqdxvus673gM8XKwiy6aDUJFXivF/KCufekjYbVf" crossorigin="anonymous"></script>
-<script>window.ui = SwaggerUIBundle({url: "/api/openapi.yaml", dom_id: "#swagger-ui"});</script>
+<script>window.ui = SwaggerUIBundle({url: "/api/openapi.json", dom_id: "#swagger-ui"});</script>
 </body>
 </html>
 """

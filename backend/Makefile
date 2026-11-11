@@ -13,26 +13,20 @@ sync: ## Install the locked dependencies, dev tools included, into .venv
 run: ## Start `app serve` with MODE=dev on this machine
 	MODE=dev $(UV) app serve
 
-# The Pydantic models of the contract (ADR fastapi-backend-stack D2; options in pyproject.toml [tool.datamodel-codegen]), then ruff's fixes and
-# format. ruff reads the code through stdin under the target's name, so ruff.toml applies as it does to the file and
-# the work tree is not touched. $(1) is where the result goes; $(1).raw and $(1).fixed are left next to it.
-CONTRACT_MODELS := src/app/http/contract_models.py
-define generate_contract_models
-$(UV) datamodel-codegen --output $(1).raw && \
-$(UV) ruff check --fix-only --quiet --stdin-filename $(CONTRACT_MODELS) < $(1).raw > $(1).fixed && \
-$(UV) ruff format --quiet --stdin-filename $(CONTRACT_MODELS) < $(1).fixed > $(1)
-endef
+# The contract is generated from the routes and their models (app openapi, app.main.build_openapi) and committed as
+# api/openapi.json.
+CONTRACT := api/openapi.json
 
 .PHONY: gen
-gen: ## Regenerate src/app/http/contract_models.py from api/openapi.yaml
+gen: ## Regenerate api/openapi.json from the routes
 	@tmp="$$(mktemp -d)"; trap 'rm -rf "$$tmp"' EXIT; \
-	$(call generate_contract_models,"$$tmp/out.py") && cp "$$tmp/out.py" $(CONTRACT_MODELS)
+	$(UV) app openapi > "$$tmp/openapi.json" && cp "$$tmp/openapi.json" $(CONTRACT)
 
 .PHONY: gen-check
-gen-check: ## Fail when src/app/http/contract_models.py differs from what make gen writes
+gen-check: ## Fail when api/openapi.json differs from what make gen writes
 	@tmp="$$(mktemp -d)"; trap 'rm -rf "$$tmp"' EXIT; \
-	$(call generate_contract_models,"$$tmp/out.py") || exit 1; \
-	cmp -s "$$tmp/out.py" $(CONTRACT_MODELS) || { echo "$(CONTRACT_MODELS) is stale: run make gen"; exit 1; }
+	$(UV) app openapi > "$$tmp/openapi.json" || exit 1; \
+	cmp -s "$$tmp/openapi.json" $(CONTRACT) || { echo "$(CONTRACT) is stale: run make gen"; exit 1; }
 
 .PHONY: fmt
 fmt: ## Format the code and apply safe lint fixes
@@ -54,13 +48,13 @@ typecheck: ## pyright in strict mode (pyrightconfig.json)
 
 # Called by name, so they look unused: FastAPI route decorators, pytest fixtures, hooks and pytestmark, http.server's
 # do_<METHOD> handlers, each CLI command module's run(), which app.cli imports when its command runs, and what
-# Alembic reads from a revision file; tests/vulture_whitelist.py names the attributes openapi-core reads through its
-# protocols. models.py is left out: a column is part of the schema (tests/test_schema_db.py
-# compares it with the migrations) whether or not code reads it. contract_models.py is left out for the same reason: it
-# mirrors the contract's schemas (make gen-check), and Pydantic reads a response's fields when it serializes them.
+# Alembic reads from a revision file. models.py is left out: a column is part of the schema (tests/test_schema_db.py compares it with the
+# migrations) whether or not code reads it. A module's schemas.py is left out for the same reason: a field is part of
+# the contract (make gen-check), and Pydantic reads it when it serializes a response, which vulture cannot see; so is
+# tests/widget_schemas.py, the stub operations' bodies.
 .PHONY: deadcode
 deadcode:
-	$(UV) vulture src tests tests/vulture_whitelist.py --min-confidence 60 --exclude '*/models.py,*/contract_models.py' \
+	$(UV) vulture src tests --min-confidence 60 --exclude '*/models.py,*/modules/*/schemas.py,*/tests/widget_schemas.py' \
 		--ignore-decorators '@*.get,@*.post,@*.put,@*.patch,@*.delete,@pytest.fixture' \
 		--ignore-names 'do_GET,run,pytest_*,pytestmark,revision,down_revision,upgrade'
 

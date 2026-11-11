@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING, Any, override
 
 from sqlalchemy import event, text
 
-from apitest import PEER, checked_client, contract, deps
+from apitest import PEER, checked_client, deps
 from app.core.db import Database, create_engine
 from app.core.hibp import HIBPError
 from app.http.origin import OriginPolicy
@@ -257,7 +257,7 @@ def auth_api(
     )
     app = create_app(
         dataclasses.replace(
-            deps(contract()),
+            deps(),
             database=database,
             origin=OriginPolicy(secrets=(SECRET,), required=False),
             limiter=IPLimiter(per_min, lambda: 1_000_000.0),
@@ -267,5 +267,5 @@ def auth_api(
             ),
         )
     )
-    with checked_client(app, against=contract(), peer=PEER) as client:
+    with checked_client(app, peer=PEER) as client:
         yield AuthAPI(client=client, service=service, db=db, clock=clock, hasher=hasher, queries=QueryCounter(database))

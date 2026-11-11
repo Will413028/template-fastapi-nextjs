@@ -10,9 +10,8 @@ import threading
 import time
 
 import pytest
-import yaml
 
-from apitest import CONTRACT_PATH
+from app.main import build_openapi
 from app.modules.auth.service.passwords import (
     OWASP_ARGON2,
     PASSWORD_MIN_LENGTH,
@@ -152,6 +151,5 @@ def test_common_password_list() -> None:
 
 
 def test_the_minimum_is_the_contracts() -> None:
-    document = yaml.safe_load(CONTRACT_PATH.read_text(encoding="utf-8"))
-    password = document["components"]["schemas"]["CreateUserRequest"]["properties"]["password"]
+    password = build_openapi()["components"]["schemas"]["CreateUserRequest"]["properties"]["password"]
     assert password["minLength"] == PASSWORD_MIN_LENGTH

@@ -149,6 +149,8 @@ FastAPI 原始碼讀到的三個關鍵事實（後面多處引用）：
 | F34 | info：title、version、description（problem 規則） | 6-11 | 無 | `FastAPI(title=, version=, description=)` |
 | F35 | public 的 `createSession` 有 401（帳密錯誤） | 280-281 | client.ts:26（這個路徑的 401 不轉址） | 寫進 `responses`（F8） |
 | F36 | 405、503 不屬於任何 operation；health 不在契約內 | — | 無 | keep：health 維持 `include_in_schema=False` |
+| T1 | （步驟 4a 補列）產生的規格在每個 schema 與 property 多了 Pydantic 的 `title`（例如 `"title": "Next Cursor"`）；yaml 沒有 | — | 無（推論 openapi-typescript 的型別不受 `title` 影響；步驟 5 產生 `schema.d.ts` 時核對） | 保留：只是文件，不影響驗證或型別；不寫後處理去掉（FastAPI 應用的常態）。待 Will 確認（4a 審查 2026-11-09 提出） |
+| T2 | （步驟 4a 補列）yaml 的 `components/parameters`、`headers`、`responses` 在產生的規格裡逐 operation 內嵌 | 553-593、861-924 | 無 | 刻意放棄：FastAPI 沒有可重用的 parameter／response component；內容相同由 oasdiff 解開 `$ref` 比對（`contract-delta.md`） |
 
 ### 2b. 每個 operation 宣告的 status code 與 header（F8 的清單；measured，從 yaml 讀出）
 

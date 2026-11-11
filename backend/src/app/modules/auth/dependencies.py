@@ -2,8 +2,8 @@
 dependencies its routes use (Go version: internal/httpapi/auth.go).
 
 The session token lives only in an HttpOnly cookie (docs/adr/2026-10-18-api-and-auth-baseline.md D4). The middleware
-runs before the contract is checked, so an operation that declares security sees an anonymous request as 401 rather
-than a 422 about its body (app.http.contract). A missing or invalid session leaves the request anonymous: operations
+runs before routing, so an operation that needs a session sees an anonymous request as 401 rather than a 422 about its
+body (app.http.route checks access first). A missing or invalid session leaves the request anonymous: operations
 without security (sign-in, sign-up, sign-out) must work with a stale cookie. An invalid cookie is cleared on the
 response: it is HttpOnly, so only the server can remove it, and the frontend takes a present cookie for a session.
 """

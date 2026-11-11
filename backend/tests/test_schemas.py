@@ -1,15 +1,14 @@
-"""The Pydantic models make gen writes from api/openapi.yaml keep the contract's null and absence rules.
-
-make gen-check only proves the file matches the generator's options; these tests fail when an option change makes
-the models disagree with the contract (pyproject.toml [tool.datamodel-codegen]).
-"""
+"""The request and response models keep the contract's null and absence rules: a PATCH tells a field not sent from
+one sent null, and a dump leaves out the optional fields that were not set."""
 
 from typing import Any
 
 import pytest
 from pydantic import MISSING, BaseModel, ValidationError
 
-from app.http.contract_models import ItemPatch, Problem, UserPatch
+from app.http.schemas import Problem
+from app.modules.auth.schemas import UserPatch
+from app.modules.items.schemas import ItemPatch
 
 
 @pytest.mark.parametrize(

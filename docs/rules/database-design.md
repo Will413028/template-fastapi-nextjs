@@ -64,7 +64,7 @@ Index("sessions_id_key", "id", unique=True)
 | 二進位（雜湊等） | `bytea` + `CHECK (octet_length(x) = n)` | hex 字串存 `text` |
 
 - 主鍵由 DB 的 `uuidv7()`（PostgreSQL 18 內建）產生，JSON 裡是字串。UUIDv7 依時間排序，可以直接當 keyset 分頁的排序鍵（ADR fastapi-backend-stack D6）。
-- 長度與 enum 的 CHECK 數值必須和 `backend/api/openapi.yaml` 一致：契約是第一道防線，CHECK 是第二道，任何不合長度或 enum 的資料在 DB 層就寫不進去（ADR FastAPI 版後端 Expected Outcome）。
+- 長度與 enum 的 CHECK 數值必須和各模組 `schemas.py` 的 model（產生 `backend/api/openapi.json`）一致：契約是第一道防線，CHECK 是第二道，任何不合長度或 enum 的資料在 DB 層就寫不進去（ADR FastAPI 版後端 Expected Outcome）。
 - 新增狀態值時，在同一個 PR 改契約的 `enum`、模型的 `CheckConstraint`，並產生 revision（autogenerate 抓不到 CHECK 的變更，要手動補進 revision；`tests/test_schema_db.py` 的 catalog 比對會擋下漏補）。
 
 ```python

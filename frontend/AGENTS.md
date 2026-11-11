@@ -11,7 +11,7 @@ Production-ready Next.js frontend with feature-based architecture, i18n, and coo
 - **State:** Tanstack React Query (server) + Zustand (client UI state)
 - **Forms:** React Hook Form + Zod
 - **i18n:** next-intl (en, zh-TW)
-- **API:** types generated from `backend/api/openapi.yaml` (openapi-typescript) + openapi-fetch, same-origin `/api`
+- **API:** types generated from `backend/api/openapi.json` (openapi-typescript) + openapi-fetch, same-origin `/api`
 - **Auth:** opaque session in an HttpOnly cookie (set by the backend) + server-side session guard
 - **Testing:** Vitest + React Testing Library
 
@@ -70,7 +70,7 @@ layer), not by adding an exception.
 ## Key Conventions
 
 1. **Feature modules** — domain logic lives in `features/<name>/` with api, hooks, components; types come from the generated `components["schemas"]`, never hand-written
-2. **The contract is the single source** — `backend/api/openapi.yaml` defines shapes, lengths, formats and enums; run `pnpm gen:api` after changing it (CI fails on a stale `schema.d.ts`). Forms check presence only and show the API's field errors
+2. **The contract is the single source** — `backend/api/openapi.json`, generated from the backend's routes and models (`make -C backend gen`), defines shapes, lengths, formats and enums; run `pnpm gen:api` after it changes (CI fails on a stale `schema.d.ts`). Forms check presence only and show the API's field errors
 3. **Errors are RFC 9457 problems** — show messages by `type` and `code` from `messages/*.json` (`problems.*`, via `lib/api/errors.ts`); never show or parse `detail`. A new `type` or `code` in the contract needs a message in every locale, or `pnpm lint` fails
 4. **Biome, not ESLint** — all linting and formatting via Biome, a11y rules enabled
 5. **i18n keys** — all user-facing text in `messages/{locale}.json`, accessed via `useTranslations()`

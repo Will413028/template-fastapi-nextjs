@@ -2,10 +2,10 @@
 cmd/app/seed.go). The root Makefile's `make seed ADMIN_ACCOUNT=<name>` runs it in the stack with the password on
 stdin.
 
-The input is checked against the contract's CreateUserRequest, the rules POST /api/users applies, through the model
-generated from it (app.http.contract_models, which gen-check keeps in step with the contract), and the password against
-the common-password list. Messages name the variable and the rule, never the value. An existing account is left
-exactly as it is: seed-admin never promotes or changes a user.
+The input is checked against CreateUserRequest (app.modules.auth.schemas), the model POST /api/users validates its
+body with and the contract is generated from, and the password against the common-password list. Messages name the
+variable and the rule, never the value. An existing account is left exactly as it is: seed-admin never promotes or
+changes a user.
 
 `app recover-admin` (app.cli.recover) shares the input checks and the AuthService assembly.
 """
@@ -21,7 +21,7 @@ from app.core.config import ConfigError, SeedSettings
 from app.core.db import Database
 from app.core.errors import AppError, Kind
 from app.core.hibp import HIBPClient
-from app.http.contract_models import CreateUserRequest
+from app.modules.auth.schemas import CreateUserRequest
 from app.modules.auth.service import AuthService, NoSuchAdminError, account_key
 
 if TYPE_CHECKING:

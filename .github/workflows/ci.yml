@@ -35,7 +35,7 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 26
-      # uv.lock in sync, the contract's Pydantic models regenerated (gen-check), format, ruff, import-linter contracts,
+      # uv.lock in sync, api/openapi.json regenerated from the routes (gen-check), format, ruff, import-linter contracts,
       # pyright strict, vulture, pytest without the db tests,
       # squawk on every revision's SQL, and no revision that already reached the base changed: a pull request's base branch, or for a push the branch's
       # previous tip, so a revision pushed to dev is frozen too (the Go version's rule)
@@ -249,7 +249,8 @@ jobs:
       - name: Check git hooks were installed
         run: test -x "$(git rev-parse --git-path hooks)/commit-msg"
       - run: pnpm audit --prod --audit-level high
-      # src/lib/api/schema.d.ts must match backend/api/openapi.yaml, the contract's single source
+      # src/lib/api/schema.d.ts must match backend/api/openapi.json, and every x-extensible-enum list in it must
+      # become a union
       - run: pnpm gen:api:check
       - run: pnpm lint
       - run: pnpm check:deps

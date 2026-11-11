@@ -1,7 +1,9 @@
 """Per-address rate limits for the operations that guess or create (Go version: internal/httpapi/ratelimit.go).
 
-An operation opts in with `dependencies=[RATE_LIMITED]`. A dependency runs after ContractValidation, so a
-request the contract rejects uses no token, as in the Go version.
+An operation opts in with `dependencies=[RATE_LIMITED]`, a marker app.http.route.ApiRoute reads: it takes the token
+after the access check and before the body is checked, so every request that reaches the operation counts, one a 415,
+400 or 422 refuses included (Rails rate_limit, DRF throttles and ASP.NET's rate limiter count before
+parsing too).
 """
 
 import ipaddress
@@ -94,9 +96,13 @@ def limit_key(address: IPAddress | None) -> IPAddress | None:
     return address
 
 
-async def _rate_limit(request: Request) -> None:
-    """The dependency that limits an operation per client address (app.http.origin), with the app's IPLimiter
-    (app.main): over the limit, a 429 problem with Retry-After."""
+async def rate_limited() -> None:
+    """The marker of a limited operation; the limit itself is take_token, which ApiRoute calls."""
+
+
+def take_token(request: Request) -> None:
+    """Takes a token for the request's client address (app.http.origin) from the app's IPLimiter (app.main): over the
+    limit, a 429 problem with Retry-After."""
     limiter: IPLimiter = request.app.state.ip_limiter
     client = current_client()
     wait = limiter.wait(client.address if client else None)
@@ -104,4 +110,4 @@ async def _rate_limit(request: Request) -> None:
         raise AppError(Kind.RATE_LIMITED, "", "too many requests from this address", retry_after=wait)
 
 
-RATE_LIMITED = Depends(_rate_limit)
+RATE_LIMITED = Depends(rate_limited)

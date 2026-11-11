@@ -1,9 +1,10 @@
 """Who may call an operation (docs/adr/2026-10-18-api-and-auth-baseline.md D7, ADR fastapi-backend-stack D5).
 
-Every /api route carries exactly one access marker, and app.main checks at startup that it does and that PUBLIC is
-exactly the operations the contract gives `security: []` (check_routes): a new operation's access is a decision,
-not a default. The contract's security already refuses an anonymous call before validation (app.http.contract); the
-marker is the route's own statement of it, and SIGNED_IN gives the route the principal.
+Every /api route carries exactly one access marker, and app.main checks at startup that it does (check_routes): a new
+operation's access is a decision, not a default. The contract's security follows the markers (SIGNED_IN and ADMIN
+declare the session cookie, PUBLIC nothing). app.http.route.ApiRoute runs a route's marker before FastAPI reads the
+body, so an anonymous or unauthorized caller is refused before anything about its request is checked; SIGNED_IN and
+ADMIN then give the route the principal.
 
     @router.get("/items/{id}")
     async def get_item(id: uuid.UUID, principal: SignedIn) -> Item: ...
@@ -21,8 +22,10 @@ markers among all of a route's dependencies).
 import logging
 from typing import Annotated
 
-from fastapi import Depends, Request
+from fastapi import Depends, Request, Security
+from fastapi.security import APIKeyCookie
 
+from app.core.config import SECURE_SESSION_COOKIE
 from app.core.errors import AppError, Kind
 from app.core.principal import ROLE_ADMIN, Principal, current_principal, session_invalid
 
@@ -33,20 +36,33 @@ logger = logging.getLogger(__name__)
 CODE_INSUFFICIENT_ROLE = "insufficient_role"
 
 
+# The contract's security scheme, so SIGNED_IN and ADMIN operations declare it. Documentation only: it never refuses a
+# request (auto_error=False) and its value is not read; AuthenticateMiddleware resolves the cookie, whichever name
+# COOKIE_SECURE gives it.
+_SESSION_COOKIE = APIKeyCookie(
+    name=SECURE_SESSION_COOKIE,
+    scheme_name="sessionCookie",
+    description="Opaque session token, HttpOnly. Named `session` instead when the server runs with COOKIE_SECURE=false "
+    "(local http development), because the `__Host-` prefix requires Secure.",
+    auto_error=False,
+)
+_Documented = Annotated[str | None, Security(_SESSION_COOKIE)]
+
+
 async def public() -> None:
     """The marker of an operation anyone may call."""
 
 
-async def signed_in() -> Principal:
-    """The marker of an operation that needs a session; returns the signed-in user. The contract check refuses an
-    anonymous request before it gets here, so a missing principal means the route and the contract disagree."""
+async def signed_in(_: _Documented = None) -> Principal:
+    """The marker of an operation that needs a session; returns the signed-in user. Without a valid session (the
+    middleware found none, or the cookie is stale or forged) a 401 with code session_invalid."""
     principal = current_principal()
     if principal is None:
         raise session_invalid()
     return principal
 
 
-async def admin(request: Request) -> Principal:
+async def admin(request: Request, _: _Documented = None) -> Principal:
     """The marker of an operation only admins may call; returns the signed-in admin. The role is the one the
     middleware read from the database for this request, so a demotion takes effect on the next one. A refusal is
     logged as authz.denied (OWASP Logging Cheat Sheet: authorization failures)."""

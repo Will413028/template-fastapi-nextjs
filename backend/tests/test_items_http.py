@@ -9,7 +9,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from apitest import assert_problem, checked_client, contract
+from apitest import assert_problem, checked_client
 from authfake import TOKEN, FakeAuthService, fake_app
 
 if TYPE_CHECKING:
@@ -25,7 +25,7 @@ MERGE_PATCH = {"Content-Type": "application/merge-patch+json"}
 
 @pytest.fixture
 def client() -> Generator[TestClient]:
-    with checked_client(fake_app(FakeAuthService()), against=contract()) as created:
+    with checked_client(fake_app(FakeAuthService())) as created:
         yield created
 
 

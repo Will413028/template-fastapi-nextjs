@@ -107,6 +107,10 @@ class DatabaseSettings:
         return urllib.parse.parse_qs(self.parts.query).get("sslmode", ["prefer"])[0]
 
 
+# The session cookie's name with COOKIE_SECURE=true (the default), as the contract documents it (app.http.access).
+SECURE_SESSION_COOKIE = "__Host-session"
+
+
 @dataclass(frozen=True, slots=True)
 class Settings:
     """What `app serve` needs."""
@@ -133,7 +137,7 @@ class Settings:
     @property
     def session_cookie_name(self) -> str:
         """The `__Host-` prefix requires Secure, so a cookie that is not Secure drops it."""
-        return "__Host-session" if self.cookie_secure else "session"
+        return SECURE_SESSION_COOKIE if self.cookie_secure else "session"
 
     @property
     def device_cookie_name(self) -> str:

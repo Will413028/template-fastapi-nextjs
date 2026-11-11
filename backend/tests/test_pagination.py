@@ -4,11 +4,10 @@ import base64
 import uuid
 
 import pytest
-import yaml
 
-from apitest import CONTRACT_PATH
 from app.core.errors import AppError, Kind
 from app.core.pagination import DEFAULT_LIMIT, after, decode_cursor, encode_cursor, page_rows, trim_page
+from app.main import build_openapi
 
 
 def test_cursor_round_trip() -> None:
@@ -58,5 +57,13 @@ def test_trim_page() -> None:
 
 
 def test_the_default_limit_is_the_contracts() -> None:
-    document = yaml.safe_load(CONTRACT_PATH.read_text(encoding="utf-8"))
-    assert document["components"]["parameters"]["Limit"]["schema"]["default"] == DEFAULT_LIMIT
+    # every list operation's default, which its route writes as `limit: Limit = DEFAULT_LIMIT`
+    defaults = {
+        operation["operationId"]: parameter["schema"].get("default")
+        for path in build_openapi()["paths"].values()
+        for operation in path.values()
+        for parameter in operation.get("parameters", [])
+        if parameter["name"] == "limit"
+    }
+    assert defaults
+    assert set(defaults.values()) == {DEFAULT_LIMIT}, defaults

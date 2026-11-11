@@ -1,5 +1,5 @@
-"""The bodies of the stub widget operations (tests/apitest.py): each Widget property exercises one validation code
-(Go version: internal/httpapi/testdata/test-openapi.yaml). Left out of make deadcode, as a module's schemas.py is:
+"""The bodies of the stub widget operations (tests/apitest.py): each Widget property exercises one validation code.
+Left out of make deadcode, as a module's schemas.py is:
 Pydantic reads the fields, which vulture cannot see."""
 
 import uuid
@@ -17,7 +17,7 @@ class WidgetParts(BaseModel):
 
 
 class Widget(BaseModel):
-    """Each property exercises one validation code (Go version: internal/httpapi/testdata/test-openapi.yaml)."""
+    """Each property exercises one validation code."""
 
     model_config = REQUEST_CONFIG
 

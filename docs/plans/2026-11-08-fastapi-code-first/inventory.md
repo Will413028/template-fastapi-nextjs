@@ -306,7 +306,7 @@ rg -c ${=G} -e '<pattern>'    # 每個檔案的行數；檔案數 = rg -l ... | 
 | D4 | 規格 paths 的 `/api`：匯出時去掉前綴並加 `servers: [/api]`（前端不動），還是前端改用含 `/api` 的路徑，或把 API 掛成 `/api` 子 app？ | F2、E2 |
 | D8 | 提交的匯出檔格式與位置（例如 `backend/api/openapi.json`；YAML 需要 pyyaml 直接依賴），以及 dev 是否以 `/api/openapi.json` 提供同一份？ | B53、E1 |
 
-拍板結果（2026-11-08，Will）：D3 選統一用 `session_invalid`；D4 選 paths 含 `/api`；D8 用 JSON；D2、D5、D6 照 `brief-d2-d5-d6.md`——D2 custom route class（401/403 → 429 → 415 含 `Accept-Patch` → 400 → 422，403 也提前），D5 openapi-core 降為 dev 依賴並對產生的規格驗證、`Problem` 由 model 建構，D6 每個請求都扣 token（B65 的測試改成「被擋下也扣」）。上表各列的 DECISION NEEDED 以此為準，細節見計畫的決定表。
+拍板結果（2026-11-08，Will）：D3 選統一用 `session_invalid`；D4 選 paths 含 `/api`；D8 用 JSON；D2、D5、D6 照業界基準簡報（已併入 ADR `docs/adr/2026-11-11-code-first-contract-and-request-checks.md`）——D2 custom route class（401/403 → 429 → 415 含 `Accept-Patch` → 400 → 422，403 也提前），D5 openapi-core 降為 dev 依賴並對產生的規格驗證、`Problem` 由 model 建構，D6 每個請求都扣 token（B65 的測試改成「被擋下也扣」）。上表各列的 DECISION NEEDED 以此為準，細節見計畫的決定表。
 
 ## 7. 未驗證項目
 

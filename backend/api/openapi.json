@@ -1984,7 +1984,8 @@
           },
           "title": {
             "type": "string",
-            "title": "Title"
+            "title": "Title",
+            "default": ""
           },
           "description": {
             "anyOf": [
@@ -2016,7 +2017,6 @@
         "type": "object",
         "required": [
           "id",
-          "title",
           "description",
           "owner_id",
           "created_at",

@@ -14,7 +14,7 @@ _NEXT_CURSOR = Field(description="Cursor for the next page; null on the last pag
 
 class Item(BaseModel):
     id: uuid.UUID
-    title: str
+    title: str = ""
     description: str | None
     owner_id: uuid.UUID
     created_at: AwareDatetime

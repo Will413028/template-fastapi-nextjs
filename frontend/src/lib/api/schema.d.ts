@@ -295,7 +295,10 @@ export interface components {
              * Format: uuid
              */
             id: string;
-            /** Title */
+            /**
+             * Title
+             * @default
+             */
             title: string;
             /** Description */
             description: string | null;

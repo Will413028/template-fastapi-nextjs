@@ -50,7 +50,7 @@ tags: [fullstack-template, decision, fastapi, rest, openapi]
 ## Rationale
 
 - **D1**：當初推離基準的理由消失後，手寫契約只剩成本：契約、產生的模型、route 三處要靠工具對齊，一個功能改兩個地方。代價：契約的形狀改由 Pydantic 與 FastAPI 的產出決定（3.1、`anyOf null`、`title`），升級它們可能改動契約，靠 `gen-check` 與 `api-breaking`（oasdiff）看見；要兩段 FastAPI 沒有原生寫法的程式（problem media type 的後處理、route class）；第一次切換時前端的 path 全部要改。
-- **D2**：不選 B：匿名送壞 JSON 會先於 401 得到內容錯誤，415 只能從 Pydantic 的錯誤型別猜，NaN 照收。不選 C：merge-patch 的 `null` 代表清空，和一般 JSON 語意不同，模糊的語意會被每個衍生專案繼承。和舊行為相比改了兩點：403 提前到內容檢查之前（原本非 admin 送錯 body 先拿到 422），415 補上 `Accept-Patch`。代價：多一個自訂 route class 要維護，每個 `/api` route 都必須用它（`app.main` 啟動時檢查）；加自動宣告的 status 時 route 會建兩次，每個 app 啟動多約 20 ms（實測）。
+- **D2**：不選 B：匿名送壞 JSON 會先於 401 得到內容錯誤，415 只能從 Pydantic 的錯誤型別猜，NaN 照收。不選 C：merge-patch 的 `null` 代表清空，和一般 JSON 語意不同，模糊的語意會被每個衍生專案繼承。和舊行為相比改了兩點：403 提前到內容檢查之前（原本非 admin 送錯 body 先拿到 422），415 補上 `Accept-Patch`。代價：多一個自訂 route class 要維護，每個 `/api` route 都必須用它（`app.main` 啟動時檢查），它讀 FastAPI 沒有列入文件的內部結構（route 的 `dependant`、`body_field`），升級 FastAPI 時先跑 `test_routes.py` 與 `test_validation.py`；access marker 仍是 dependency（契約的 `security` 與交給 route 的 principal 靠它），所以每個請求跑兩次，`RATE_LIMITED` 只是 route class 讀的標記，由 `include_router` 加上的不生效（啟動檢查拒絕）；body 上限 middleware 在路由與 access 之前把 body 讀進記憶體（上限 1 MiB），匿名與未定義路徑的請求也一樣，讀到一半斷線的請求記成 500；加自動宣告的 status 時 route 會建兩次，每個 app 啟動多約 20 ms（實測）。
 - **D3**：契約與回應出自同一份 model，只讓成功 body 的檢查變成重複；錯誤 body、沒宣告的 status、media type 與 header 是另外宣告的，仍會漂移，FastAPI 執行期不檢查。不選 B：只有 status 能從型別推導時才成立（ASP.NET 的 `TypedResults`），FastAPI 沒有。不選 C：它產生新的輸入，取代不了對既有測試每個回應的檢查，而且是新依賴。代價：openapi-core 留在開發依賴裡，並要為 `application/problem+json` 註冊 deserializer。
 - **D4**：per-IP 限流管的是某個位址打這些 operation 的總量；猜密碼的嘗試次數另由 `sign_in_throttles` 依帳號與來源節流（ADR account-abuse-and-lifecycle D4）。舊規則也不一致：契約層的 422 不扣，service 層的 422、409 會扣。代價：註冊時連續打錯的合法使用者會用掉額度（前端不重複檢查長度，422 是正常流程），例如 4 次 422 加 1 次成功後，一分鐘內登入會拿到 429。沒有流量資料可以量這件事。
 
@@ -73,6 +73,7 @@ tags: [fullstack-template, decision, fastapi, rest, openapi]
 - 衍生專案上線後合法使用者因 422 撞到 429 → 調額度或拆成每個 operation 一個 bucket，不改計數規則（D4）。Will 把 per-IP 限流改定義為「嘗試次數」→ 改成在 Pydantic 驗證之後扣。
 - `checked_client` 與手寫測試沒抓到契約漂移，或 openapi-core 對 3.1 出現誤判 → 加 Schemathesis 或改用 jsonschema 直接驗證（D3）。
 - 測試或啟動時間成為問題 → 重做 route class 自動宣告 status 的方式（D2）。
+- 第一個正式部署接上錯誤追蹤，或 body 上限要調高 → body 上限改成邊讀邊數、不預先緩衝，斷線改記成不帶 stack 的 warning（D2）。
 - 衍生專案上線後，改 401／415／400 的順序或 status 是破壞性變更：走 `api-breaking` 的放行流程（`docs/rules/api-design.md`「契約穩定性」）。
 
 ## Review Notes

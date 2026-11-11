@@ -100,7 +100,7 @@ squawk: $(SQUAWK) ## Lock and compatibility checks on every revision's SQL (.squ
 	$(SQUAWK) --config .squawk.toml $(REVISION_SQL)/*.sql
 
 .PHONY: migrations-immutable
-migrations-immutable: ## Revisions already on BASE (default origin/dev, else origin/main) must not change
+migrations-immutable: ## Revisions already on BASE (default origin/dev, else origin/main, or HEAD before the first push) must not change
 	uv run --no-project --python 3.14 python ../scripts/check_migrations_immutable.py $(BASE)
 
 .PHONY: lock-check
@@ -109,9 +109,13 @@ lock-check: ## uv.lock matches pyproject.toml
 
 # The base for migrations-immutable and api-breaking. CI passes the event's base. Locally it is origin/dev, which holds
 # all of main plus what has been merged since (CI compares a push to dev with dev's previous tip), or origin/main in a
-# clone without dev, such as a project fresh from make new.
+# clone without dev. A repository that has no origin branch at all, such as a project fresh from make new before its
+# first push, has published nothing to compare with: its base is HEAD, so both checks pass and the first push goes out.
 ifeq ($(origin BASE),undefined)
-BASE := $(shell env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE git rev-parse -q --verify origin/dev >/dev/null 2>&1 && echo origin/dev || echo origin/main)
+BASE := $(shell git() { env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE git "$$@"; }; \
+	if git rev-parse -q --verify origin/dev >/dev/null 2>&1; then echo origin/dev; \
+	elif [ -z "$$(git for-each-ref --count=1 refs/remotes/origin)" ]; then echo HEAD; \
+	else echo origin/main; fi)
 endif
 
 # oasdiff compares two OpenAPI documents. It is installed from its release archive; the checksums are the release's

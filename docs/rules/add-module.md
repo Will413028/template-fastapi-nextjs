@@ -13,7 +13,9 @@ The contract, `backend/api/openapi.json`, is generated from the routes and the m
   list and `next_cursor`), `Create<Entity>Request` and `<Entity>Patch`, both with
   `model_config = REQUEST_CONFIG` (`app.http.schemas`; the route check refuses a body without it). Length and range
   limits go here (`Field(min_length=..., max_length=...)`), and again as a CHECK in the table. A PATCH field that may
-  be left out is `X | MISSING = MISSING`.
+  be left out is `X | MISSING = MISSING`. `REQUEST_CONFIG` is strict, so nothing is converted (`"true"` is not a
+  boolean): a body field that JSON can only carry as a string (a UUID, a date-time) needs `Field(strict=False)`, or
+  valid input answers 422.
 - Run `make -C backend gen` (writes `backend/api/openapi.json`) and `pnpm -C frontend gen:api`.
 
 ## 2. The module (`backend/src/app/modules/<name>/`)

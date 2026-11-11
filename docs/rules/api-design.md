@@ -172,7 +172,7 @@ raise HTTPException(status_code=409)
 
 ## 契約穩定性
 
-- 契約變更必須通過 `make -C backend api-breaking`（`make check` 的一部分）：oasdiff 拿 `backend/api/openapi.json` 與 `BASE`（本機預設 `origin/dev`，沒有 dev 的 clone 用 `origin/main`）的 merge-base 裡的版本比對，有 breaking change 就失敗；oasdiff 的 warning 也算（刪除 request 欄位只是 warning，但 request model 拒收多餘欄位，還在送的 client 會拿到 422）；CI 對 push 用該分支上一次的 tip、對 PR 用 base 分支，與 `migrations-immutable` 相同。
+- 契約變更必須通過 `make -C backend api-breaking`（`make check` 的一部分）：oasdiff 拿 `backend/api/openapi.json` 與 `BASE`（本機預設 `origin/dev`，沒有 dev 的 clone 用 `origin/main`；origin 還沒有任何分支的新專案用 `HEAD`，第一次 push 沒有東西可比）的 merge-base 裡的版本比對，有 breaking change 就失敗；oasdiff 的 warning 也算（刪除 request 欄位只是 warning，但 request model 拒收多餘欄位，還在送的 client 會拿到 422）；CI 對 push 用該分支上一次的 tip、對 PR 用 base 分支，與 `migrations-immutable` 相同。
 - 刻意的破壞性變更：在 `backend/api/breaking-ignore.txt` 照 oasdiff 印出的格式（method、path、訊息）加行，共用 schema 的變更每個用到它的 operation 各一行，上一行用註解寫理由；這個檔是 gate 檔，commit 要帶 `Quality-Gate:` trailer。變更進了 `main` 之後刪掉那幾行，刪除也要帶 trailer（一行包含某個變更的 method、path 與訊息時 oasdiff 就忽略它，留著會讓同樣的變更再次通過）。
 - **可以**新增 operation、新增 response 欄位、新增選填的 request 欄位。
 - **NEVER** 刪除、改名或改型別已合併的欄位；**NEVER** 把選填的 request 欄位改成必填。

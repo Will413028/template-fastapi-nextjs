@@ -24,7 +24,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # migrations-immutable compares revisions with the merge-base of HEAD and the event's base
+          # migrations-immutable and api-breaking compare with the merge-base of HEAD and the event's base
           fetch-depth: 0
           persist-credentials: false
       - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
@@ -37,7 +37,8 @@ jobs:
           node-version: 26
       # uv.lock in sync, api/openapi.json regenerated from the routes (gen-check), format, ruff, import-linter contracts,
       # pyright strict, vulture, pytest without the db tests,
-      # squawk on every revision's SQL, and no revision that already reached the base changed: a pull request's base branch, or for a push the branch's
+      # squawk on every revision's SQL, no revision that already reached the base changed, and no breaking change to
+      # api/openapi.json (api-breaking, oasdiff): the base is a pull request's base branch, or for a push the branch's
       # previous tip, so a revision pushed to dev is frozen too (the Go version's rule)
       - name: make check
         env:

@@ -25,6 +25,7 @@ LOCKS = "scripts/quality-locks.json"
 # Files whose edits can switch a check off or lower a bar. A new checker's configuration belongs here.
 GATE_FILES = {
     "backend/.importlinter",
+    "backend/api/breaking-ignore.txt",
     "backend/.squawk.toml",
     "backend/pyrightconfig.json",
     "backend/pytest.ini",

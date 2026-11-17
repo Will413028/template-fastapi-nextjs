@@ -26,7 +26,7 @@ The backend serves `GET /health`, `GET /health/ready` and every operation of the
 
 ## Backend layers
 
-The backend is a modular monolith organized by feature. `backend/.importlinter` enforces these rules in CI and at pre-push; a broken contract prints how to fix it. Move code instead of adding `ignore_imports`.
+The backend is a modular monolith organized by feature. `backend/.importlinter` enforces these rules in CI and at pre-push; a broken contract prints how to fix it. Move code instead of adding `ignore_imports`. `backend/tests/test_import_contracts.py` breaks each contract in a copy of the source and asserts import-linter reports it: a new contract needs a case there, or the test fails.
 
 | Package | Holds | May import |
 |---|---|---|

@@ -26,7 +26,11 @@ const config = createRequire(import.meta.url)(
 type Tree = Record<string, string>;
 
 // Files every case starts from: a feature with its public index and an internal file, and a route.
+// tsconfig.json gives the tree the real "@/" alias, so a rule is also checked on the imports the app writes.
 const base: Tree = {
+  "tsconfig.json": JSON.stringify({
+    compilerOptions: { baseUrl: ".", paths: { "@/*": ["./src/*"] } },
+  }),
   "src/features/f/index.ts": "export const f = 1;\n",
   "src/features/f/internal.ts": "export const internal = 1;\n",
   "src/app/page.ts":
@@ -49,7 +53,7 @@ const cases: Record<string, Tree> = {
   },
   "feature-public-api-from-outside": {
     "src/app/page.ts":
-      'import { internal } from "../features/f/internal";\nexport const page = internal;\n',
+      'import { internal } from "@/features/f/internal";\nexport const page = internal;\n',
   },
   "feature-public-api-between-features": {
     "src/features/g/index.ts":
@@ -72,9 +76,9 @@ async function violations(tree: Tree): Promise<string[]> {
     mkdirSync(dirname(join(dir, path)), { recursive: true });
     writeFileSync(join(dir, path), body);
   }
-  const { tsConfig: _tsConfig, ...options } = config.options ?? {};
   const result: IReporterOutput = await cruise(["src"], {
-    ...options,
+    ...config.options,
+    tsConfig: { fileName: join(dir, "tsconfig.json") },
     baseDir: dir,
     validate: true,
     ruleSet: { forbidden: config.forbidden },

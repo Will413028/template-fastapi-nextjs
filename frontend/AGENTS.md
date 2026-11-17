@@ -65,7 +65,8 @@ src/
 
 No import cycles anywhere. A derived project that adds a layer adds it to the table and to the matching rule in
 `.dependency-cruiser.cjs` in the same commit. Fix a violation by moving code (into the feature, or down into a shared
-layer), not by adding an exception.
+layer), not by adding an exception. `src/__tests__/dependency-rules.test.ts` builds a tree that breaks each rule and
+asserts the rule reports it: a new rule needs a case there, or the test fails.
 
 ## Key Conventions
 

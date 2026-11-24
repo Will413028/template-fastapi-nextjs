@@ -3,6 +3,6 @@
   "private": true,
   "description": "Node.js CLIs the backend Makefile runs (squawk); Dependabot keeps them current like any other dependency.",
   "devDependencies": {
-    "squawk-cli": "2.70.0"
+    "squawk-cli": "2.73.0"
   }
 }

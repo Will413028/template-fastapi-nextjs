@@ -153,7 +153,7 @@ jobs:
         working-directory: ${{ runner.temp }}/ci-probe
       # pnpm/setup refuses a path outside the workspace: it sets up pnpm from the template's frontend (same lockfile),
       # and the generated project installs from the warm store
-      - uses: pnpm/setup@fa36a5ef7dcdefc3a7cb25655c122e00cf6e636e # v3.1.2
+      - uses: pnpm/setup@731dfb6463bbd11c11fd0ee11fe00ed0e36d48a1 # v3.2.0
         with:
           working-directory: frontend
           runtime: node@26
@@ -241,7 +241,7 @@ jobs:
           persist-credentials: false
       # Node.js 26 and the pnpm version in package.json's packageManager, then pnpm install --frozen-lockfile with the
       # store cached. pnpm/setup succeeds pnpm/action-setup for pnpm 11 and newer.
-      - uses: pnpm/setup@fa36a5ef7dcdefc3a7cb25655c122e00cf6e636e # v3.1.2
+      - uses: pnpm/setup@731dfb6463bbd11c11fd0ee11fe00ed0e36d48a1 # v3.2.0
         with:
           working-directory: frontend
           runtime: node@26
